@@ -20,7 +20,13 @@ git clone git@github.com:tribble/pawprint.git ~/work/pawprint
 `setup.sh` imprints `pi-agent/*` into `~/.pi/agent` (override:
 `--target DIR` or `PAWPRINT_TARGET`), backing up differing files to
 `<path>.bak-pawprint-<ts>` and skipping identical ones. `--dry-run` prints
-the plan and writes nothing. `--imprint-only` skips the machine machinery.
+the plan and writes nothing. `--config-only` runs ONLY the imprint, skipping
+the machine machinery.
+
+Imprint is **additive/corrective, never destructive**: it creates and
+overwrites (with backup), but never deletes. A file removed from the repo
+stops being managed — its live copy is left alone. Removing config from a
+machine is a deliberate manual act.
 
 The machine machinery (skipped under `--dry-run` / `--imprint-only` /
 non-default target) then bootstraps the rest: pi + agent-browser via npm,

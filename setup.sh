@@ -4,9 +4,10 @@
 # config through a symlink would write into this repo, and the leak vector
 # returns. Target files that differ are backed up to <path>.bak-pawprint-<ts>.
 #
-# Usage: setup.sh [--dry-run] [--target DIR] [--imprint-only]
+# Usage: setup.sh [--dry-run] [--target DIR] [--config-only]
 #   target default: $PAWPRINT_TARGET or ~/.pi/agent
-#   --imprint-only: skip the machine-machinery section (pi/mise/packages/…)
+#   --config-only (alias --imprint-only): run ONLY the imprint — skip the
+#   machine-machinery section (pi install/packages/mise/ghostty/gh-dash)
 set -euo pipefail
 cd "$(dirname "$0")"
 
@@ -14,7 +15,7 @@ dry=0 imprint_only=0 target="${PAWPRINT_TARGET:-$HOME/.pi/agent}"
 while [ $# -gt 0 ]; do
   case "$1" in
     --dry-run) dry=1;;
-    --imprint-only) imprint_only=1;;
+    --config-only|--imprint-only) imprint_only=1;;
     --target) shift; target="$1";;
     *) echo "unknown arg: $1" >&2; exit 2;;
   esac
@@ -35,10 +36,17 @@ git ls-files -z 'pi-agent/' | while IFS= read -r -d '' rel; do
     run cp -a "$dst" "$dst.bak-pawprint-$ts"
     echo "backed up:     $dst -> $dst.bak-pawprint-$ts"
   fi
+  [ -f "$src" ] || continue   # index lists it but worktree lacks it
   run mkdir -p "$(dirname "$dst")"
-  run cp "$src" "$dst"
+  run cp -a "$src" "$dst"     # -a: preserve modes (exec bits) + timestamps
   echo "imprinted:     $dst"
 done
+
+# Imprint is additive/corrective, never destructive: it creates and
+# overwrites (with backup), but never deletes. Removing config is a
+# deliberate manual act on the machine.
+echo
+echo "Manual steps remain: /login cloudflare-ai-gateway (or env) · /mcp-auth per OAuth server · /trust per project — see README."
 
 # --------------------------------------- machine machinery (not the print) -
 # Global, machine-level bootstrap. Skipped by --dry-run / --imprint-only /
@@ -85,4 +93,4 @@ if command -v gh >/dev/null 2>&1; then
   gh extension list 2>/dev/null | grep -q "gh-dash" || gh extension install dlvhdr/gh-dash || true
 fi
 
-echo "Done. Manual steps remain: /login cloudflare-ai-gateway (or env) · /mcp-auth per OAuth server · /trust per project — see README."
+echo "Done."
