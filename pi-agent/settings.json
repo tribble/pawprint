@@ -1,0 +1,118 @@
+{
+  "defaultProvider": "cloudflare-ai-gateway",
+  "defaultModel": "claude-fable-5",
+  "defaultThinkingLevel": "high",
+  "quietStartup": true,
+  "steeringMode": "all",
+  "retry": {
+    "enabled": true,
+    "maxRetries": 5,
+    "provider": {
+      "timeoutMs": 120000
+    }
+  },
+  "compaction": {
+    "enabled": true,
+    "reserveTokens": 64000,
+    "keepRecentTokens": 40000
+  },
+  "enabledModels": [
+    "cloudflare-ai-gateway/gpt-5.6-sol",
+    "cloudflare-ai-gateway/claude-fable-5",
+    "cloudflare-ai-gateway/claude-opus-5",
+    "cloudflare-ai-gateway/claude-sonnet-5",
+    "cloudflare-ai-gateway/accounts/fireworks/models/kimi-k3",
+    "cloudflare-ai-gateway/accounts/fireworks/models/glm-5p2",
+    "cloudflare-ai-gateway/accounts/fireworks/models/deepseek-v4-pro",
+    "cloudflare-ai-gateway/accounts/fireworks/models/qwen3p7-max",
+    "cloudflare-ai-gateway/accounts/fireworks/models/minimax-m3"
+  ],
+  "packages": [
+    "git:github.com/tribble/pi-subagents",
+    {
+      "source": "git:github.com/fitchmultz/pi-fitch-kit",
+      "extensions": [
+        "extensions/*.ts",
+        "!extensions/session-name.ts",
+        "!extensions/clean-footer.ts",
+        "!extensions/fast-mode.ts",
+        "!extensions/anthropic-image-guard.ts"
+      ]
+    },
+    "git:github.com/fitchmultz/pi-apply-edits",
+    "git:github.com/fitchmultz/pi-todo-list",
+    "git:github.com/fitchmultz/pi-change-working-dir",
+    "git:github.com/fitchmultz/pi-ctx-info",
+    "git:github.com/fitchmultz/pi-tool-duration",
+    "git:github.com/fitchmultz/pi-edit-session-in-place",
+    "git:github.com/fitchmultz/pi-stash",
+    "git:github.com/fitchmultz/pi-copy-message",
+    "git:github.com/fitchmultz/pi-calculator",
+    "git:github.com/tribble/pi-mcp-adapter",
+    "git:github.com/fitchmultz/pi-agent-skills",
+    "git:github.com/DietrichGebert/ponytail",
+    "git:github.com/fitchmultz/pi-agent-browser-native"
+  ],
+  "subagents": {
+    "agentOverrides": {
+      "scout": {
+        "model": "cloudflare-ai-gateway/claude-sonnet-5"
+      },
+      "context-builder": {
+        "model": "cloudflare-ai-gateway/claude-sonnet-5"
+      },
+      "worker": {
+        "model": "cloudflare-ai-gateway/claude-sonnet-5"
+      },
+      "fixer": {
+        "model": "cloudflare-ai-gateway/accounts/fireworks/models/glm-5p2"
+      },
+      "watcher": {
+        "model": "cloudflare-ai-gateway/accounts/fireworks/models/minimax-m3"
+      },
+      "planner": {
+        "model": "cloudflare-ai-gateway/gpt-5.6-sol",
+        "thinking": "high"
+      },
+      "oracle": {
+        "model": "cloudflare-ai-gateway/gpt-5.6-sol",
+        "thinking": "high"
+      },
+      "debugger": {
+        "model": "cloudflare-ai-gateway/gpt-5.6-sol"
+      },
+      "researcher": {
+        "model": "cloudflare-ai-gateway/gpt-5.6-sol"
+      },
+      "reviewer": {
+        "model": "cloudflare-ai-gateway/gpt-5.6-sol",
+        "thinking": "xhigh"
+      },
+      "reviewer-gpt": {
+        "model": "cloudflare-ai-gateway/gpt-5.6-sol"
+      },
+      "reviewer-claude": {
+        "model": "cloudflare-ai-gateway/claude-opus-5"
+      },
+      "reviewer-security": {
+        "model": "cloudflare-ai-gateway/claude-opus-5",
+        "thinking": "medium"
+      },
+      "reviewer-ponytail": {
+        "model": "cloudflare-ai-gateway/gpt-5.6-sol"
+      },
+      "ui-designer": {
+        "model": "cloudflare-ai-gateway/claude-fable-5"
+      },
+      "writer": {
+        "model": "cloudflare-ai-gateway/claude-fable-5"
+      }
+    },
+    "projectTrust": {
+      "childRuns": "inherit"
+    }
+  },
+  "lastChangelogVersion": "0.84.4",
+  "theme": "dark",
+  "defaultProjectTrust": "ask"
+}

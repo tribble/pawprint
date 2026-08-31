@@ -1,0 +1,11 @@
+# pawprint — default-deny: nothing is tracked unless allowlisted below.
+# pi-agent/ is the curated print; new files dropped there stay invisible
+# to git until deliberately allowlisted.
+*
+!.gitignore
+!README.md
+!setup.sh
+!scripts/
+!scripts/sync-back.sh
+!pi-agent/
+!pi-agent/**

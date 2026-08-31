@@ -1,0 +1,5 @@
+# pawprint toolchain — pinned. `mise install` in this dir; tsc then runs the
+# repo typecheck: tsc -p tsconfig.json
+[tools]
+node = "24"
+"npm:typescript" = "7.0.2"

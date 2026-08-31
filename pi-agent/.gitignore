@@ -1,0 +1,27 @@
+# pawprint — default-deny: nothing is tracked unless allowlisted below.
+# New runtime/state files pi creates are invisible to git by default;
+# secrets (auth.json, mcp-oauth/) can never sneak in.
+*
+!.gitignore
+!README.md
+!setup.sh
+!AGENTS.md
+!settings.json
+!models.json
+!mcp.json
+!presets.json
+!keybindings.json
+!agents/
+!agents/**
+!prompts/
+!prompts/**
+!extensions/
+!extensions/herdr-agent-state.ts
+!extensions/preset.ts
+!extensions/auto-update.ts
+!extensions/compaction-fallback.ts
+!extensions/herdr-fleet.ts
+!mise.toml
+!tsconfig.json
+!ghostty/
+!ghostty/**

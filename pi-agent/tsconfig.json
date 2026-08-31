@@ -1,0 +1,29 @@
+{
+  "compilerOptions": {
+    "strict": true,
+    "noEmit": true,
+    "target": "es2022",
+    "module": "esnext",
+    "moduleResolution": "bundler",
+    "skipLibCheck": true,
+    "types": [],
+    "paths": {
+      "@earendil-works/pi-coding-agent": [
+        "./.pi-types/pi-coding-agent/dist/index.d.ts"
+      ],
+      "@earendil-works/pi-ai": [
+        "./.pi-types/pi-coding-agent/node_modules/@earendil-works/pi-ai/dist/index.d.ts"
+      ],
+      "@earendil-works/pi-tui": [
+        "./.pi-types/pi-coding-agent/node_modules/@earendil-works/pi-tui/dist/index.d.ts"
+      ]
+    }
+  },
+  "files": [
+    "extensions/auto-update.ts",
+    "extensions/preset.ts",
+    "extensions/herdr-agent-state.ts",
+    "extensions/compaction-fallback.ts",
+    "extensions/herdr-fleet.ts"
+  ]
+}
