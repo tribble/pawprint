@@ -7,28 +7,11 @@ set -euo pipefail
 cd "$(dirname "$0")/.."
 target="${PAWPRINT_TARGET:-$HOME/.pi/agent}"
 
-paths=(
-  .gitignore
-  AGENTS.md
-  agents/reviewer-fable.md
-  agents/reviewer-kimi.md
-  agents/scout-kimi.md
-  agents/worker-kimi.md
-  extensions/auto-update.ts
-  extensions/compaction-fallback.ts
-  extensions/herdr-agent-state.ts
-  extensions/herdr-fleet.ts
-  extensions/preset.ts
-  ghostty/config.ghostty
-  mcp.json
-  mise.toml
-  models.json
-  presets.json
-  settings.json
-  tsconfig.json
-  # NEVER: auth.json, mcp-oauth/, .pi-types, git/ clones, or anything not
-  # already in the curated print above. New keepers are added by hand.
-)
+# The list comes from manifest.json (single source of truth).
+# NEVER add: auth.json, mcp-oauth/, .pi-types, git/ clones. New keepers enter
+# the manifest by hand, after review.
+paths=()
+while IFS= read -r p; do paths+=("$p"); done < <(jq -r '.files[]' manifest.json)
 
 for rel in "${paths[@]}"; do
   src="$target/$rel"

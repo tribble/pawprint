@@ -7,7 +7,10 @@
 !setup.sh
 !scripts/
 !scripts/sync-back.sh
+!scripts/validate.sh
+!manifest.json
 !package.json
+!tsconfig.json
 !tests/
 !tests/**
 !pi-agent/

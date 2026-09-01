@@ -133,6 +133,8 @@ test("7. never destructive: print file removed from a repo copy stays in target"
   const copy = mktmp("pawprint-t7repo-");
   cpSync(REPO, copy, { recursive: true });
   execFileSync("git", ["-C", copy, "rm", "-q", "pi-agent/AGENTS.md"]);
+  // manifest.json is the source of truth — removal means out of the manifest too
+  execFileSync("sh", ["-c", "jq 'del(.files[] | select(. == \"AGENTS.md\"))' manifest.json > m.json && mv m.json manifest.json"], { cwd: copy });
   const out = execFileSync("bash", [join(copy, "setup.sh"), "--target", t], { encoding: "utf8" });
   assert.ok(!out.includes("AGENTS.md"), "removed-from-print file not mentioned");
   assert.ok(existsSync(join(t, "AGENTS.md")), "still in the target");

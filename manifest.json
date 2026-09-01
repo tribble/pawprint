@@ -1,0 +1,34 @@
+{
+  "schemaVersion": 1,
+  "files": [
+    ".gitignore",
+    "AGENTS.md",
+    "agents/reviewer-fable.md",
+    "agents/reviewer-kimi.md",
+    "agents/scout-kimi.md",
+    "agents/worker-kimi.md",
+    "extensions/auto-update.ts",
+    "extensions/compaction-fallback.ts",
+    "extensions/herdr-agent-state.ts",
+    "extensions/herdr-fleet.ts",
+    "extensions/preset.ts",
+    "ghostty/config.ghostty",
+    "mcp.json",
+    "mise.toml",
+    "models.json",
+    "presets.json",
+    "settings.json",
+    "tsconfig.json"
+  ],
+  "tools": [
+    "pi",
+    "node",
+    "mise",
+    "gh",
+    "agent-browser"
+  ],
+  "env": [
+    "CLOUDFLARE_ACCOUNT_ID",
+    "CLOUDFLARE_GATEWAY_ID"
+  ]
+}

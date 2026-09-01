@@ -25,9 +25,10 @@ run() { if [ "$dry" = 1 ]; then echo "DRY: $*"; else "$@"; fi }
 
 # ---------------------------------------------------------------- imprint ---
 ts=$(date +%Y%m%d%H%M%S)
-git ls-files -z 'pi-agent/' | while IFS= read -r -d '' rel; do
-  dst="$target/${rel#pi-agent/}"
-  src="$PWD/$rel"
+# manifest.json is the single source of truth for what imprints
+jq -r '.files[]' manifest.json | while IFS= read -r rel; do
+  dst="$target/$rel"
+  src="$PWD/pi-agent/$rel"
   if [ -f "$dst" ] && cmp -s "$src" "$dst"; then
     echo "ok (same):     $dst"
     continue

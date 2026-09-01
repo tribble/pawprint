@@ -6,9 +6,15 @@ config, never a mirror of a sensitive directory**: `~/.pi/agent` contains
 never be a git root again. **Never `git init ~/.pi/agent` again.**
 
 `pi-agent/` mirrors `~/.pi/agent`-relative paths and holds exactly the
-reviewed-safe files. The repo imprints itself onto a machine by **copying** —
-never symlinks: a tool writing its config through a symlink would write into
-this repo, and the leak vector returns.
+reviewed-safe files. **`manifest.json` is the single source of truth** for
+what ships: its `files` list (agent-dir-relative) drives both `setup.sh`
+and `scripts/sync-back.sh`, plus `tools` (PATH audit) and `env` (presence
+audit). The repo imprints itself onto a machine by **copying** — never
+symlinks: a tool writing its config through a symlink would write into this
+repo, and the leak vector returns.
+
+There is deliberately no prompt-driven `/setup` installer: determinism beats
+adaptivity for a single-owner print.
 
 ## Fresh machine
 
@@ -40,8 +46,14 @@ Manual steps after setup: `/login cloudflare-ai-gateway` (or env) ·
 
 ## Drift repair
 
-Re-run `setup.sh`. Files you changed locally are backed up, then restored to
-the print.
+```sh
+scripts/validate.sh   # READ-ONLY audit: same/drift/missing per manifest file,
+                      # tools on PATH, env vars set (presence, never values);
+                      # exit non-zero on any mismatch
+```
+
+Then re-run `setup.sh` to repair: files you changed locally are backed up,
+then restored to the print. `validate.sh` again should be green.
 
 ## Developing
 
