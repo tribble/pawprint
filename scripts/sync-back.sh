@@ -10,7 +10,6 @@ target="${PAWPRINT_TARGET:-$HOME/.pi/agent}"
 paths=(
   .gitignore
   AGENTS.md
-  README.md
   agents/reviewer-kimi.md
   agents/scout-kimi.md
   agents/worker-kimi.md
@@ -25,7 +24,6 @@ paths=(
   models.json
   presets.json
   settings.json
-  setup.sh
   tsconfig.json
   # NEVER: auth.json, mcp-oauth/, .pi-types, git/ clones, or anything not
   # already in the curated print above. New keepers are added by hand.

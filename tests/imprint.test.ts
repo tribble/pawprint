@@ -157,12 +157,16 @@ test("8. --config-only on nonexistent target: created, imprinted, machinery neve
   assert.ok(!existsSync(trace), "no machinery tool was invoked");
 });
 
-test("9. exec bits: in repo and after imprint", () => {
+test("9. exec bits: in repo; imprint preserves modes (cp -a)", () => {
   for (const f of ["setup.sh", "scripts/sync-back.sh"])
     accessSync(join(REPO, f), constants.X_OK);
   const t = mktmp("pawprint-t9-");
   runSetup(["--target", t]);
-  accessSync(join(t, "setup.sh"), constants.X_OK); // cp -a preserved the bit
+  // no executable ships in the print; assert modes survive the imprint
+  assert.equal(
+    statSync(join(t, "AGENTS.md")).mode & 0o777,
+    statSync(join(PRINT, "AGENTS.md")).mode & 0o777,
+  );
 });
 
 test("10. empty target: no auth.json; closing message lists the manual steps", () => {
