@@ -1,7 +1,6 @@
 {
   "schemaVersion": 1,
   "files": [
-    ".gitignore",
     "AGENTS.md",
     "agents/reviewer-fable.md",
     "agents/reviewer-kimi.md",
@@ -11,6 +10,7 @@
     "extensions/compaction-fallback.ts",
     "extensions/herdr-agent-state.ts",
     "extensions/herdr-fleet.ts",
+    "extensions/pr-review.ts",
     "extensions/preset.ts",
     "ghostty/config.ghostty",
     "mcp.json",

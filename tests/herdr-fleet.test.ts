@@ -77,7 +77,7 @@ test("/delegate: workspace → pane → agent start → settle → prompt --wait
     await done;
     assert.deepEqual(pi.execCalls, [
       ["herdr", "workspace", "create", "--cwd", process.cwd(), "--label", "scout"],
-      ["herdr", "agent", "start", "scout", "--kind", "pi", "--pane", "p9", "--timeout", "60000"],
+      ["herdr", "agent", "start", "scout", "--kind", "pi", "--pane", "p9", "--timeout", "60000", "--", "--thinking", "max"],
       ["herdr", "agent", "prompt", "scout", "fix the flake", "--wait"],
     ]);
     assert.ok(ctx.notes.at(-1).msg.includes("🐑 scout delegated"));

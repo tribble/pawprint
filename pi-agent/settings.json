@@ -30,13 +30,15 @@
   "packages": [
     "git:github.com/tribble/pi-subagents",
     {
-      "source": "git:github.com/fitchmultz/pi-fitch-kit",
+      "source": "git:github.com/fitchmultz/pi-fitch-kit@3e04ba54d498171abaa9e89a588b6dd9faa1ff68",
       "extensions": [
-        "extensions/*.ts",
-        "!extensions/session-name.ts",
-        "!extensions/clean-footer.ts",
-        "!extensions/fast-mode.ts",
-        "!extensions/anthropic-image-guard.ts"
+        "extensions/write-prompt.ts"
+      ],
+      "prompts": [
+        "prompts/audit/github-open-issues-prs.md"
+      ],
+      "themes": [
+        "themes/calm.json"
       ]
     },
     "git:github.com/fitchmultz/pi-apply-edits",
