@@ -32,10 +32,13 @@
     {
       "source": "git:github.com/fitchmultz/pi-fitch-kit@3e04ba54d498171abaa9e89a588b6dd9faa1ff68",
       "extensions": [
-        "extensions/write-prompt.ts"
+        "extensions/write-prompt.ts",
+        "extensions/anthropic-image-guard.ts",
+        "extensions/session-name.ts"
       ],
       "prompts": [
-        "prompts/audit/github-open-issues-prs.md"
+        "prompts/audit/github-open-issues-prs.md",
+        "prompts/audit/extract-process-improvements.md"
       ],
       "themes": [
         "themes/calm.json"
@@ -98,7 +101,7 @@
       },
       "reviewer-security": {
         "model": "cloudflare-ai-gateway/claude-opus-5",
-        "thinking": "medium"
+        "thinking": "xhigh"
       },
       "reviewer-ponytail": {
         "model": "cloudflare-ai-gateway/gpt-5.6-sol"
