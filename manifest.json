@@ -17,6 +17,7 @@
     "mise.toml",
     "models.json",
     "presets.json",
+    "prompts/extract-process-improvements.md",
     "settings.json",
     "tsconfig.json"
   ],
