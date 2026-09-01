@@ -1,0 +1,9 @@
+{
+  "name": "pawprint",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "node --import ./tests/register.mjs --test tests/*.test.ts",
+    "typecheck": "npx -y typescript@5.9.3 tsc -p tsconfig.json"
+  }
+}

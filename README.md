@@ -43,6 +43,26 @@ Manual steps after setup: `/login cloudflare-ai-gateway` (or env) ·
 Re-run `setup.sh`. Files you changed locally are backed up, then restored to
 the print.
 
+## Developing
+
+The repo has a dev side that never imprints (`tests/` lives outside
+`pi-agent/`).
+
+```sh
+npm test            # extension behavior suites + the encoded imprint matrix
+npm run typecheck   # pinned typescript@5.9.3 over tests + extensions
+```
+
+Zero dependencies: Node 24 runs the `.ts` natively; an ESM loader hook
+(`tests/loader.mjs`) redirects pi's runtime packages to stubs in
+`tests/stubs/`, and `tests/harness.mjs` fakes the ExtensionAPI/ctx. The
+imprint matrix (`tests/imprint.test.ts`) drives `setup.sh`/`sync-back.sh`
+against mktemp scratch targets only — never the live dir — and is the
+regression net for script changes. The full 210k-file replica imprint stays
+a manual pre-ship gate. `npm run typecheck` needs the `.pi-types` symlink
+(`ln -s "$(npm root -g)/@earendil-works" .pi-types`; setup.sh's machinery
+creates the equivalent in the agent dir).
+
 ## Keeping a change (live → repo)
 
 ```sh
