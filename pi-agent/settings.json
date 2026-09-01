@@ -1,6 +1,6 @@
 {
   "defaultProvider": "cloudflare-ai-gateway",
-  "defaultModel": "claude-fable-5",
+  "defaultModel": "accounts/fireworks/models/kimi-k3",
   "defaultThinkingLevel": "high",
   "quietStartup": true,
   "steeringMode": "all",
