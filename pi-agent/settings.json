@@ -37,8 +37,7 @@
         "extensions/session-name.ts"
       ],
       "prompts": [
-        "prompts/audit/github-open-issues-prs.md",
-        "prompts/audit/extract-process-improvements.md"
+        "prompts/audit/github-open-issues-prs.md"
       ],
       "themes": [
         "themes/calm.json"
