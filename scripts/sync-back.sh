@@ -10,6 +10,7 @@ target="${PAWPRINT_TARGET:-$HOME/.pi/agent}"
 paths=(
   .gitignore
   AGENTS.md
+  agents/reviewer-fable.md
   agents/reviewer-kimi.md
   agents/scout-kimi.md
   agents/worker-kimi.md
