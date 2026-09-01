@@ -77,7 +77,8 @@ export default function herdrFleet(pi: ExtensionAPI) {
         const ws = await herdr(pi, ["workspace", "create", "--cwd", process.cwd(), "--label", name]);
         const paneId = findPaneId(ws);
         if (!paneId) throw new Error("workspace created but no pane_id in response");
-        await herdr(pi, ["agent", "start", name, "--kind", "pi", "--pane", paneId, "--timeout", "60000"]);
+        // Model inherits defaultModel (kimi-k3); fleet workers run max thinking (the experiment).
+        await herdr(pi, ["agent", "start", name, "--kind", "pi", "--pane", paneId, "--timeout", "60000", "--", "--thinking", "max"]);
         // herdr's readiness fires before pi's TUI accepts input; prompts sent earlier vanish.
         // ponytail: fixed settle delay, revisit as a readiness probe only if 5s proves flaky.
         await new Promise((r) => setTimeout(r, 5000));
