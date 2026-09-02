@@ -1,6 +1,6 @@
 {
   "defaultProvider": "cloudflare-ai-gateway",
-  "defaultModel": "accounts/fireworks/models/kimi-k3",
+  "defaultModel": "cloudflare-ai-gateway/claude-fable-5-1",
   "defaultThinkingLevel": "high",
   "quietStartup": true,
   "steeringMode": "all",
@@ -19,14 +19,14 @@
   "enabledModels": [
     "cloudflare-ai-gateway/gpt-5.6-sol",
     "cloudflare-ai-gateway/claude-fable-5",
-    "cloudflare-ai-gateway/claude-fable-5-1",
     "cloudflare-ai-gateway/claude-opus-5",
     "cloudflare-ai-gateway/claude-sonnet-5",
     "cloudflare-ai-gateway/accounts/fireworks/models/kimi-k3",
     "cloudflare-ai-gateway/accounts/fireworks/models/glm-5p2",
     "cloudflare-ai-gateway/accounts/fireworks/models/deepseek-v4-pro",
     "cloudflare-ai-gateway/accounts/fireworks/models/qwen3p7-max",
-    "cloudflare-ai-gateway/accounts/fireworks/models/minimax-m3"
+    "cloudflare-ai-gateway/accounts/fireworks/models/minimax-m3",
+    "cloudflare-ai-gateway/claude-fable-5-1"
   ],
   "packages": [
     "git:github.com/tribble/pi-subagents",
@@ -61,33 +61,40 @@
   "subagents": {
     "agentOverrides": {
       "scout": {
-        "model": "cloudflare-ai-gateway/claude-sonnet-5"
+        "model": "cloudflare-ai-gateway/accounts/fireworks/models/kimi-k3",
+        "thinking": "max"
       },
       "context-builder": {
-        "model": "cloudflare-ai-gateway/claude-sonnet-5"
+        "model": "cloudflare-ai-gateway/accounts/fireworks/models/kimi-k3",
+        "thinking": "max"
       },
       "worker": {
-        "model": "cloudflare-ai-gateway/claude-sonnet-5"
+        "model": "cloudflare-ai-gateway/accounts/fireworks/models/kimi-k3",
+        "thinking": "max"
       },
       "fixer": {
-        "model": "cloudflare-ai-gateway/accounts/fireworks/models/glm-5p2"
+        "model": "cloudflare-ai-gateway/accounts/fireworks/models/kimi-k3",
+        "thinking": "max"
       },
       "watcher": {
-        "model": "cloudflare-ai-gateway/accounts/fireworks/models/minimax-m3"
+        "model": "cloudflare-ai-gateway/accounts/fireworks/models/kimi-k3",
+        "thinking": "max"
       },
       "planner": {
-        "model": "cloudflare-ai-gateway/gpt-5.6-sol",
-        "thinking": "high"
+        "model": "cloudflare-ai-gateway/accounts/fireworks/models/kimi-k3",
+        "thinking": "max"
       },
       "oracle": {
-        "model": "cloudflare-ai-gateway/gpt-5.6-sol",
-        "thinking": "high"
+        "model": "cloudflare-ai-gateway/accounts/fireworks/models/kimi-k3",
+        "thinking": "max"
       },
       "debugger": {
-        "model": "cloudflare-ai-gateway/gpt-5.6-sol"
+        "model": "cloudflare-ai-gateway/accounts/fireworks/models/kimi-k3",
+        "thinking": "max"
       },
       "researcher": {
-        "model": "cloudflare-ai-gateway/gpt-5.6-sol"
+        "model": "cloudflare-ai-gateway/accounts/fireworks/models/kimi-k3",
+        "thinking": "max"
       },
       "reviewer": {
         "model": "cloudflare-ai-gateway/gpt-5.6-sol",
@@ -107,10 +114,12 @@
         "model": "cloudflare-ai-gateway/gpt-5.6-sol"
       },
       "ui-designer": {
-        "model": "cloudflare-ai-gateway/claude-fable-5-1"
+        "model": "cloudflare-ai-gateway/accounts/fireworks/models/kimi-k3",
+        "thinking": "max"
       },
       "writer": {
-        "model": "cloudflare-ai-gateway/claude-fable-5-1"
+        "model": "cloudflare-ai-gateway/accounts/fireworks/models/kimi-k3",
+        "thinking": "max"
       }
     },
     "projectTrust": {
