@@ -1,7 +1,7 @@
 ---
 name: reviewer-fable
-description: Code review specialist that validates implementation and reports issues (claude-fable-5 variant — Anthropic-family reviewer for cross-family review)
-model: cloudflare-ai-gateway/claude-fable-5
+description: Code review specialist that validates implementation and reports issues (claude-fable-5-1 variant — Anthropic-family reviewer for cross-family review)
+model: cloudflare-ai-gateway/claude-fable-5-1
 thinking: xhigh
 systemPromptMode: replace
 inheritProjectContext: true

@@ -221,6 +221,40 @@
             "supportsLongCacheRetention": false,
             "allowEmptySignature": true
           }
+        },
+        {
+          "id": "claude-fable-5-1",
+          "name": "fable 5.1",
+          "api": "anthropic-messages",
+          "baseUrl": "https://gateway.ai.cloudflare.com/v1/{CLOUDFLARE_ACCOUNT_ID}/{CLOUDFLARE_GATEWAY_ID}/anthropic",
+          "reasoning": true,
+          "thinkingLevelMap": {
+            "xhigh": "xhigh",
+            "max": "max"
+          },
+          "input": [
+            "text",
+            "image"
+          ],
+          "cost": {
+            "input": 10,
+            "output": 50,
+            "cacheRead": 1,
+            "cacheWrite": 12.5
+          },
+          "contextWindow": 320000,
+          "maxTokens": 128000,
+          "compat": {
+            "sendSessionAffinityHeaders": true,
+            "forceAdaptiveThinking": true,
+            "supportsTemperature": false,
+            "allowedFallbackModels": [
+              {
+                "provider": "anthropic",
+                "model": "claude-opus-5"
+              }
+            ]
+          }
         }
       ]
     }
