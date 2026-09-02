@@ -19,7 +19,8 @@
     "presets.json",
     "prompts/extract-process-improvements.md",
     "settings.json",
-    "tsconfig.json"
+    "tsconfig.json",
+    "bin/agent-costs"
   ],
   "tools": [
     "pi",

@@ -1,0 +1,22 @@
+#!/usr/bin/env python3
+"""Per-model cost of pi subagent runs, from session.jsonl usage records.
+usage: agent-costs [--days N]   (default: all runs under ~/.pi/agent/sessions)"""
+import glob, json, os, statistics as st, sys, time
+days = float(sys.argv[sys.argv.index("--days") + 1]) if "--days" in sys.argv else None
+cutoff = time.time() - days * 86400 if days else 0
+by = {}
+for f in glob.glob(os.path.expanduser("~/.pi/agent/sessions/*/*/*/run-*/session.jsonl")):
+    if os.path.getmtime(f) < cutoff: continue
+    cost = turns = tok = reason = cache = 0; model = None
+    for line in open(f):
+        try: m = json.loads(line).get("message", {})
+        except ValueError: continue
+        u = m.get("usage")
+        if m.get("role") != "assistant" or not u: continue
+        turns += 1; cost += u["cost"]["total"]; tok += u["totalTokens"]
+        reason += u.get("reasoning", 0); cache += u.get("cacheRead", 0); model = m.get("model")
+    if turns: by.setdefault(model, []).append((cost, turns, tok, reason / tok, cache / tok))
+print(f"{'model':45} {'runs':>4} {'med $':>6} {'turns':>5} {'Mtok':>5} {'reason%':>7} {'cache%':>6}")
+for model, rs in sorted(by.items(), key=lambda x: -len(x[1])):
+    med = lambda i: st.median(r[i] for r in rs)
+    print(f"{model:45} {len(rs):4} {med(0):6.2f} {med(1):5.0f} {med(2)/1e6:5.2f} {med(3):7.1%} {med(4):6.1%}")
