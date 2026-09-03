@@ -16,7 +16,8 @@ Check assumptions → make the change → verify the result.
 
 1. BEFORE — name the load-bearing assumption and test it before doing the work: reproduce the bug before fixing it, validate the key/path/flag against the parser before editing the config, prove a file's inertness by checking what actually reads it in that location. Strongest source wins: parser over docs, behavior over docs, live state over memory.
 2. AFTER — verify the end state through a different channel than the one that made the change: exercise the user's actual goal for real (click the link, boot a fresh process, read the file back). The apply-command's own success output is not evidence. If the repo encodes a check (test suite, validate script), the change is not done until that check ran on the FINAL state — "the edit applied" is never the check.
-3. If either check isn't possible, say "untested" out loud — never dress it as success.
+3. Intermittent faults are not disproved by one passing check. Before removing a guard, reproduce the failure condition it guards against (dead agent socket, expired token) and show the system survives without it.
+4. If either check isn't possible, say "untested" out loud — never dress it as success.
 
 Same bar as the reviewer rule for PRs: an artifact examined from outside the context that produced it.
 - Keep responses concise. Prefer showing diffs and commands over long explanations.
