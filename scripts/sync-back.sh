@@ -19,7 +19,7 @@ for rel in "${paths[@]}"; do
   if cmp -s "$src" "pi-agent/$rel"; then
     echo "ok (same):        pi-agent/$rel"
   else
-    cp "$src" "pi-agent/$rel"
+    mkdir -p "$(dirname "pi-agent/$rel")" && cp "$src" "pi-agent/$rel"
     echo "synced:           $src -> pi-agent/$rel"
   fi
 done
