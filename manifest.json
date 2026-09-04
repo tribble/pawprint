@@ -20,7 +20,8 @@
     "prompts/extract-process-improvements.md",
     "settings.json",
     "tsconfig.json",
-    "bin/agent-costs"
+    "bin/agent-costs",
+    "themes/calm-tribble.json"
   ],
   "tools": [
     "pi",
