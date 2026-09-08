@@ -239,7 +239,7 @@
           "cost": {
             "input": 10,
             "output": 50,
-            "cacheRead": 1,
+            "cacheRead": 0.25,
             "cacheWrite": 12.5
           },
           "contextWindow": 320000,
@@ -254,6 +254,47 @@
                 "model": "claude-opus-5"
               }
             ]
+          }
+        },
+        {
+          "id": "gpt-6-astra",
+          "name": "GPT-6 Astra",
+          "api": "openai-responses",
+          "baseUrl": "https://gateway.ai.cloudflare.com/v1/{CLOUDFLARE_ACCOUNT_ID}/{CLOUDFLARE_GATEWAY_ID}/openai",
+          "reasoning": true,
+          "thinkingLevelMap": {
+            "off": null,
+            "minimal": null,
+            "low": "low",
+            "medium": "medium",
+            "high": "high",
+            "xhigh": "xhigh",
+            "max": "max"
+          },
+          "input": [
+            "text",
+            "image"
+          ],
+          "cost": {
+            "input": 10,
+            "output": 50,
+            "cacheRead": 1,
+            "cacheWrite": 12.5,
+            "tiers": [
+              {
+                "inputTokensAbove": 272000,
+                "input": 20,
+                "output": 75,
+                "cacheRead": 2,
+                "cacheWrite": 25
+              }
+            ]
+          },
+          "contextWindow": 320000,
+          "maxTokens": 128000,
+          "compat": {
+            "supportsStrictMode": true,
+            "supportsOpenAIGrammarTools": true
           }
         }
       ]
