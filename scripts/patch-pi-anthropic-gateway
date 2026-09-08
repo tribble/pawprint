@@ -1,0 +1,168 @@
+#!/usr/bin/env python3
+"""Manual repair: re-apply the cf-aig-authorization gateway patch to an
+npm-installed pi. `pi update` reinstalls @earendil-works/pi-ai, reverting the
+patch; run this once afterwards. Idempotent, fails loudly on unknown layouts.
+
+Usage: patch-pi-anthropic-gateway [--root PI_PACKAGE_ROOT]
+Default root: resolved from `mise which pi` (bin -> dist/bundle/cli.js -> root).
+"""
+import glob
+import os
+import subprocess
+import sys
+import tempfile
+
+COND = 'apiKey ?? (hasHeader(defaultHeaders, "cf-aig-authorization") ? "" : null)'
+
+# (glob-relative-to-root, old, new). Exact strings; each target file must
+# contain exactly one occurrence of old OR new — anything else is a future
+# layout we refuse to guess at. The unbundled pattern spans the whole
+# createClient block so it cannot hit an unrelated apiKey expression.
+TARGETS = [
+    (
+        "node_modules/@earendil-works/pi-ai/dist/api/anthropic-messages.js",
+        "new Anthropic({\n"
+        "        apiKey: apiKey ?? null,\n"
+        "        authToken: null,\n"
+        "        baseURL: model.baseUrl,",
+        "new Anthropic({\n"
+        f"        apiKey: {COND},\n"
+        "        authToken: null,\n"
+        "        baseURL: model.baseUrl,",
+    ),
+    (
+        "dist/bundle/chunks/anthropic-messages-*.js",
+        "apiKey:apiKey??null,authToken:null,baseURL:model.baseUrl",
+        f"apiKey:{COND},authToken:null,baseURL:model.baseUrl",
+    ),
+]
+
+
+def fail(msg):
+    print(f"error: {msg}", file=sys.stderr)
+    sys.exit(1)
+
+
+def find_root():
+    try:
+        bin = subprocess.run(
+            ["mise", "which", "pi"], capture_output=True, text=True, check=True
+        ).stdout.strip()
+    except (subprocess.CalledProcessError, FileNotFoundError):
+        fail("`mise which pi` failed; pass --root PATH instead")
+    # bin symlinks to <root>/dist/bundle/cli.js
+    real = os.path.realpath(bin)
+    parts = os.path.normpath(real).split(os.sep)
+    if len(parts) < 3 or parts[-3:] != ["dist", "bundle", "cli.js"]:
+        fail(f"{real} is not <root>/dist/bundle/cli.js; pass --root PATH")
+    return os.sep.join(parts[:-3])
+
+
+def classify(path, old, new):
+    """Read-only: decide patch/skip, or fail.
+    Returns (action, new_content, original_content, original_mode)."""
+    try:
+        with open(path, encoding="utf8") as f:
+            src = f.read()
+    except OSError as e:
+        fail(f"{path}: {e}")
+    n_old, n_new = src.count(old), src.count(new)
+    if n_old == 1 and n_new == 0:
+        return "patch", src.replace(old, new), src, os.stat(path).st_mode
+    if n_old == 0 and n_new == 1:
+        return "skip", None, src, os.stat(path).st_mode
+    fail(
+        f"{path}: expected exactly one known pattern, found "
+        f"{n_old} old / {n_new} new — unknown layout, refusing to touch anything"
+    )
+
+
+def main():
+    args = sys.argv[1:]
+    if args[:1] == ["--root"] and len(args) == 2:
+        root = args[1]
+    elif args:
+        fail(__doc__.strip())
+    else:
+        root = find_root()
+    if not os.path.isdir(root):
+        fail(f"not a directory: {root}")
+    # Phase 1: resolve and classify every target before writing anything.
+    plan = []
+    for pattern, old, new in TARGETS:
+        matches = sorted(glob.glob(os.path.join(root, pattern)))
+        if len(matches) != 1:
+            fail(
+                f"{pattern}: expected 1 file under {root}, found "
+                f"{len(matches)} — refusing to touch anything"
+            )
+        plan.append((matches[0], *classify(matches[0], old, new)))
+    # Phase 2: stage every change to a temp sibling in the same directory
+    # (mode preserved). Any staging failure aborts before the first target
+    # changes and cleans up.
+    staged = {}
+    try:
+        for path, action, content, _, _ in plan:
+            if action == "skip":
+                continue
+            fd, tmp = tempfile.mkstemp(
+                dir=os.path.dirname(path), prefix=f".{os.path.basename(path)}."
+            )
+            staged[path] = tmp
+            with os.fdopen(fd, "w", encoding="utf8") as f:
+                f.write(content)
+            os.chmod(tmp, os.stat(path).st_mode)
+    except OSError as e:
+        for tmp in staged.values():
+            os.unlink(tmp)
+        fail(f"staging failed: {e} — no target was modified")
+    # Phase 3: per-file atomic replace. On failure: drop remaining staged
+    # temps, roll back completed replacements in reverse from the preserved
+    # originals, and report concisely (no traceback).
+    done = []
+    for path, action, _, orig, mode in plan:
+        if action == "skip":
+            print(f"already patched: {path}")
+            continue
+        tmp = staged[path]
+        try:
+            os.replace(tmp, path)
+        except OSError as e:
+            for leftover in staged.values():
+                try:
+                    os.unlink(leftover)
+                except OSError:
+                    pass
+            unrolled = []
+            for rpath, rorig, rmode in reversed(done):
+                try:
+                    fd, rtmp = tempfile.mkstemp(
+                        dir=os.path.dirname(rpath), prefix=f".{os.path.basename(rpath)}."
+                    )
+                    with os.fdopen(fd, "w", encoding="utf8") as f:
+                        f.write(rorig)
+                    os.chmod(rtmp, rmode)
+                    os.replace(rtmp, rpath)
+                except OSError as re:
+                    unrolled.append(f"{rpath} ({re})")
+            print(f"error: replace failed for {path}: {e}", file=sys.stderr)
+            if unrolled:
+                print(
+                    "error: PARTIAL STATE — rollback failed for:\n  "
+                    + "\n  ".join(unrolled)
+                    + "\nrepair those paths manually, then re-run this script",
+                    file=sys.stderr,
+                )
+            else:
+                print(
+                    "rolled back all completed replacements; every target is unchanged",
+                    file=sys.stderr,
+                )
+            sys.exit(1)
+        del staged[path]
+        done.append((path, orig, mode))
+        print(f"patched: {path}")
+
+
+if __name__ == "__main__":
+    main()

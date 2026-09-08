@@ -9,6 +9,7 @@
 !scripts/sync-back.sh
 !scripts/validate.sh
 !scripts/sync-forks.sh
+!scripts/patch-pi-anthropic-gateway
 !manifest.json
 !package.json
 !tsconfig.json

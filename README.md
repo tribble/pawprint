@@ -55,6 +55,17 @@ scripts/validate.sh   # READ-ONLY audit: same/drift/missing per manifest file,
 Then re-run `setup.sh` to repair: files you changed locally are backed up,
 then restored to the print. `validate.sh` again should be green.
 
+After a `pi update`, the cf-aig-authorization gateway patch inside the
+npm-installed pi package is gone — re-apply it manually:
+
+```sh
+scripts/patch-pi-anthropic-gateway              # root from `mise which pi`
+scripts/patch-pi-anthropic-gateway --root PATH  # manual override
+```
+
+Idempotent (`patched:` / `already patched:` per file); it fails loudly and
+touches nothing if a future pi version changes the patched lines.
+
 ## Developing
 
 The repo has a dev side that never imprints (`tests/` lives outside
