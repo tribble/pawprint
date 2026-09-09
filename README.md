@@ -55,8 +55,12 @@ scripts/validate.sh   # READ-ONLY audit: same/drift/missing per manifest file,
 Then re-run `setup.sh` to repair: files you changed locally are backed up,
 then restored to the print. `validate.sh` again should be green.
 
-After a `pi update`, the cf-aig-authorization gateway patch inside the
-npm-installed pi package is gone — re-apply it manually:
+Cloudflare-routed Anthropic models failing with "credentials … expired" or
+"Credentials file not found"? Root cause is a stale Anthropic SDK profile in
+`~/.config/anthropic/` (left by `ant auth login`); the SDK auto-loads it because
+pi passes `apiKey: null` for header-authenticated gateways. Preferred fix is
+`rm -r ~/.config/anthropic` — stock pi then works. Only if that profile must
+stay, apply the gateway patch (it does not survive `pi update`):
 
 ```sh
 scripts/patch-pi-anthropic-gateway              # root from `mise which pi`
