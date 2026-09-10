@@ -14,13 +14,17 @@ const agentsReply = (agents: unknown) => ({
   stderr: "",
 });
 
-test("/fleet: sorts working<idle<done, icons, ~ for $HOME", async () => {
+const wsReply = (workspaces: unknown) => ({ code: 0, stdout: JSON.stringify({ result: { workspaces } }), stderr: "" });
+
+test("/fleet: sorts working<idle<done, icons, ~ for $HOME, owner from label", async () => {
   const pi = makePi({
-    execImpl: async () =>
-      agentsReply([
+    execImpl: async (_c: string, args: string[]) =>
+      args[0] === "workspace"
+        ? wsReply([{ workspace_id: "w1", label: "alpha ⟵ coord" }, { workspace_id: "w2", label: "mid" }])
+        : agentsReply([
         { name: "zeta", agent_status: "done", cwd: "/tmp/z" },
-        { name: "alpha", agent_status: "working", cwd: "/tmp/a", focused: true },
-        { name: "mid", agent_status: "idle", cwd: "/tmp/m" },
+        { name: "alpha", agent_status: "working", cwd: "/tmp/a", focused: true, workspace_id: "w1" },
+        { name: "mid", agent_status: "idle", cwd: "/tmp/m", workspace_id: "w2" },
       ]),
   });
   herdrFleet(pi);
@@ -29,9 +33,9 @@ test("/fleet: sorts working<idle<done, icons, ~ for $HOME", async () => {
   const lines = ctx.notes[0].msg.split("\n");
   assert.deepEqual(
     lines.map((l: string) => l.trim()),
-    ["→ ⚙ alpha  /tmp/a", "○ mid  /tmp/m", "✓ zeta  /tmp/z"],
+    ["→ ⚙ alpha  /tmp/a  [mine: coord]", "○ mid  /tmp/m  [yours]", "✓ zeta  /tmp/z  [yours]"],
   );
-  assert.deepEqual(pi.execCalls, [["herdr", "agent", "list"]]);
+  assert.deepEqual(pi.execCalls, [["herdr", "agent", "list"], ["herdr", "workspace", "list"]]);
 });
 
 test("/fleet: empty roster and herdr failure both notify", async () => {
@@ -59,10 +63,11 @@ test("/delegate: usage error without name+task", async () => {
 });
 
 test("/delegate: workspace → pane → agent start --name → prompt --wait (no settle; herdr ≥0.9)", async () => {
+  {
   const pi = makePi({
     execImpl: async (_c: string, args: string[]) => {
       if (args[0] === "workspace")
-        return { code: 0, stdout: JSON.stringify({ result: { root_pane: { pane_id: "p9" } } }), stderr: "" };
+        return { code: 0, stdout: JSON.stringify({ result: { workspace_id: "w42", root_pane: { pane_id: "p9" } } }), stderr: "" };
       return { code: 0, stdout: JSON.stringify({ result: {} }), stderr: "" };
     },
   });
@@ -70,13 +75,24 @@ test("/delegate: workspace → pane → agent start --name → prompt --wait (no
   const ctx = makeCtx();
   await pi.commands.delegate.handler("scout fix the flake", ctx);
   assert.deepEqual(pi.execCalls, [
-    ["herdr", "workspace", "create", "--cwd", process.cwd(), "--label", "scout"],
+    // label carries ownership visibly; agent/session name stays bare
+    ["herdr", "workspace", "create", "--cwd", process.cwd(), "--label", "scout ⟵ coordinator-test", "--env", "PI_SPAWNED_BY=coordinator-test"],
     // --name: session name = herdr agent name = intercom address
     ["herdr", "agent", "start", "scout", "--kind", "pi", "--pane", "p9", "--timeout", "60000", "--", "--name", "scout", "--thinking", "max"],
     ["herdr", "agent", "prompt", "scout", "fix the flake", "--wait"],
   ]);
   assert.ok(ctx.notes.at(-1).msg.includes("🐑 scout delegated"));
+  }
 });
+
+test("/ws de-dupes against base names even when labels carry an owner suffix", () =>
+  withWsConfig({ workos: "~/work/workos" }, async () => {
+    const pi = makePi({ execImpl: wsExec(["fix-flaky-tests ⟵ someone"]) });
+    herdrFleet(pi);
+    await pi.commands.ws.handler("workos fix-flaky-tests", makeCtx());
+    assert.equal(pi.execCalls[1][6], "fix-flaky-tests-2");
+  }));
+
 
 test("/delegate: workspace without pane_id → error notify", async () => {
   const pi = makePi({

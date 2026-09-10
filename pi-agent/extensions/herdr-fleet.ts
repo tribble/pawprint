@@ -1,5 +1,5 @@
 // herdr-fleet.ts — herdr-native fleet UX.
-//   /fleet                  compact status surface: named agents + live state (deterministic, zero-token)
+//   /fleet                  compact status surface: named agents + live state + owner [mine]/[yours] (zero-token)
 //   /delegate <name> <task> spawn a named herdr workspace running pi, hand it the task
 //   /ws [repo|dir] <purpose> new focused workspace: dir from identifier or the model's read of the purpose; name from purpose
 // Delegated pane agents are first-class: they join intercom under their herdr name,
@@ -92,9 +92,17 @@ async function planWorkspace(pi: ExtensionAPI, ctx: any, args: string): Promise<
   return { name, dir };
 }
 
+// Ownership is visible, not hidden: /delegate labels its workspace "<name> ⟵ <spawner>".
+// Anything without the arrow (ws create, /ws, hand-made) is the user's. Rename the label to adopt.
+const OWNER_SEP = " ⟵ ";
+function ownerFromLabel(label: string | undefined): string | undefined {
+  const i = label?.indexOf(OWNER_SEP) ?? -1;
+  return i === -1 ? undefined : label!.slice(i + OWNER_SEP.length);
+}
+
 async function uniqueLabel(pi: ExtensionAPI, name: string): Promise<string> {
   const res = (await herdr(pi, ["workspace", "list"])) as { workspaces?: { label?: string }[] };
-  const taken = new Set((res.workspaces ?? []).map((w) => w.label));
+  const taken = new Set((res.workspaces ?? []).map((w) => w.label?.split(OWNER_SEP)[0]));
   let label = name;
   for (let i = 2; taken.has(label); i++) label = `${name}-${i}`;
   return label;
@@ -109,6 +117,7 @@ interface FleetAgent {
   pane_id?: string;
   focused?: boolean;
   agent_status?: string;
+  workspace_id?: string;
 }
 
 export default function herdrFleet(pi: ExtensionAPI) {
@@ -125,10 +134,14 @@ export default function herdrFleet(pi: ExtensionAPI) {
         agents.sort(
           (a, b) => (RANK[a.agent_status ?? ""] ?? 3) - (RANK[b.agent_status ?? ""] ?? 3)
         );
+        const wsList = (await herdr(pi, ["workspace", "list"])) as { workspaces?: { workspace_id?: string; label?: string }[] };
+        const labels = new Map((wsList.workspaces ?? []).map((w) => [w.workspace_id, w.label]));
         const lines = agents.map((a) => {
           const name = a.name ?? a.cwd?.split("/").pop() ?? a.pane_id ?? "?";
           const cwd = (a.cwd ?? "").replace(process.env.HOME ?? "", "~");
-          return `${a.focused ? "→" : " "} ${ICON[a.agent_status ?? ""] ?? "?"} ${name}  ${cwd}`;
+          const spawner = ownerFromLabel(labels.get(a.workspace_id));
+          const owner = spawner ? `[mine: ${spawner}]` : "[yours]";
+          return `${a.focused ? "→" : " "} ${ICON[a.agent_status ?? ""] ?? "?"} ${name}  ${cwd}  ${owner}`;
         });
         ctx.ui.notify(lines.join("\n"), "info");
       } catch (e) {
@@ -150,7 +163,9 @@ export default function herdrFleet(pi: ExtensionAPI) {
       }
       try {
         ctx.ui.notify(`Spawning ${name}…`, "info");
-        const ws = await herdr(pi, ["workspace", "create", "--cwd", process.cwd(), "--label", name]);
+        const me = pi.getSessionName() ?? "agent";
+        // Label carries ownership (visible in the sidebar); env lets the child know its coordinator.
+        const ws = await herdr(pi, ["workspace", "create", "--cwd", process.cwd(), "--label", `${name}${OWNER_SEP}${me}`, "--env", `PI_SPAWNED_BY=${me}`]);
         const paneId = findPaneId(ws);
         if (!paneId) throw new Error("workspace created but no pane_id in response");
         // --name makes session name = herdr name = intercom address (same contract as `ws create`).

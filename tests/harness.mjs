@@ -35,6 +35,7 @@ export function makePi(overrides = {}) {
     execCalls,
     state,
     commands: {},
+    getSessionName: () => overrides.sessionName ?? "coordinator-test",
     flags: {},
     shortcuts: {},
     events: makeEvents(),
