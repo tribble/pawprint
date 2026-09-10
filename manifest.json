@@ -21,6 +21,7 @@
     "settings.json",
     "tsconfig.json",
     "bin/agent-costs",
+    "cloak.json",
     "themes/calm-tribble.json"
   ],
   "tools": [

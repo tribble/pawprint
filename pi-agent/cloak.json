@@ -1,0 +1,32 @@
+{
+  "enabled": true,
+  "cloakCharacter": "*",
+  "cloakLength": 24,
+  "tryAllPatterns": true,
+  "patterns": [
+    {
+      "filePattern": ["**/.env", "**/.env.*"],
+      "cloakPattern": { "pattern": "^([A-Z0-9_]+)=(.+)$", "replace": "$1=" }
+    },
+    {
+      "filePattern": ["~/.pi/agent/auth.json", "~/.pi/agent/**/auth.json"],
+      "cloakPattern": { "pattern": "(\"(?:key|apiKey|access|refresh|token|accessToken|refreshToken|client_secret)\"\\s*:\\s*\")([^\"]+)", "replace": "$1" }
+    },
+    {
+      "filePattern": ["~/.config/**/credentials*", "~/.config/**/credentials/**", "~/.aws/credentials", "~/.netrc", "~/.claude/.credentials.json"],
+      "cloakPattern": { "pattern": "(\"?(?:access_token|refresh_token|id_token|aws_secret_access_key|aws_session_token|password|client_secret)\"?\\s*[:=]\\s*\"?)([^\"\\s,]+)", "replace": "$1" }
+    },
+    {
+      "filePattern": "~/.config/gh/hosts.yml",
+      "cloakPattern": { "pattern": "(oauth_token:\\s*)(\\S+)", "replace": "$1" }
+    },
+    {
+      "filePattern": ["**/*.pem", "**/*.key", "~/.ssh/id_*"],
+      "cloakPattern": { "pattern": "^(?!-----)(.+)$", "replace": "" }
+    },
+    {
+      "filePattern": "**/*",
+      "cloakPattern": { "pattern": "\\b(sk-ant-[a-zA-Z0-9_-]{8}|sk-[a-zA-Z0-9]{8}|ghp_[A-Za-z0-9]{4}|github_pat_[A-Za-z0-9]{4}|xox[abpr]-[A-Za-z0-9]{4}|AKIA[A-Z0-9]{4})[A-Za-z0-9_-]+", "replace": "$1" }
+    }
+  ]
+}
