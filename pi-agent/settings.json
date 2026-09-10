@@ -28,7 +28,6 @@
     "cloudflare-ai-gateway/accounts/fireworks/models/minimax-m3"
   ],
   "packages": [
-    "git:github.com/tribble/pi-subagents",
     {
       "source": "git:github.com/fitchmultz/pi-fitch-kit@3e04ba54d498171abaa9e89a588b6dd9faa1ff68",
       "extensions": [
@@ -55,7 +54,8 @@
     "git:github.com/tribble/pi-mcp-adapter",
     "git:github.com/fitchmultz/pi-agent-skills",
     "git:github.com/DietrichGebert/ponytail",
-    "git:github.com/fitchmultz/pi-agent-browser-native"
+    "git:github.com/fitchmultz/pi-agent-browser-native",
+    "git:github.com/fitchmultz/pi-subagents@84614b3"
   ],
   "subagents": {
     "agentOverrides": {

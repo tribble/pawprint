@@ -12,7 +12,7 @@ MERGE=0
 [ "${1:-}" = "--merge" ] && MERGE=1
 
 BEHIND_ANY=0
-for pkg in pi-mcp-adapter pi-subagents; do
+for pkg in pi-mcp-adapter; do  # pi-subagents fork retired 2026-09-09 (argv fix merged upstream; pinned @84614b3 — HEAD needs the fitchmultz/pi fork)
   d="$HOME/.pi/agent/git/github.com/tribble/$pkg"
   [ -d "$d" ] || { echo "$pkg: clone missing at $d"; BEHIND_ANY=1; continue; }
   git -C "$d" fetch -q upstream
