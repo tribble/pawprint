@@ -9,7 +9,10 @@ export default function herdrAgentName(pi: ExtensionAPI) {
   if (process.env.HERDR_ENV !== "1" || !paneId) return;
 
   let last: string | undefined;
-  const sync = async () => {
+  let hasUI = false;
+  const sync = async (_e: unknown, ctx: { hasUI?: boolean }) => {
+    hasUI ||= ctx.hasUI === true;
+    if (!hasUI) return; // `pi --print` children inherit HERDR_PANE_ID; only the pane's own TUI may rename it
     const name = pi.getSessionName()?.trim();
     if (!name || name === last) return;
     last = name;
