@@ -1,6 +1,6 @@
 // herdr-fleet.ts: /fleet renders sorted live agent status; /delegate spawns
 // a named workspace and prompts it. All herdr calls are fake pi.exec records.
-import { test, mock } from "node:test";
+import { test } from "node:test";
 import assert from "node:assert/strict";
 import { makePi, makeCtx } from "./harness.mjs";
 import herdrFleet from "../pi-agent/extensions/herdr-fleet.ts";
@@ -55,35 +55,24 @@ test("/delegate: usage error without name+task", async () => {
   assert.equal(pi.execCalls.length, 0);
 });
 
-test("/delegate: workspace → pane → agent start → settle → prompt --wait", async () => {
-  mock.timers.enable({ apis: ["setTimeout"] });
-  try {
-    const pi = makePi({
-      execImpl: async (_c: string, args: string[]) => {
-        if (args[0] === "workspace")
-          return { code: 0, stdout: JSON.stringify({ result: { root_pane: { pane_id: "p9" } } }), stderr: "" };
-        return { code: 0, stdout: JSON.stringify({ result: {} }), stderr: "" };
-      },
-    });
-    herdrFleet(pi);
-    const ctx = makeCtx();
-    const done = pi.commands.delegate.handler("scout fix the flake", ctx);
-    // the 5s settle timer is scheduled only after two awaited herdr calls;
-    // flush microtasks, then tick past it in slices so late scheduling can't strand us
-    for (let i = 0; i < 12; i++) {
-      await new Promise((r) => setImmediate(r));
-      mock.timers.tick(1000);
-    }
-    await done;
-    assert.deepEqual(pi.execCalls, [
-      ["herdr", "workspace", "create", "--cwd", process.cwd(), "--label", "scout"],
-      ["herdr", "agent", "start", "scout", "--kind", "pi", "--pane", "p9", "--timeout", "60000", "--", "--thinking", "max"],
-      ["herdr", "agent", "prompt", "scout", "fix the flake", "--wait"],
-    ]);
-    assert.ok(ctx.notes.at(-1).msg.includes("🐑 scout delegated"));
-  } finally {
-    mock.timers.reset();
-  }
+test("/delegate: workspace → pane → agent start --name → prompt --wait (no settle; herdr ≥0.9)", async () => {
+  const pi = makePi({
+    execImpl: async (_c: string, args: string[]) => {
+      if (args[0] === "workspace")
+        return { code: 0, stdout: JSON.stringify({ result: { root_pane: { pane_id: "p9" } } }), stderr: "" };
+      return { code: 0, stdout: JSON.stringify({ result: {} }), stderr: "" };
+    },
+  });
+  herdrFleet(pi);
+  const ctx = makeCtx();
+  await pi.commands.delegate.handler("scout fix the flake", ctx);
+  assert.deepEqual(pi.execCalls, [
+    ["herdr", "workspace", "create", "--cwd", process.cwd(), "--label", "scout"],
+    // --name: session name = herdr agent name = intercom address
+    ["herdr", "agent", "start", "scout", "--kind", "pi", "--pane", "p9", "--timeout", "60000", "--", "--name", "scout", "--thinking", "max"],
+    ["herdr", "agent", "prompt", "scout", "fix the flake", "--wait"],
+  ]);
+  assert.ok(ctx.notes.at(-1).msg.includes("🐑 scout delegated"));
 });
 
 test("/delegate: workspace without pane_id → error notify", async () => {
