@@ -2,6 +2,9 @@
 // a named workspace and prompts it. All herdr calls are fake pi.exec records.
 import { test } from "node:test";
 import assert from "node:assert/strict";
+import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { makePi, makeCtx } from "./harness.mjs";
 import herdrFleet from "../pi-agent/extensions/herdr-fleet.ts";
 
@@ -94,43 +97,76 @@ const wsExec = (existing: string[]) => async (_c: string, args: string[]) => {
   return { code: 0, stdout: JSON.stringify({ result: {} }), stderr: "" };
 };
 
-test("/ws <slug>: skips the model, de-dupes the label, starts pi --name (no prompt)", async () => {
-  const pi = makePi({ execImpl: wsExec(["fix-flaky-tests"]) });
-  herdrFleet(pi);
-  const ctx = makeCtx();
-  await pi.commands.ws.handler("fix-flaky-tests", ctx);
-  assert.deepEqual(pi.execCalls, [
-    ["herdr", "workspace", "list"],
-    ["herdr", "workspace", "create", "--cwd", process.cwd(), "--label", "fix-flaky-tests-2"],
-    ["herdr", "agent", "start", "fix-flaky-tests-2", "--kind", "pi", "--pane", "p3", "--timeout", "60000", "--", "--name", "fix-flaky-tests-2"],
-  ]);
-  assert.ok(ctx.notes.at(-1).msg.includes("fix-flaky-tests-2"));
-});
+// /ws reads ~/.pi/agent/configs/ws.json at call time; point HOME at a scratch dir with a known map.
+function withWsConfig(repos: Record<string, string> | null, fn: () => Promise<void>) {
+  const home = mkdtempSync(join(tmpdir(), "ws-home-"));
+  const prev = process.env.HOME;
+  process.env.HOME = home;
+  if (repos) {
+    mkdirSync(join(home, ".pi/agent/configs"), { recursive: true });
+    writeFileSync(join(home, ".pi/agent/configs/ws.json"), JSON.stringify({ repos }));
+  }
+  return fn().finally(() => {
+    process.env.HOME = prev;
+    rmSync(home, { recursive: true, force: true });
+  });
+}
 
-test("/ws <prose>: asks the session model for the name, slugifies its reply", async () => {
-  const pi = makePi({ execImpl: wsExec([]) });
-  herdrFleet(pi);
-  const ctx = makeCtx();
-  ctx.modelRegistry = {
-    getApiKeyAndHeaders: async () => ({ ok: true, headers: { h: "1" }, env: { E: "x" } }),
-    getProvider: () => ({
-      stream: (_m: unknown, req: any, opts: any) => {
-        assert.equal(req.systemPrompt.includes("Never the repository name"), true);
-        assert.deepEqual(opts.env, { E: "x" });
-        return { result: async () => ({ stopReason: "stop", content: [{ type: "text", text: " Fix Flaky Mac Tests.\n" }] }) };
-      },
-    }),
-  };
-  await pi.commands.ws.handler("the mac tests keep flaking in CI", ctx);
-  assert.equal(pi.execCalls[1][6], "fix-flaky-mac-tests");
-});
+test("/ws <repo-id> <slug>: explicit id + slug → no model call, de-duped label, pi --name in that dir", () =>
+  withWsConfig({ workos: "~/work/workos" }, async () => {
+    const pi = makePi({ execImpl: wsExec(["fix-flaky-tests"]) });
+    herdrFleet(pi);
+    const ctx = makeCtx();
+    await pi.commands.ws.handler("workos fix-flaky-tests", ctx);
+    assert.deepEqual(pi.execCalls, [
+      ["herdr", "workspace", "list"],
+      ["herdr", "workspace", "create", "--cwd", `${process.env.HOME}/work/workos`, "--label", "fix-flaky-tests-2"],
+      ["herdr", "agent", "start", "fix-flaky-tests-2", "--kind", "pi", "--pane", "p3", "--timeout", "60000", "--", "--name", "fix-flaky-tests-2"],
+    ]);
+  }));
 
-test("/ws with no args and no user messages → error, nothing created", async () => {
-  const pi = makePi({ execImpl: wsExec([]) });
-  herdrFleet(pi);
-  const ctx = makeCtx();
-  ctx.sessionManager = { getBranch: () => [] };
-  await pi.commands.ws.handler("", ctx);
-  assert.equal(ctx.notes[0].level, "error");
-  assert.equal(pi.execCalls.length, 0);
-});
+test("/ws <prose>: model picks name AND repo from the configured ids only", () =>
+  withWsConfig({ workos: "~/work/workos", pawprint: "~/work/pawprint" }, async () => {
+    const pi = makePi({ execImpl: wsExec([]) });
+    herdrFleet(pi);
+    const ctx = makeCtx();
+    ctx.modelRegistry = {
+      getApiKeyAndHeaders: async () => ({ ok: true, headers: { h: "1" }, env: { E: "x" } }),
+      getProvider: () => ({
+        stream: (_m: unknown, req: any, opts: any) => {
+          assert.ok(req.systemPrompt.includes("workos, pawprint"));
+          assert.deepEqual(opts.env, { E: "x" });
+          return { result: async () => ({ stopReason: "stop", content: [{ type: "text", text: 'Sure:\n{"name": "Fix Flaky Mac Tests", "repo": "workos"}' }] }) };
+        },
+      }),
+    };
+    await pi.commands.ws.handler("the mac tests keep flaking in CI", ctx);
+    assert.equal(pi.execCalls[1][4], `${process.env.HOME}/work/workos`);
+    assert.equal(pi.execCalls[1][6], "fix-flaky-mac-tests");
+  }));
+
+test("/ws: model can't place it / unknown repo → error, nothing created", () =>
+  withWsConfig({ workos: "~/work/workos" }, async () => {
+    const pi = makePi({ execImpl: wsExec([]) });
+    herdrFleet(pi);
+    const ctx = makeCtx();
+    ctx.modelRegistry = {
+      getApiKeyAndHeaders: async () => ({ ok: true }),
+      getProvider: () => ({ stream: () => ({ result: async () => ({ stopReason: "stop", content: [{ type: "text", text: '{"name":"x-y","repo":"atlas"}' }] }) }) }),
+    };
+    await pi.commands.ws.handler("something vague", ctx);
+    assert.equal(ctx.notes[0].level, "error");
+    assert.ok(ctx.notes[0].msg.includes("can't tell which repo"));
+    assert.equal(pi.execCalls.length, 0);
+  }));
+
+test("/ws with no config and no dir → error naming the config file; no scan of ~/work", () =>
+  withWsConfig(null, async () => {
+    const pi = makePi({ execImpl: wsExec([]) });
+    herdrFleet(pi);
+    const ctx = makeCtx();
+    await pi.commands.ws.handler("fix the thing", ctx);
+    assert.equal(ctx.notes[0].level, "error");
+    assert.ok(ctx.notes[0].msg.includes("configs/ws.json"));
+    assert.equal(pi.execCalls.length, 0);
+  }));

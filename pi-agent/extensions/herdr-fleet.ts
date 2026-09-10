@@ -1,10 +1,12 @@
 // herdr-fleet.ts — herdr-native fleet UX.
 //   /fleet                  compact status surface: named agents + live state (deterministic, zero-token)
 //   /delegate <name> <task> spawn a named herdr workspace running pi, hand it the task
-//   /ws [purpose]           new focused workspace here, named from purpose/context (not the repo)
+//   /ws [repo|dir] <purpose> new focused workspace: dir from identifier or the model's read of the purpose; name from purpose
 // Delegated pane agents are first-class: they join intercom under their herdr name,
 // and you talk to them by focusing their pane (herdr agent focus <name>).
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
+import { existsSync, readFileSync, statSync } from "node:fs";
+import { resolve } from "node:path";
 
 async function herdr(pi: ExtensionAPI, args: string[]): Promise<unknown> {
   const r = await pi.exec("herdr", args);
@@ -25,13 +27,34 @@ function findPaneId(x: unknown): string | null {
   return null;
 }
 
-const NAME_RULE =
-  "Name a coding-agent workspace: 2-4 short lowercase terms joined by hyphens describing the durable purpose of the work (e.g. fix-auth-refresh, ci-test-selection). Never the repository name. Reply with the name only.";
+// Explicit repo map, never scanned: ~/.pi/agent/configs/ws.json → {"repos": {"workos": "~/work/workos", ...}}
+const wsConfigPath = () => `${process.env.HOME}/.pi/agent/configs/ws.json`;
+function repoMap(): Record<string, string> {
+  if (!existsSync(wsConfigPath())) return {};
+  const raw = (JSON.parse(readFileSync(wsConfigPath(), "utf8")) as { repos?: Record<string, string> }).repos ?? {};
+  return Object.fromEntries(Object.entries(raw).map(([k, v]) => [k, v.replace(/^~(?=$|\/)/, process.env.HOME ?? "~")]));
+}
 
-// Model-derived name, same quality bar as name_session. `hint` wins; otherwise the last few user
-// messages of this session are the context.
-async function suggestName(pi: ExtensionAPI, ctx: any, hint: string): Promise<string> {
-  if (/^[a-z0-9][a-z0-9-]{1,40}$/.test(hint)) return hint; // already a slug: manual override
+const PLAN_RULE = (repos: string[]) =>
+  `You plan a coding-agent workspace. Reply with JSON only: {"name": string, "repo": string|null}.
+name: 2-4 short lowercase terms joined by hyphens describing the durable purpose of the work (e.g. fix-auth-refresh, ci-test-selection). Never a repository name.
+repo: which of these repositories the work belongs to, or null if you cannot tell: ${repos.join(", ")}.`;
+
+interface WsPlan { name: string; dir: string }
+
+// Directory from an explicit identifier (path or configured repo id as first word) or, failing that,
+// the session model's read of the purpose. Name is model-derived either way unless already a slug.
+async function planWorkspace(pi: ExtensionAPI, ctx: any, args: string): Promise<WsPlan> {
+  const [first = "", ...restWords] = args.split(/\s+/).filter(Boolean);
+  let dir: string | undefined;
+  let hint = args;
+  const explicit = first.replace(/^~(?=$|\/)/, process.env.HOME ?? "~");
+  const repos = repoMap();
+  if (first && existsSync(explicit) && statSync(explicit).isDirectory()) dir = resolve(explicit);
+  else if (first && repos[first]) dir = repos[first];
+  if (dir) hint = restWords.join(" ");
+  if (dir && /^[a-z0-9][a-z0-9-]{1,40}$/.test(hint)) return { name: hint, dir }; // slug + dir: no model call
+
   let source = hint;
   if (!source) {
     const users = ctx.sessionManager
@@ -41,7 +64,9 @@ async function suggestName(pi: ExtensionAPI, ctx: any, hint: string): Promise<st
       .map((e: any) => (typeof e.message.content === "string" ? e.message.content : e.message.content.filter((c: any) => c.type === "text").map((c: any) => c.text).join("\n")));
     source = users.join("\n---\n").slice(-4000);
   }
-  if (!source.trim()) throw new Error("nothing to name from — /ws <purpose>");
+  if (!source.trim()) throw new Error("nothing to plan from — /ws [repo|dir] <purpose>");
+  const repoIds = Object.keys(repos);
+  if (!dir && repoIds.length === 0) throw new Error(`no repos configured — add {"repos": {"<id>": "<path>"}} to ${wsConfigPath()} or /ws <dir> <purpose>`);
   const model = ctx.model;
   const auth = await ctx.modelRegistry.getApiKeyAndHeaders(model);
   if (!auth.ok) throw new Error(auth.error);
@@ -49,15 +74,22 @@ async function suggestName(pi: ExtensionAPI, ctx: any, hint: string): Promise<st
     .getProvider(model.provider)
     .stream(
       model,
-      { systemPrompt: NAME_RULE, messages: [{ role: "user", content: [{ type: "text", text: source }], timestamp: Date.now() }] },
+      { systemPrompt: PLAN_RULE(repoIds), messages: [{ role: "user", content: [{ type: "text", text: source }], timestamp: Date.now() }] },
       { apiKey: auth.apiKey, headers: auth.headers, env: auth.env, reasoning: "low" }
     )
     .result();
-  if (r.stopReason === "error") throw new Error(r.errorMessage ?? "naming call failed");
+  if (r.stopReason === "error") throw new Error(r.errorMessage ?? "planning call failed");
   const text = r.content.filter((c: any) => c.type === "text").map((c: any) => c.text).join("");
-  const slug = text.trim().toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 40);
-  if (!slug) throw new Error(`model returned no usable name: ${JSON.stringify(text)}`);
-  return slug;
+  const json = text.match(/\{[\s\S]*\}/)?.[0];
+  if (!json) throw new Error(`model returned no plan: ${JSON.stringify(text)}`);
+  const plan = JSON.parse(json) as { name?: string; repo?: string | null };
+  const name = String(plan.name ?? "").toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 40);
+  if (!name) throw new Error(`model returned no usable name: ${json}`);
+  if (!dir) {
+    if (!plan.repo || !repos[plan.repo]) throw new Error(`can't tell which repo — /ws <repo> ${hint}`);
+    dir = repos[plan.repo];
+  }
+  return { name, dir };
 }
 
 async function uniqueLabel(pi: ExtensionAPI, name: string): Promise<string> {
@@ -137,15 +169,16 @@ export default function herdrFleet(pi: ExtensionAPI) {
 
   pi.registerCommand("ws", {
     description:
-      "New focused herdr workspace in this directory running pi, named from <purpose> (or this session's recent context): /ws [purpose]",
+      "New focused herdr workspace running pi: /ws [repo|dir] <purpose> — directory from the identifier or inferred from the purpose (repos listed in configs/ws.json); name from the purpose (or this session's recent context)",
     handler: async (args, ctx) => {
       try {
-        const name = await uniqueLabel(pi, await suggestName(pi, ctx, args.trim()));
-        const ws = await herdr(pi, ["workspace", "create", "--cwd", process.cwd(), "--label", name]);
+        const plan = await planWorkspace(pi, ctx, args.trim());
+        const name = await uniqueLabel(pi, plan.name);
+        const ws = await herdr(pi, ["workspace", "create", "--cwd", plan.dir, "--label", name]);
         const paneId = findPaneId(ws);
         if (!paneId) throw new Error("workspace created but no pane_id in response");
         await herdr(pi, ["agent", "start", name, "--kind", "pi", "--pane", paneId, "--timeout", "60000", "--", "--name", name]);
-        ctx.ui.notify(`🐑 ${name} — workspace + pi ready (focused).`, "info");
+        ctx.ui.notify(`🐑 ${name} — pi ready in ${plan.dir.replace(process.env.HOME ?? "", "~")} (focused).`, "info");
       } catch (e) {
         ctx.ui.notify(`ws: ${e instanceof Error ? e.message : String(e)}`, "error");
       }
