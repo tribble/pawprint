@@ -56,7 +56,6 @@
     "git:github.com/fitchmultz/pi-subagents@84614b3",
     "npm:@nicknisi/pi-cloak",
     "npm:@nicknisi/pi-answer",
-    "npm:@nicknisi/pi-btw",
     "git:github.com/fitchmultz/pi-mcp-adapter"
   ],
   "subagents": {

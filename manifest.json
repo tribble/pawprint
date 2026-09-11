@@ -7,6 +7,7 @@
     "agents/scout-kimi.md",
     "agents/worker-kimi.md",
     "extensions/auto-update.ts",
+    "extensions/btw.ts",
     "extensions/compaction-fallback.ts",
     "extensions/done.ts",
     "extensions/herdr-agent-name.ts",
