@@ -4,7 +4,7 @@
 # (presence only, never values). Exit non-zero on any mismatch.
 # Usage: validate.sh [--target DIR]   (default ~/.pi/agent)
 set -uo pipefail
-cd "$(dirname "$0")/.."
+cd "$(dirname "$0")/.." || exit 1
 
 target="$HOME/.pi/agent"
 if [ "${1:-}" = "--target" ]; then target="$2"; fi

@@ -25,7 +25,7 @@ function validate(t: string, env: NodeJS.ProcessEnv) {
 }
 
 test("fresh imprint → validate green, exit 0", () => {
-  const t = mkdtempSync("pawprint-v1-");
+  const t = mkdtempSync(join(tmpdir(), "pawprint-v1-"));
   imprint(t);
   const r = validate(t, ENV_OK);
   assert.equal(r.status, 0, r.stderr + r.stdout);
@@ -35,7 +35,7 @@ test("fresh imprint → validate green, exit 0", () => {
 });
 
 test("one drifted file → validate fails naming exactly that file", () => {
-  const t = mkdtempSync("pawprint-v2-");
+  const t = mkdtempSync(join(tmpdir(), "pawprint-v2-"));
   imprint(t);
   writeFileSync(join(t, "settings.json"), readFileSync(join(t, "settings.json")) + "\n");
   const r = validate(t, ENV_OK);
@@ -46,7 +46,7 @@ test("one drifted file → validate fails naming exactly that file", () => {
 });
 
 test("missing managed file → reported as missing, exit 1", () => {
-  const t = mkdtempSync("pawprint-v3-");
+  const t = mkdtempSync(join(tmpdir(), "pawprint-v3-"));
   imprint(t);
   execFileSync("rm", [join(t, "mise.toml")]);
   const r = validate(t, ENV_OK);
@@ -55,7 +55,7 @@ test("missing managed file → reported as missing, exit 1", () => {
 });
 
 test("missing env var → validate fails naming it (presence, never values)", () => {
-  const t = mkdtempSync("pawprint-v4-");
+  const t = mkdtempSync(join(tmpdir(), "pawprint-v4-"));
   imprint(t);
   const env: Record<string, string | undefined> = { ...ENV_OK };
   delete env.CLOUDFLARE_ACCOUNT_ID;

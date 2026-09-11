@@ -86,6 +86,7 @@ jq -r '.packages[] | if type == "object" then .source else . end' pi-agent/setti
 if [ -d /Applications/Ghostty.app ]; then
   mkdir -p "$HOME/Library/Application Support/com.mitchellh.ghostty"
   cp pi-agent/ghostty/config.ghostty "$HOME/Library/Application Support/com.mitchellh.ghostty/config.ghostty"
+  mkdir -p "$HOME/.config/ghostty"
   printf '# Canonical: pawprint repo pi-agent/ghostty/config.ghostty (installed by setup.sh)\n' \
     > "$HOME/.config/ghostty/config"
 fi
