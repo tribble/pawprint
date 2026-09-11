@@ -41,6 +41,14 @@ mise toolchain pin, `.pi-types` symlink, packages from the
 extension. Prereq: `CLOUDFLARE_ACCOUNT_ID` / `CLOUDFLARE_GATEWAY_ID` set in
 `~/.config/fish/conf.d` (see the dotfiles repo's `pi.fish.template`).
 
+pi itself never rides the cwd's toolchain: the machinery also writes a static
+`~/.local/bin/pi` launcher that execs the manifest's pinned node
+(`runtime.node`, mise-installed under `~/.local/share/mise/installs/node/`)
+directly, so a direnv/flake/.nvmrc directory can't swap the binary under pi —
+a nix-built node changed pi's code identity and triggered macOS Keychain
+prompt storms. To bump node: edit `runtime.node` in `manifest.json`,
+`mise install node@<version>`, re-run `setup.sh`.
+
 Manual steps after setup: `/login cloudflare-ai-gateway` (or env) ·
 `/mcp-auth` per OAuth server · `/trust` per project.
 
@@ -87,8 +95,9 @@ imprint matrix (`tests/imprint.test.ts`) drives `setup.sh`/`sync-back.sh`
 against mktemp scratch targets only — never the live dir — and is the
 regression net for script changes. The full 210k-file replica imprint stays
 a manual pre-ship gate. `npm run typecheck` needs the `.pi-types` symlink
-(`ln -s "$(npm root -g)/@earendil-works" .pi-types`; setup.sh's machinery
-creates the equivalent in the agent dir).
+(`ln -s "$HOME/.local/share/mise/installs/node/$(jq -r .runtime.node manifest.json)/lib/node_modules/@earendil-works" .pi-types`;
+setup.sh's machinery creates the equivalent in the agent dir, pointed at the
+same pinned install).
 
 ## Keeping a change (live → repo)
 
