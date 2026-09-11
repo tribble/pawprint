@@ -1,11 +1,12 @@
 // pr-review — coordinator-side pi extension.
 //
 // Registers a single tool, open_pr_review, that shells out to pr-review-open
-// (bash, ~/.local/bin) to split a herdr pane running Neovim + octo.nvim for an
-// interactive human PR review. All real logic (repo/PR resolution, herdr calls,
-// further coordinator resolution fallbacks) lives in pr-review-open; this file
-// stays thin and only resolves this session's own intercom identity, passing it
-// via the --coordinator argv flag. NOTE: pi.exec() (dist/core/exec.d.ts
+// (bash, ~/.local/bin) to open a new herdr tab in the current workspace running
+// Neovim + octo.nvim, so the human can read their own PR's diff and reviewer
+// comments. All real logic (repo/PR resolution, herdr calls, further
+// coordinator resolution fallbacks) lives in pr-review-open; this file stays
+// thin and only resolves this session's own intercom identity, passing it via
+// the --coordinator argv flag. NOTE: pi.exec() (dist/core/exec.d.ts
 // ExecOptions) only supports signal|timeout|cwd — an `env` option is silently
 // dropped and the child inherits pi's environment, so the coordinator must be
 // handed over via argv, not PR_REVIEW_COORDINATOR.
@@ -40,6 +41,7 @@ function deriveIntercomAlias(ctx: ExtensionContext): string | undefined {
 
 interface PrReviewOpenResult {
   ok?: boolean;
+  tab_id?: string;
   pane_id?: string;
   repo?: string;
   pr?: number;
@@ -51,14 +53,15 @@ export default function (pi: ExtensionAPI) {
     name: "open_pr_review",
     label: "Open PR Review",
     description:
-      "Open an interactive GitHub PR review layout in a herdr split pane running Neovim " +
-      "with octo.nvim (full GitHub review support). The human reviews the diff there and " +
-      "line/range-scoped comments are sent back to this session over pi-intercom as steer " +
-      "messages while they review -- this tool's result only confirms the pane opened.",
+      "Open a GitHub PR's diff in a new herdr tab in the current workspace, running Neovim " +
+      "with octo.nvim. For reviewing the user's OWN PRs (typically ones this session opened): " +
+      "the human reads the diff and reviewer comments there and sends line/range-scoped notes " +
+      "back to this session over pi-intercom as steer messages while they review -- this " +
+      "tool's result only confirms the tab opened.",
     promptSnippet:
-      "Open an interactive human PR review (herdr pane + Neovim/octo.nvim) for a GitHub PR",
+      "Open one of the user's own GitHub PRs for review in a new herdr tab (Neovim/octo.nvim)",
     promptGuidelines: [
-      "Use open_pr_review to hand a PR to the human for interactive review; their line comments arrive later as separate intercom steer messages, not in this tool's result.",
+      "Use open_pr_review to hand one of the user's own PRs to them for review in a herdr tab; their line notes arrive later as separate intercom steer messages, not in this tool's result.",
       "Use open_pr_review only when running inside herdr (HERDR_ENV=1); it shells out to pr-review-open, which fails fast with guidance otherwise.",
     ],
     parameters: Type.Object({
@@ -68,7 +71,7 @@ export default function (pi: ExtensionAPI) {
       }),
       focus: Type.Optional(
         Type.Boolean({
-          description: "Focus the new herdr pane instead of opening it in the background (default: false).",
+          description: "Focus the new herdr tab (default: true). Pass false to open it in the background.",
         }),
       ),
       coordinator: Type.Optional(
@@ -95,8 +98,8 @@ export default function (pi: ExtensionAPI) {
         // argv, not env: pi.exec() cannot forward env vars (see header note).
         args.push("--coordinator", coordinator);
       }
-      if (params.focus) {
-        args.push("--focus");
+      if (params.focus === false) {
+        args.push("--no-focus");
       }
       args.push(params.pr);
 
@@ -117,13 +120,14 @@ export default function (pi: ExtensionAPI) {
 
       const resolvedCoordinator = parsed.coordinator ?? coordinator ?? "(resolved by pr-review-open)";
       const text = parsed.pane_id
-        ? `Opened PR review for ${parsed.repo ?? "?"}#${parsed.pr ?? "?"} in herdr pane ${parsed.pane_id}. ` +
+        ? `Opened PR review for ${parsed.repo ?? "?"}#${parsed.pr ?? "?"} in herdr tab ${parsed.tab_id ?? "?"} (pane ${parsed.pane_id}). ` +
           `Review notes will arrive as pi-intercom steer messages from coordinator "${resolvedCoordinator}" as the human comments.`
         : `pr-review-open ran successfully but returned no pane id. Raw output: ${stdout || "(empty)"}`;
 
       return {
         content: [{ type: "text", text }],
         details: {
+          tabId: parsed.tab_id,
           paneId: parsed.pane_id,
           repo: parsed.repo,
           pr: parsed.pr,
