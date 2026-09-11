@@ -27,18 +27,25 @@ export async function needsReviewCount(file = STATE_FILE): Promise<number> {
 
 export default function prFooter(pi: ExtensionAPI) {
   let timer: ReturnType<typeof setInterval> | undefined;
+  let live = false; // false after session_shutdown: ctx is invalid from then on
 
   pi.on("session_start", async (_event, ctx) => {
     if (!ctx.hasUI) return;
+    live = true;
     const refresh = async () => {
       const n = await needsReviewCount();
+      if (!live) return; // shutdown raced the read (reload/new/resume/fork)
       ctx.ui.setStatus("prs", n > 0 ? `⚑ ${n} need${n === 1 ? "s" : ""} review` : undefined);
     };
     await refresh();
+    if (!live) return;
     clearInterval(timer);
     timer = setInterval(refresh, EVERY_MS);
     timer.unref?.();
   });
 
-  pi.on("session_shutdown", () => clearInterval(timer));
+  pi.on("session_shutdown", () => {
+    live = false;
+    clearInterval(timer);
+  });
 }

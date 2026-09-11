@@ -69,6 +69,10 @@ test("no UI → status untouched", async () => {
   assert.equal(status(), "stale");
 });
 
+// Only setInterval is faked; setTimeout stays real so `settle` lets an async
+// readFile actually finish before we assert on what it did (or didn't) do.
+const settle = () => new Promise((r) => setTimeout(r, 100));
+
 test("re-reads every 5 minutes; shutdown stops the timer", async () => {
   mock.timers.enable({ apis: ["setInterval"] });
   try {
@@ -77,10 +81,31 @@ test("re-reads every 5 minutes; shutdown stops the timer", async () => {
     mock.timers.tick(5 * 60_000);
     assert.ok(await eventually(() => status() === "⚑ 3 need review"), `got ${status()}`);
     await pi.emit("session_shutdown", { reason: "quit" }, ctx);
-    writeState(state([]));
+    writeState(state([])); // a refresh now would clear the status
     mock.timers.tick(5 * 60_000);
-    await new Promise((r) => setImmediate(r));
+    await settle();
     assert.equal(status(), "⚑ 3 need review", "no refresh after shutdown");
+  } finally {
+    mock.timers.reset();
+  }
+});
+
+test("refresh in flight at shutdown never touches the (now invalid) context", async () => {
+  mock.timers.enable({ apis: ["setInterval"] });
+  try {
+    const { pi, ctx } = await start(state([pr()]));
+    let dead = false;
+    let callsAfterShutdown = 0;
+    const real = ctx.ui.setStatus.bind(ctx.ui);
+    ctx.ui.setStatus = (k: string, v: string | undefined) => {
+      if (dead) callsAfterShutdown += 1;
+      else real(k, v);
+    };
+    mock.timers.tick(5 * 60_000); // starts a read that is still pending...
+    await pi.emit("session_shutdown", { reason: "reload" }, ctx); // ...when pi tears the ctx down
+    dead = true;
+    await settle();
+    assert.equal(callsAfterShutdown, 0);
   } finally {
     mock.timers.reset();
   }
