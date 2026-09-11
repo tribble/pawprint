@@ -1,11 +1,11 @@
 // pr-footer.ts: footer status "prs" mirrors pr-watch's cached needs_review
 // count (non-draft); zero, a missing file or malformed JSON clears it.
-import { test, mock } from "node:test";
+import { test } from "node:test";
 import assert from "node:assert/strict";
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
-import { makePi, makeCtx, eventually } from "./harness.mjs";
+import { makePi, makeCtx } from "./harness.mjs";
 
 const stateDir = mkdtempSync(join(tmpdir(), "pr-footer-"));
 process.env.PR_WATCH_STATE_DIR = stateDir;
@@ -69,44 +69,93 @@ test("no UI → status untouched", async () => {
   assert.equal(status(), "stale");
 });
 
-// Only setInterval is faked; setTimeout stays real so `settle` lets an async
-// readFile actually finish before we assert on what it did (or didn't) do.
-const settle = () => new Promise((r) => setTimeout(r, 100));
+// The extension calls the timer globals at run time, so spying on them lets a
+// test grab the interval callback (and await one tick to completion — no fake
+// clock, no sleeps) and see cancellation by handle instead of inferring it.
+function spyTimers() {
+  const realSet = globalThis.setInterval;
+  const realClear = globalThis.clearInterval;
+  const set: { fn: () => Promise<void>; ms: number; handle: unknown }[] = [];
+  const cleared: unknown[] = [];
+  globalThis.setInterval = ((fn: () => Promise<void>, ms: number) => {
+    const handle = realSet(fn, ms);
+    set.push({ fn, ms, handle });
+    return handle;
+  }) as typeof setInterval;
+  globalThis.clearInterval = ((handle: unknown) => {
+    cleared.push(handle);
+    realClear(handle as ReturnType<typeof setInterval>);
+  }) as typeof clearInterval;
+  return {
+    set,
+    cleared,
+    restore() {
+      globalThis.setInterval = realSet;
+      globalThis.clearInterval = realClear;
+      for (const s of set) realClear(s.handle as ReturnType<typeof setInterval>);
+    },
+  };
+}
 
-test("re-reads every 5 minutes; shutdown stops the timer", async () => {
-  mock.timers.enable({ apis: ["setInterval"] });
+// Records setStatus calls made after `dead` is flipped — in pi those would hit
+// an invalidated context and throw.
+function guardCtx(ctx: any) {
+  const real = ctx.ui.setStatus.bind(ctx.ui);
+  const g = { dead: false, callsAfterShutdown: 0 };
+  ctx.ui.setStatus = (k: string, v: string | undefined) => {
+    if (g.dead) g.callsAfterShutdown += 1;
+    else real(k, v);
+  };
+  return g;
+}
+
+test("re-reads every 5 minutes; shutdown clears the interval", async () => {
+  const timers = spyTimers();
   try {
     const { pi, ctx, status } = await start(state([pr()]));
+    assert.equal(timers.set.length, 1);
+    const { fn, ms, handle } = timers.set[0];
+    assert.equal(ms, 5 * 60_000);
     writeState(state([pr(), pr(), pr()]));
-    mock.timers.tick(5 * 60_000);
-    assert.ok(await eventually(() => status() === "⚑ 3 need review"), `got ${status()}`);
+    await fn(); // one interval tick, run to completion
+    assert.equal(status(), "⚑ 3 need review");
     await pi.emit("session_shutdown", { reason: "quit" }, ctx);
-    writeState(state([])); // a refresh now would clear the status
-    mock.timers.tick(5 * 60_000);
-    await settle();
-    assert.equal(status(), "⚑ 3 need review", "no refresh after shutdown");
+    assert.ok(timers.cleared.includes(handle), "interval handle cleared on shutdown");
   } finally {
-    mock.timers.reset();
+    timers.restore();
   }
 });
 
 test("refresh in flight at shutdown never touches the (now invalid) context", async () => {
-  mock.timers.enable({ apis: ["setInterval"] });
+  const timers = spyTimers();
   try {
     const { pi, ctx } = await start(state([pr()]));
-    let dead = false;
-    let callsAfterShutdown = 0;
-    const real = ctx.ui.setStatus.bind(ctx.ui);
-    ctx.ui.setStatus = (k: string, v: string | undefined) => {
-      if (dead) callsAfterShutdown += 1;
-      else real(k, v);
-    };
-    mock.timers.tick(5 * 60_000); // starts a read that is still pending...
+    const g = guardCtx(ctx);
+    const inFlight = timers.set[0].fn(); // the read is pending...
     await pi.emit("session_shutdown", { reason: "reload" }, ctx); // ...when pi tears the ctx down
-    dead = true;
-    await settle();
-    assert.equal(callsAfterShutdown, 0);
+    g.dead = true;
+    await inFlight;
+    assert.equal(g.callsAfterShutdown, 0);
   } finally {
-    mock.timers.reset();
+    timers.restore();
+  }
+});
+
+test("shutdown during the initial refresh: no ctx access, no interval scheduled", async () => {
+  const timers = spyTimers();
+  try {
+    writeState(state([pr()]));
+    const pi = makePi();
+    const ctx = makeCtx();
+    const g = guardCtx(ctx);
+    prFooter(pi);
+    const starting = pi.emit("session_start", { reason: "startup" }, ctx); // first read pending...
+    await pi.emit("session_shutdown", { reason: "reload" }, ctx);
+    g.dead = true;
+    await starting;
+    assert.equal(g.callsAfterShutdown, 0);
+    assert.equal(timers.set.length, 0, "no interval scheduled after shutdown");
+  } finally {
+    timers.restore();
   }
 });
