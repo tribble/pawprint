@@ -13,6 +13,7 @@
     "extensions/herdr-agent-name.ts",
     "extensions/herdr-agent-state.ts",
     "extensions/herdr-fleet.ts",
+    "extensions/pr-footer.ts",
     "extensions/pr-review.ts",
     "extensions/preset.ts",
     "ghostty/config.ghostty",
