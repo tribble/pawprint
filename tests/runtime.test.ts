@@ -11,7 +11,7 @@ import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
 import {
   mkdtempSync, mkdirSync, writeFileSync, readFileSync, chmodSync,
-  statSync, lstatSync, existsSync, symlinkSync, readlinkSync,
+  statSync, lstatSync, existsSync, symlinkSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -53,17 +53,10 @@ esac
   chmodSync(path, 0o755);
 }
 function makeStubs(bin: string, trace: string) {
-  for (const tool of ["pi", "gh", "agent-browser"]) {
+  for (const tool of ["pi", "npm", "gh", "agent-browser"]) {
     writeFileSync(join(bin, tool), `#!/bin/sh\necho "${tool} $@" >> "${trace}"\n`);
     chmodSync(join(bin, tool), 0o755);
   }
-  // foreign npm: its global root is a FOREIGN toolchain prefix — anything
-  // derived from `npm root -g` must never leak into the pinned setup
-  writeFileSync(join(bin, "npm"), `#!/bin/sh
-echo "npm $@" >> "${trace}"
-if [ "$1" = "root" ]; then echo "$HOME/foreign-node/lib/node_modules"; fi
-`);
-  chmodSync(join(bin, "npm"), 0o755);
   // fixture parts the mise stub copies into the fabricated node install
   writeFakePinnedNode(join(bin, "fixture-node"), trace);
   writeFileSync(join(bin, "fixture-npm-shim"), `#!/bin/sh
@@ -150,24 +143,6 @@ test("setup.sh writes the static pinned-node launcher, idempotently", () => {
   assert.equal(readFileSync(launcher, "utf8"), first, "idempotent: byte-identical on re-run");
 });
 
-test("regression: .pi-types resolves the PINNED install, never the foreign npm root", () => {
-  const { home, env } = rig(); // stub npm answers root -g with $HOME/foreign-node/...
-  const r = runSetup(env);
-  assert.equal(r.status, 0, r.stderr);
-  const nroot = join(home, ".local/share/mise/installs/node", PIN);
-  const link = join(home, ".pi/agent/.pi-types");
-  assert.equal(
-    readlinkSync(link),
-    join(nroot, "lib/node_modules/@earendil-works"),
-    "link target is the pinned scope dir (tsconfig consumes .pi-types/pi-coding-agent/...)",
-  );
-  assert.ok(
-    existsSync(join(link, "pi-coding-agent/dist/bundle/cli.js")),
-    "link target actually exists (follows through to the pinned bundle)",
-  );
-  assert.ok(!existsSync(join(home, "foreign-node")), "foreign npm root never materialized");
-});
-
 test("regression: pinned node missing and mise can't provide it → setup fails, no launcher", () => {
   const home = mktmp("pawprint-rt-nonode-");
   const bin = mktmp("pawprint-rt-nonode-bin-");
@@ -247,44 +222,6 @@ test("regression: existing launcher symlink is replaced, never followed", () => 
   assert.equal(readFileSync(victim, "utf8"), "SENTINEL-VICTIM\n", "symlink target untouched");
   assert.ok(!lstatSync(join(lbin, "pi")).isSymbolicLink(), "launcher is a regular file");
   assert.ok(readFileSync(join(lbin, "pi"), "utf8").includes("mise/installs/node/"));
-});
-
-test("regression: failing foreign PATH npm cannot abort setup before the launcher", () => {
-  const home = mktmp("pawprint-rt-legacy-");
-  const bin = mktmp("pawprint-rt-legacy-bin-");
-  const trace = join(bin, "TRACE");
-  // pinned runtime ALREADY present (node + bundle) → no bootstrap install needed
-  const nroot = join(home, ".local/share/mise/installs/node", PIN);
-  mkdirSync(join(nroot, "bin"), { recursive: true });
-  writeFakePinnedNode(join(nroot, "bin/node"), trace);
-  const pid = join(nroot, "lib/node_modules/@earendil-works/pi-coding-agent");
-  mkdirSync(join(pid, "dist/bundle"), { recursive: true });
-  writeFileSync(join(pid, "dist/bundle/cli.js"), "// fake bundle\n");
-  writeFileSync(join(pid, "package.json"), '{"engines":{"node":">=22.19.0"}}\n');
-  // foreign npm: any `install -g` fails (read-only prefix), traced; root -g works
-  writeFileSync(join(bin, "npm"), `#!/bin/sh
-echo "npm $@" >> "${trace}"
-case " $@ " in
-  *" install -g "*) echo FOREIGN_PREFIX_READ_ONLY >&2; exit 9;;
-esac
-if [ "$1" = "root" ]; then echo "${home}/npmroot"; fi
-`);
-  chmodSync(join(bin, "npm"), 0o755);
-  for (const tool of ["mise", "gh", "agent-browser"]) {
-    writeFileSync(join(bin, tool), `#!/bin/sh\necho "${tool} $@" >> "${trace}"\n`);
-    chmodSync(join(bin, tool), 0o755);
-  }
-  // crucially NO pi on PATH: minimal PATH (jq is /usr/bin/jq); the deleted
-  // legacy line would have run the failing npm install and killed setup here
-  const env = { ...buildEnv(home, bin), PATH: `${bin}:/usr/bin:/bin` };
-  const r = runSetup(env);
-  assert.equal(r.status, 0, r.stderr);
-  assert.ok(existsSync(join(home, ".local/bin/pi")), "launcher written");
-  const t = readFileSync(trace, "utf8");
-  assert.ok(
-    !t.includes("npm install -g @earendil-works/pi-coding-agent"),
-    "legacy PATH-npm pi install never attempted",
-  );
 });
 
 test("regression: inherited PAWPRINT_TARGET cannot redirect the imprint", () => {

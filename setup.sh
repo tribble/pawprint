@@ -61,59 +61,12 @@ fi
 : "${CLOUDFLARE_ACCOUNT_ID:?set it in ~/.config/fish/conf.d first — see README}"
 : "${CLOUDFLARE_GATEWAY_ID:?set it in ~/.config/fish/conf.d first — see README}"
 
-# (No legacy PATH-npm pi install: the pinned bootstrap below is the ONLY way
-# pi gets installed. A foreign npm prefix rejecting global writes must not be
-# able to abort setup before the launcher exists.)
+command -v pi >/dev/null 2>&1 || npm install -g @earendil-works/pi-coding-agent
 
-# toolchain (typecheck): pinned via mise
+# toolchain (typecheck): pinned via mise; types resolve the LIVE pi through a symlink
 command -v mise >/dev/null 2>&1 && (cd pi-agent && mise trust -q mise.toml 2>/dev/null; mise install)
+ln -sfn "$(npm root -g)/@earendil-works" "$target/.pi-types"
 command -v agent-browser >/dev/null 2>&1 || npm install -g agent-browser
-
-# pi runtime: pi always runs on ONE pinned node, never the cwd's toolchain
-# (direnv/flake/.nvmrc). Static launcher — it never resolves node from PATH.
-# Both the pinned node AND pi installed under it must exist before the
-# launcher is written — never publish a launcher that can't run.
-node_ver=$(jq -r '.runtime.node // empty' manifest.json)
-if [ -n "$node_ver" ]; then
-  nroot="$HOME/.local/share/mise/installs/node/$node_ver"
-  if [ ! -x "$nroot/bin/node" ] && command -v mise >/dev/null 2>&1; then
-    mise install "node@$node_ver" || true   # verdict comes from the re-check
-  fi
-  if [ ! -x "$nroot/bin/node" ]; then
-    echo "ERROR: pinned node $node_ver missing at $nroot (mise install failed or mise absent)" >&2
-    exit 1
-  fi
-  pibundle="$nroot/lib/node_modules/@earendil-works/pi-coding-agent/dist/bundle/cli.js"
-  if [ ! -f "$pibundle" ]; then
-    # Run npm-cli THROUGH the pinned interpreter with an explicit prefix.
-    # The bin/npm shim execs bare `node` from PATH and npm derives its global
-    # prefix from process.execPath — a foreign node earlier on PATH would
-    # install pi into the wrong toolchain's prefix.
-    if ! "$nroot/bin/node" "$nroot/lib/node_modules/npm/bin/npm-cli.js" \
-        install -g --prefix "$nroot" @earendil-works/pi-coding-agent; then
-      echo "ERROR: npm-cli.js install -g @earendil-works/pi-coding-agent failed under $nroot" >&2
-      exit 1
-    fi
-  fi
-  if [ ! -f "$pibundle" ]; then
-    echo "ERROR: pi bundle still missing at $pibundle after install" >&2
-    exit 1
-  fi
-  mkdir -p "$HOME/.local/bin"
-  rm -f "$HOME/.local/bin/pi"   # replace an existing symlink, never follow it
-  cat > "$HOME/.local/bin/pi" <<EOF
-#!/bin/sh
-# pawprint: pi runs on its pinned node, never the cwd's toolchain (direnv/flake/.nvmrc)
-N="\$HOME/.local/share/mise/installs/node/$node_ver"
-exec "\$N/bin/node" "\$N/lib/node_modules/@earendil-works/pi-coding-agent/dist/bundle/cli.js" "\$@"
-EOF
-  chmod 755 "$HOME/.local/bin/pi"
-  echo "launcher:      $HOME/.local/bin/pi -> node $node_ver"
-  # types resolve the LIVE pi: .pi-types -> the PINNED install's scope dir
-  # (tsconfig paths are .pi-types/pi-coding-agent/...). Never npm root -g —
-  # that's the caller's toolchain and dangles on a fresh pinned install.
-  ln -sfn "$nroot/lib/node_modules/@earendil-works" "$target/.pi-types"
-fi
 agent-browser install >/dev/null 2>&1 || true   # browser runtime
 
 # Packages: settings.json is the manifest. Skip any whose clone already exists —
@@ -125,7 +78,7 @@ jq -r '.packages[] | if type == "object" then .source else . end' pi-agent/setti
     if [ -d "$dir" ]; then
       echo "skip (present): $src"
     else
-      "$HOME/.local/bin/pi" install "$src" --no-approve || echo "WARN: $src failed"
+      pi install "$src" --no-approve || echo "WARN: $src failed"
     fi
   done
 
@@ -133,7 +86,6 @@ jq -r '.packages[] | if type == "object" then .source else . end' pi-agent/setti
 if [ -d /Applications/Ghostty.app ]; then
   mkdir -p "$HOME/Library/Application Support/com.mitchellh.ghostty"
   cp pi-agent/ghostty/config.ghostty "$HOME/Library/Application Support/com.mitchellh.ghostty/config.ghostty"
-  mkdir -p "$HOME/.config/ghostty"
   printf '# Canonical: pawprint repo pi-agent/ghostty/config.ghostty (installed by setup.sh)\n' \
     > "$HOME/.config/ghostty/config"
 fi

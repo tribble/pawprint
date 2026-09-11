@@ -1,8 +1,5 @@
 {
   "schemaVersion": 1,
-  "runtime": {
-    "node": "24.14.1"
-  },
   "files": [
     "AGENTS.md",
     "agents/reviewer-fable.md",
