@@ -5,8 +5,8 @@
 // Neovim + octo.nvim, so the human can read their own PR's diff and reviewer
 // comments. All real logic (repo/PR resolution, herdr calls, further
 // coordinator resolution fallbacks) lives in pr-review-open; this file stays
-// thin and only resolves this session's own intercom identity, passing it via
-// the --coordinator argv flag. NOTE: pi.exec() (dist/core/exec.d.ts
+// thin and only computes this session's own intercom ID, passing it via the
+// --coordinator argv flag. NOTE: pi.exec() (dist/core/exec.d.ts
 // ExecOptions) only supports signal|timeout|cwd — an `env` option is silently
 // dropped and the child inherits pi's environment, so the coordinator must be
 // handed over via argv, not PR_REVIEW_COORDINATOR.
@@ -17,27 +17,16 @@
 //
 // See /Users/pantera/work/pi/pr-review/README.md for the full architecture.
 
+import { createHash } from "node:crypto";
 import { Type } from "typebox";
-import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
+import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 
-// For an unnamed pi session, pi.getSessionName() returns undefined, but the
-// pi-intercom broker still shows a derived presence alias. Mirror
-// resolveIntercomPresenceName / buildPresenceIdentity from pi-subagents
-// (src/pi-intercom/index.ts, ~L432-443): the registered name is
-// $PI_SUBAGENT_INTERCOM_SESSION_NAME if set, else the session name, else
-// `subagent-chat-<sessionId[0:8]>` (any "session-" prefix stripped first).
-function deriveIntercomAlias(ctx: ExtensionContext): string | undefined {
-  const envName = process.env.PI_SUBAGENT_INTERCOM_SESSION_NAME?.trim();
-  if (envName) {
-    return envName;
-  }
-  const sessionId = ctx.sessionManager.getSessionId();
-  if (!sessionId) {
-    return undefined;
-  }
-  const normalized = sessionId.startsWith("session-") ? sessionId.slice("session-".length) : sessionId;
-  return `subagent-chat-${normalized.slice(0, 8)}`;
-}
+// This session's pi-intercom ID: the one address that survives a rename (names
+// are display only; routing by them broke when a coordinator renamed itself).
+// Same formula pi-subagents registers with — src/pi-intercom/index.ts L1284 at
+// the pinned 84614b3: `pi-` + sha256(ctx.sessionManager.getSessionId()).hex[0:32].
+// Duplicated verbatim in herdr-fleet.ts: one line beats a shared module.
+const intercomId = (sessionId: string) => `pi-${createHash("sha256").update(sessionId).digest("hex").slice(0, 32)}`;
 
 interface PrReviewOpenResult {
   ok?: boolean;
@@ -77,27 +66,21 @@ export default function (pi: ExtensionAPI) {
       coordinator: Type.Optional(
         Type.String({
           description:
-            "Override the pi-intercom session (name or id) that review notes are sent to. Defaults to this session's own intercom name.",
+            "Override the pi-intercom session (ID, or the exact name of a live session) that review notes are sent to. Defaults to this session's own intercom ID.",
         }),
       ),
     }),
 
     async execute(_toolCallId, params, signal, _onUpdate, ctx) {
-      // Resolution chain: explicit tool param > this session's name >
-      // derived intercom alias for unnamed sessions (see deriveIntercomAlias).
-      // If all fail, no --coordinator is passed and pr-review-open falls back
-      // to its config-file chain, erroring with setup guidance if that fails.
-      const coordinator =
-        params.coordinator?.trim() || pi.getSessionName()?.trim() || deriveIntercomAlias(ctx) || undefined;
+      // An explicit tool param wins; otherwise this session's own intercom ID
+      // (every pi session has one, named or not). pr-note resolves a name in
+      // the param to an ID at send time.
+      const coordinator = params.coordinator?.trim() || intercomId(ctx.sessionManager.getSessionId());
 
-      // --require-coordinator keeps the agent path strict: if resolution and
-      // pr-review-open's own fallback chain all fail, it exits non-zero with
-      // setup guidance instead of opening a pane whose notes go nowhere.
-      const args: string[] = ["--require-coordinator"];
-      if (coordinator) {
-        // argv, not env: pi.exec() cannot forward env vars (see header note).
-        args.push("--coordinator", coordinator);
-      }
+      // --require-coordinator keeps the agent path strict: pr-review-open must
+      // never open a pane whose notes go nowhere.
+      // argv, not env: pi.exec() cannot forward env vars (see header note).
+      const args: string[] = ["--require-coordinator", "--coordinator", coordinator];
       if (params.focus === false) {
         args.push("--no-focus");
       }
@@ -118,7 +101,7 @@ export default function (pi: ExtensionAPI) {
         // Non-JSON stdout is unexpected but not fatal; surface the raw output below.
       }
 
-      const resolvedCoordinator = parsed.coordinator ?? coordinator ?? "(resolved by pr-review-open)";
+      const resolvedCoordinator = parsed.coordinator ?? coordinator;
       const text = parsed.pane_id
         ? `Opened PR review for ${parsed.repo ?? "?"}#${parsed.pr ?? "?"} in herdr tab ${parsed.tab_id ?? "?"} (pane ${parsed.pane_id}). ` +
           `Review notes will arrive as pi-intercom steer messages from coordinator "${resolvedCoordinator}" as the human comments.`

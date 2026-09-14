@@ -10,6 +10,7 @@ const here = dirname(fileURLToPath(import.meta.url));
 const stubs = {
   "@earendil-works/pi-coding-agent": join(here, "stubs", "pi-coding-agent.mjs"),
   "@earendil-works/pi-tui": join(here, "stubs", "pi-tui.mjs"),
+  typebox: join(here, "stubs", "typebox.mjs"),
 };
 
 export async function resolve(specifier, context, next) {

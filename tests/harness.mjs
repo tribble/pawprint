@@ -35,6 +35,7 @@ export function makePi(overrides = {}) {
     execCalls,
     state,
     commands: {},
+    tools: {},
     entryRenderers: {},
     getSessionName: () => overrides.sessionName ?? "coordinator-test",
     flags: {},
@@ -51,6 +52,9 @@ export function makePi(overrides = {}) {
     },
     registerCommand(name, def) {
       this.commands[name] = def;
+    },
+    registerTool(def) {
+      this.tools[def.name] = def;
     },
     registerEntryRenderer(type, fn) {
       this.entryRenderers[type] = fn;

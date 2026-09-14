@@ -32,7 +32,7 @@ Same bar as the reviewer rule for PRs: an artifact examined from outside the con
 - The test plan lists only what CI cannot check. Cut build, lint and spec runs — if CI would catch the failure a bullet guards against, cut the bullet. Keep red-first evidence (what failed before, what passes after), manual checks, post-deploy verification. If everything is CI-covered, state the one remaining manual step.
 - Never in a PR body: Non-goals lists, precedent/PR citations, rebase narration, tables, callouts. The reviewer has the diff and CI; the body is intent + what they can't see.
 - Update PR title, body and draft status when scope changes, in the same turn as the push.
-- When you open a PR on the user's behalf, register it immediately: `pr-watch track owner/repo#N --agent <your-intercom-session-name>` (discover your name via intercom list/status). pr-watch then steers you inline on review verdicts, CI failures, and human comments; merge/close auto-untracks. The `— 🐾 agent of @tribble` signature doubles as loop-safety: pr-watch won't re-steer you for your own signed replies.
+- When you open a PR on the user's behalf, register it immediately: `pr-watch track owner/repo#N --agent <your intercom session ID>` (`intercom status` shows it; pass the ID, never your session name — names change and the steer would silently stop). pr-watch then steers you inline on review verdicts, CI failures, and human comments; merge/close auto-untracks. The `— 🐾 agent of @tribble` signature doubles as loop-safety: pr-watch won't re-steer you for your own signed replies.
 
 <!-- fitch-pi-kit:baseline:start -->
 ## Baseline safety and evidence

@@ -17,6 +17,11 @@ const agentsReply = (agents: unknown) => ({
 // The extension identifies "me" by HERDR_PANE_ID; pin it so tests are the same inside and outside herdr.
 process.env.HERDR_PANE_ID = "wH:p1";
 const ME = { name: "coordinator-test", agent_status: "idle", cwd: "/tmp/me", pane_id: "wH:p1", workspace_id: "wH" };
+// Children are addressed to my intercom ID (pi-<sha256(session id)[0:32]>), never my name, which can change.
+// sha256("fleet-sess").hex[0:32], precomputed so the test does not share the implementation's formula.
+const SESSION_ID = "fleet-sess";
+const MY_ID = "pi-8271896c98088f150f678afd3ae5249e";
+const fleetCtx = () => makeCtx({ sessionId: SESSION_ID });
 const tabReply = { code: 0, stdout: JSON.stringify({ result: { tab: { tab_id: "wH:t2" }, root_pane: { pane_id: "wH:p2" } } }), stderr: "" };
 
 test("/fleet: sorts working<idle<done, icons; same-workspace agents are [mine], me and other workspaces [yours]", async () => {
@@ -70,22 +75,24 @@ const delegateExec = (roster: unknown[]) => async (_c: string, args: string[]) =
   return { code: 0, stdout: JSON.stringify({ result: {} }), stderr: "" };
 };
 
-test("/delegate: agent list → tab in MY workspace → agent start --name → prompt --wait (task + report/close contract)", async () => {
+test("/delegate: agent list → tab in MY workspace → agent start --name → prompt --wait (task + report-to-my-ID/close contract)", async () => {
   const pi = makePi({ execImpl: delegateExec([ME]) });
   herdrFleet(pi);
-  const ctx = makeCtx();
+  const ctx = fleetCtx();
   await pi.commands.delegate.handler("scout fix the flake", ctx);
   assert.deepEqual(pi.execCalls.slice(0, 3), [
     ["herdr", "agent", "list"],
-    // a tab in the caller's workspace (grouped sidebar nests it under the caller), never a new workspace
-    ["herdr", "tab", "create", "--workspace", "wH", "--cwd", process.cwd(), "--label", "scout", "--no-focus", "--env", "PI_SPAWNED_BY=coordinator-test"],
-    // --name: session name = herdr agent name = intercom address
+    // a tab in the caller's workspace (grouped sidebar nests it under the caller), never a new workspace;
+    // the spawner is identified by intercom ID, not by its (renamable) session name
+    ["herdr", "tab", "create", "--workspace", "wH", "--cwd", process.cwd(), "--label", "scout", "--no-focus", "--env", `PI_SPAWNED_BY=${MY_ID}`],
+    // --name: the child's human name (session name = herdr agent name)
     ["herdr", "agent", "start", "scout", "--kind", "pi", "--pane", "wH:p2", "--timeout", "60000", "--", "--name", "scout", "--thinking", "max"],
   ]);
   const [prompt, ...rest] = pi.execCalls[3].slice(4);
   assert.deepEqual([pi.execCalls[3].slice(0, 4), rest], [["herdr", "agent", "prompt", "scout"], ["--wait"]]);
   assert.ok(prompt.startsWith("fix the flake\n\n"), prompt);
-  assert.ok(prompt.includes("report ONCE to intercom session `coordinator-test`"), prompt);
+  assert.ok(prompt.includes(`report ONCE to intercom session \`${MY_ID}\` (that is your spawner's ID; use it verbatim)`), prompt);
+  assert.ok(!prompt.includes("coordinator-test"), "the spawner's name is not an address");
   assert.ok(prompt.includes('herdr tab close "$HERDR_TAB_ID"'), prompt);
   assert.equal(pi.execCalls.length, 4);
   assert.ok(ctx.notes.at(-1).msg.includes("🐑 scout delegated"));
@@ -94,7 +101,7 @@ test("/delegate: agent list → tab in MY workspace → agent start --name → p
 test("/delegate: own pane not in agent list (not inside herdr) → error, nothing created", async () => {
   const pi = makePi({ execImpl: delegateExec([{ name: "other", pane_id: "w2:p1", workspace_id: "w2" }]) });
   herdrFleet(pi);
-  const ctx = makeCtx();
+  const ctx = fleetCtx();
   await pi.commands.delegate.handler("x do thing", ctx);
   assert.deepEqual(pi.execCalls, [["herdr", "agent", "list"]]);
   assert.deepEqual(ctx.notes.at(-1), { msg: "delegate: /delegate needs to run inside a herdr pane", level: "error" });
@@ -103,7 +110,7 @@ test("/delegate: own pane not in agent list (not inside herdr) → error, nothin
 test("/delegate: name taken by a live agent → suffixed name for label, agent and --name", async () => {
   const pi = makePi({ execImpl: delegateExec([ME, { name: "scout", pane_id: "w2:p1", workspace_id: "w2" }, { name: "scout-2", pane_id: "wH:p3", workspace_id: "wH" }]) });
   herdrFleet(pi);
-  await pi.commands.delegate.handler("scout go", makeCtx());
+  await pi.commands.delegate.handler("scout go", fleetCtx());
   assert.equal(pi.execCalls[1][8], "scout-3"); // --label
   assert.equal(pi.execCalls[2][3], "scout-3"); // agent start <name>
   assert.equal(pi.execCalls[2][12], "scout-3"); // -- --name <name>
@@ -115,7 +122,7 @@ test("/delegate: tab without pane_id → error notify", async () => {
     execImpl: async (_c: string, args: string[]) => (args[1] === "list" ? agentsReply([ME]) : { code: 0, stdout: JSON.stringify({ result: {} }), stderr: "" }),
   });
   herdrFleet(pi);
-  const ctx = makeCtx();
+  const ctx = fleetCtx();
   await pi.commands.delegate.handler("x do thing", ctx);
   assert.equal(ctx.notes.at(-1).level, "error");
   assert.ok(ctx.notes.at(-1).msg.includes("no pane_id"));

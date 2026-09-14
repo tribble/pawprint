@@ -5,8 +5,14 @@
 // Delegated pane agents are first-class: they join intercom under their herdr name,
 // and you talk to them by focusing their pane (herdr agent focus <name>).
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
+import { createHash } from "node:crypto";
 import { existsSync, readFileSync, statSync } from "node:fs";
 import { resolve } from "node:path";
+
+// This session's pi-intercom ID — what a child must report to, because names change and IDs do not
+// (pi-subagents src/pi-intercom/index.ts L1284 at the pinned 84614b3: `pi-` + sha256(sessionId).hex[0:32]).
+// Same one line as in pr-review.ts on purpose: not worth a shared module.
+const intercomId = (sessionId: string) => `pi-${createHash("sha256").update(sessionId).digest("hex").slice(0, 32)}`;
 
 async function herdr(pi: ExtensionAPI, args: string[]): Promise<unknown> {
   const r = await pi.exec("herdr", args);
@@ -124,9 +130,9 @@ function uniqueName(name: string, agents: FleetAgent[]): string {
   return label;
 }
 
-// Appended to every delegated task: the child's contract with its spawner.
+// Appended to every delegated task: the child's contract with its spawner (addressed by intercom ID).
 const CONTRACT = (me: string, name: string) =>
-  `You were spawned by \`${me}\`. When done, report ONCE to intercom session \`${me}\` as one line: ✅ ${name} — <outcome>. Then close your own tab: \`herdr tab close "$HERDR_TAB_ID"\`.`;
+  `You were spawned by intercom session \`${me}\`. When done, report ONCE to intercom session \`${me}\` (that is your spawner's ID; use it verbatim) as one line: ✅ ${name} — <outcome>. Then close your own tab: \`herdr tab close "$HERDR_TAB_ID"\`.`;
 
 export default function herdrFleet(pi: ExtensionAPI) {
   pi.registerCommand("fleet", {
@@ -173,8 +179,8 @@ export default function herdrFleet(pi: ExtensionAPI) {
         if (!ws) throw new Error("/delegate needs to run inside a herdr pane");
         const name = uniqueName(wanted, agents);
         ctx.ui.notify(`Spawning ${name}…`, "info");
-        const me = pi.getSessionName() ?? "agent";
-        // A tab in MY workspace (grouped sidebar nests it under me); env lets the child know its coordinator.
+        const me = intercomId(ctx.sessionManager.getSessionId());
+        // A tab in MY workspace (grouped sidebar nests it under me); env lets the child know its coordinator's ID.
         const tab = await herdr(pi, ["tab", "create", "--workspace", ws, "--cwd", process.cwd(), "--label", name, "--no-focus", "--env", `PI_SPAWNED_BY=${me}`]);
         const paneId = findPaneId(tab);
         if (!paneId) throw new Error("tab created but no pane_id in response");
