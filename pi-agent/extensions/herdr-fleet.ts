@@ -130,9 +130,14 @@ function uniqueName(name: string, agents: FleetAgent[]): string {
   return label;
 }
 
+// Every delegated task must carry the owner's verbatim ask so intent survives every hop
+// (coordinator → implementer → reviewer). Paraphrased design briefs are how a one-line fix
+// became a 1,200-line rewrite (staging-deploy-triage post-mortem, 2026-09-14).
+const OWNER_OUTCOME = /^Owner outcome:/m;
+
 // Appended to every delegated task: the child's contract with its spawner (addressed by intercom ID).
 const CONTRACT = (me: string, name: string) =>
-  `You were spawned by intercom session \`${me}\`. When done, report ONCE to intercom session \`${me}\` (that is your spawner's ID; use it verbatim) as one line: ✅ ${name} — <outcome>. Then close your own tab: \`herdr tab close "$HERDR_TAB_ID"\`.`;
+  `You were spawned by intercom session \`${me}\`. The \`Owner outcome:\` block above is the user's verbatim ask and the only authority on intent; everything else in this brief is your spawner's derived design and may be wrong — if the two conflict, follow the owner outcome and tell \`${me}\`. Copy the block unchanged into every subagent brief you write (reviewer included). When done, report ONCE to intercom session \`${me}\` (that is your spawner's ID; use it verbatim) as one line: ✅ ${name} — <outcome>. Then close your own tab: \`herdr tab close "$HERDR_TAB_ID"\`.`;
 
 export default function herdrFleet(pi: ExtensionAPI) {
   pi.registerCommand("fleet", {
@@ -164,13 +169,20 @@ export default function herdrFleet(pi: ExtensionAPI) {
 
   pi.registerCommand("delegate", {
     description:
-      "Spawn a named pi in a new tab of this workspace and hand it a task: /delegate <name> <task> (runs in the current directory — use a worktree yourself if it edits code)",
+      "Spawn a named pi in a new tab of this workspace and hand it a task: /delegate <name> <task> (task must include an `Owner outcome:` block with the user's verbatim ask; runs in the current directory — use a worktree yourself if it edits code)",
     handler: async (args, ctx) => {
       const sp = args.indexOf(" ");
       const wanted = (sp === -1 ? args : args.slice(0, sp)).trim();
       const task = sp === -1 ? "" : args.slice(sp + 1).trim();
       if (!wanted || !task) {
         ctx.ui.notify("Usage: /delegate <name> <task>", "error");
+        return;
+      }
+      if (!OWNER_OUTCOME.test(task)) {
+        ctx.ui.notify(
+          "delegate: task must contain an `Owner outcome:` block quoting the user's ask verbatim (copied, not paraphrased). Re-issue it whenever the user corrects or narrows.",
+          "error"
+        );
         return;
       }
       try {
