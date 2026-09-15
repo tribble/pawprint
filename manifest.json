@@ -29,6 +29,121 @@
     "configs/ws.json",
     "themes/calm-tribble.json"
   ],
+  "about": {
+    "AGENTS.md": {
+      "does": "pi's global instructions: the rules every pi session on tribble's machine follows — how work is delegated to subagents, how PRs are reviewed and written, how this repo is kept in sync. Written for tribble's tools and habits; read it for ideas, don't install it as-is.",
+      "needs": ["herdr", "pi-subagents", "pr-watch"],
+      "personal": true
+    },
+    "agents/reviewer-fable.md": {
+      "does": "`reviewer-fable` subagent: a read-only code reviewer pinned to the claude-fable-5-1 model through tribble's Cloudflare AI Gateway, used for cross-family review of work done by GPT-family agents. The model id is defined in models.json.",
+      "needs": ["pi-subagents", "cloudflare-ai-gateway", "models.json"],
+      "personal": true
+    },
+    "agents/reviewer-kimi.md": {
+      "does": "`reviewer-kimi` subagent: the same read-only code reviewer pinned to kimi-k3 (Fireworks, through tribble's Cloudflare AI Gateway; the model id is defined in models.json). A model experiment; deliberately never used to review kimi's own work.",
+      "needs": ["pi-subagents", "cloudflare-ai-gateway", "models.json"],
+      "personal": true
+    },
+    "agents/scout-kimi.md": {
+      "does": "`scout-kimi` subagent: read-only repo recon that writes a compressed context.md for handoff, pinned to kimi-k3 through tribble's Cloudflare AI Gateway (model id defined in models.json). A model experiment; `/preset kimi` routes recon here.",
+      "needs": ["pi-subagents", "cloudflare-ai-gateway", "models.json"],
+      "personal": true
+    },
+    "agents/worker-kimi.md": {
+      "does": "`worker-kimi` subagent: end-to-end implementer for bounded tasks, pinned to kimi-k3 through tribble's Cloudflare AI Gateway (model id defined in models.json). A model experiment; `/preset kimi` routes implementation here.",
+      "needs": ["pi-subagents", "cloudflare-ai-gateway", "models.json"],
+      "personal": true
+    },
+    "extensions/auto-update.ts": {
+      "does": "Once a day, on session start, runs `pi update --self` and `pi update --extensions` in the background and shows a one-line notice if anything changed (only one of several simultaneously starting sessions does it). `/update` does it now and reloads."
+    },
+    "extensions/btw.ts": {
+      "does": "`/btw <question>`: ask a side model a quick question about the current conversation. The answer renders inline as a dimmed card and never enters the main model's context; follow-up /btw questions see the earlier ones. Optional `configs/btw.json` (`model: provider/model-id`) picks the side model."
+    },
+    "extensions/compaction-fallback.ts": {
+      "does": "When context compaction's summary call fails (provider refusal, overload), switches to another enabled model, retries once, then switches back — instead of the session getting stuck. Picks the first enabled model whose id contains one of gpt-5.6-sol, kimi, deepseek, glm, minimax (tribble's cross-family list, hard-coded as PREFER — edit it for your models), else any other enabled model, which may be same-family. Needs at least two enabled models.",
+      "personal": true
+    },
+    "extensions/done.ts": {
+      "does": "`/done`: quit this session and move its transcript out of the `/resume` list into `~/.pi/agent/sessions-archive/` (still on disk and greppable, no longer listed)."
+    },
+    "extensions/herdr-agent-name.ts": {
+      "does": "Inside herdr, renames the herdr agent and its tab to the pi session name whenever it changes, so the sidebar, the tab strip and the intercom address all agree. Does nothing outside herdr.",
+      "needs": ["herdr"]
+    },
+    "extensions/herdr-agent-state.ts": {
+      "does": "herdr's own pi integration: reports working / blocked / idle to the herdr sidebar over its socket. herdr installs and overwrites this file itself (HERDR_INTEGRATION_VERSION in the header); it is in the print only so the print is complete. Does nothing outside herdr.",
+      "needs": ["herdr"]
+    },
+    "extensions/herdr-fleet.ts": {
+      "does": "herdr fleet commands: `/fleet` (live status of the named agents in this workspace, zero tokens), `/delegate <name> <task>` (spawn a named pi in a new tab of this workspace and hand it the task; refuses a task without an `Owner outcome:` block quoting the user's ask verbatim), `/ws [repo|dir] <purpose>` (new focused workspace; repo ids come from `configs/ws.json`).",
+      "needs": ["herdr", "pi-subagents"]
+    },
+    "extensions/pr-footer.ts": {
+      "does": "Shows `⚑ N need review` in pi's footer: N is the number of open non-draft PRs requesting your review, read every 5 minutes from the pr-watch daemon's cache file (`~/.local/state/pr-watch/state.json`). Never calls GitHub itself; no cache, no indicator.",
+      "needs": ["pr-watch"]
+    },
+    "extensions/pr-review.ts": {
+      "does": "Adds the `open_pr_review` tool: opens one of your own PRs in a new herdr tab running Neovim + octo.nvim so you can read the diff and reviewer comments, while your line notes flow back to the agent as intercom messages. Thin wrapper over the `pr-review --nvim` script (~/.local/bin, from tribble's pi/pr-review repo), which holds all the logic.",
+      "needs": ["herdr", "pr-review", "pi-subagents"]
+    },
+    "extensions/preset.ts": {
+      "does": "`/preset <name>` (also `pi --preset <name>`; Ctrl+Shift+U cycles): switch model, thinking level, allowed tools and extra system-prompt instructions as one named bundle. Presets are read from `presets.json` in the agent dir and `<cwd>/.pi/presets.json`; write your own, tribble's are personal."
+    },
+    "ghostty/config.ghostty": {
+      "does": "tribble's Ghostty terminal config: Catppuccin Mocha, JetBrains Mono Nerd Font 15pt, fish shell integration, cmd-key tab/split bindings, and no close-confirmation because herdr owns the real work. The full setup.sh copies it to the path Ghostty reads on macOS.",
+      "needs": ["ghostty"],
+      "personal": true
+    },
+    "mcp.json": {
+      "does": "tribble's MCP servers for the pi-mcp-adapter package: Slack (the WorkOS workspace, with its OAuth client id), GitHub (token via `!gh auth token` — a command, never a stored secret), Notion, Linear, Granola, Cloudflare docs / AI Gateway / observability, Datadog.",
+      "needs": ["pi-mcp-adapter", "gh"],
+      "personal": true
+    },
+    "mise.toml": {
+      "does": "Pins node 24 and typescript so that `mise install` in the agent dir gives you the `tsc` that `tsconfig.json` here uses to typecheck the extensions. Only useful together with `tsconfig.json`.",
+      "needs": ["mise"]
+    },
+    "models.json": {
+      "does": "tribble's model catalog for pi's built-in `cloudflare-ai-gateway` provider: custom Fireworks models (kimi-k3, glm-5.2, deepseek-v4-pro, qwen3.7-max, minimax-m3) plus claude-opus-5, claude-fable-5-1 and gpt-6-astra, each with prices, context window, thinking-level map and fallbacks. Routes through tribble's gateway account (`CLOUDFLARE_ACCOUNT_ID` / `CLOUDFLARE_GATEWAY_ID`).",
+      "needs": ["cloudflare-ai-gateway"],
+      "personal": true
+    },
+    "presets.json": {
+      "does": "tribble's presets for `extensions/preset.ts`: `plan` (read-only tools, gpt-5.6-sol at xhigh, planning instructions), `implement` (edit tools, focused-change instructions), `kimi` (route delegation to the *-kimi agents for a model experiment).",
+      "needs": ["extensions/preset.ts", "cloudflare-ai-gateway", "agents/worker-kimi.md", "agents/scout-kimi.md"],
+      "personal": true
+    },
+    "prompts/extract-process-improvements.md": {
+      "does": "`/extract-process-improvements`: a prompt template that asks the agent to look back over the session and fold any durable lesson into the project's AGENTS.md as a general rule — or change nothing if there is none."
+    },
+    "settings.json": {
+      "does": "pi's main settings, tribble's: default model claude-fable-5-1 through the Cloudflare AI Gateway, the enabled model list, retry and compaction tuning, the packages pi installs (fitch-kit tools, pi-subagents pinned to a commit, ponytail, pi-cloak, pi-mcp-adapter, …), which model each subagent runs on, theme `calm-tribble`.",
+      "needs": ["cloudflare-ai-gateway", "models.json", "themes/calm-tribble.json"],
+      "personal": true
+    },
+    "tsconfig.json": {
+      "does": "Typechecks the extensions in the agent dir (`tsc -p tsconfig.json`) against the installed pi's own type declarations, reached through the `.pi-types` symlink that the full setup.sh creates (`ln -s \"$(npm root -g)/@earendil-works\" ~/.pi/agent/.pi-types`). Its `files` list names which extensions are checked.",
+      "needs": ["typescript"]
+    },
+    "bin/agent-costs": {
+      "does": "`agent-costs [--days N]`: a python3 script printing per-model median cost, turns, tokens, reasoning share and cache share of your pi subagent runs, read from their session.jsonl files. Put `~/.pi/agent/bin` on your PATH.",
+      "needs": ["python3", "pi-subagents"]
+    },
+    "cloak.json": {
+      "does": "Config for the pi-cloak package: when the agent reads `.env` files, `auth.json`, gh / aws / ssh credentials, or anything containing a token-shaped string (sk-…, ghp_…, xox?-…, AKIA…), the secret is masked before the model sees it. Generic patterns, nothing tribble-specific.",
+      "needs": ["pi-cloak"]
+    },
+    "configs/ws.json": {
+      "does": "tribble's repo map for `/ws` (extensions/herdr-fleet.ts): short id → local checkout path (`workos`, `infra`). Replace with your own repos.",
+      "needs": ["extensions/herdr-fleet.ts"],
+      "personal": true
+    },
+    "themes/calm-tribble.json": {
+      "does": "A pi TUI theme (`theme: calm-tribble` in settings.json): dark, low-contrast steel-blue palette with sage and sand accents. A taste, not a dependency — works for anyone."
+    }
+  },
   "tools": [
     "pi",
     "node",

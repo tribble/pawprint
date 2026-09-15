@@ -1,8 +1,10 @@
 #!/usr/bin/env bash
 # validate.sh — READ-ONLY audit: does the machine match the print?
-# Per manifest file: same / drift / missing. Tools on PATH. Env vars SET
-# (presence only, never values). Repo history free of secrets (gitleaks;
-# missing scanner fails — this repo is public). Exit non-zero on any mismatch.
+# Per manifest file: same / drift / missing. Every manifest file catalogued
+# (`about` entry with a `does`; no entry for a file that isn't shipped). Tools
+# on PATH. Env vars SET (presence only, never values). Repo history free of
+# secrets (gitleaks; missing scanner fails — this repo is public). Exit
+# non-zero on any mismatch.
 # Usage: validate.sh [--target DIR]   (default ~/.pi/agent)
 set -uo pipefail
 cd "$(dirname "$0")/.." || exit 1
@@ -22,6 +24,17 @@ while IFS= read -r rel; do
     echo "drift:         $rel"; fail=1
   fi
 done < <(jq -r '.files[]' manifest.json)
+
+# Catalog (setup.sh --list): every shipped file has an `about` with a `does`,
+# and `about` names nothing that isn't shipped.
+catalog_ok=1
+while IFS= read -r rel; do
+  echo "about MISSING: $rel"; fail=1 catalog_ok=0
+done < <(jq -r '.about as $a | .files[] | select(($a[.].does // "") == "")' manifest.json)
+while IFS= read -r rel; do
+  echo "about ORPHAN:  $rel (not in files[])"; fail=1 catalog_ok=0
+done < <(jq -r '.files as $f | (.about // {}) | keys[] | select(IN($f[]) | not)' manifest.json)
+[ "$catalog_ok" = 1 ] && echo "about ok:      every manifest file is catalogued"
 
 while IFS= read -r tool; do
   if command -v "$tool" >/dev/null 2>&1; then

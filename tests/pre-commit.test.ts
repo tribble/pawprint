@@ -17,7 +17,7 @@ test("setup.sh wires the hook; staged ghp_ token: commit refused, redacted; colo
   for (const f of [".githooks/pre-commit", "setup.sh"]) copyFileSync(join(REPO, f), join(clone, f));
   const git = (...a: string[]) =>
     spawnSync("git", ["-C", clone, "-c", "user.name=t", "-c", "user.email=t@t", ...a], { encoding: "utf8" });
-  execFileSync("bash", [join(clone, "setup.sh"), "--config-only", "--target", mkdtempSync(join(tmpdir(), "pawprint-hook-t-"))]);
+  execFileSync("bash", [join(clone, "setup.sh"), "--all", "--config-only", "--target", mkdtempSync(join(tmpdir(), "pawprint-hook-t-"))]);
   assert.equal(git("config", "core.hooksPath").stdout.trim(), ".githooks", "setup.sh wired the hook in the clone");
   // split so this source file never contains a token-shaped literal itself
   const fake = "ghp_" + "Qm7xT2vLp9RkZs4WnJ3hYb8CdF6gAe1UiO5tX0".slice(0, 36);

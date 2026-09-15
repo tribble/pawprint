@@ -1,10 +1,11 @@
 // validate.sh: the read-only machine-vs-print audit. Fresh imprint → green;
 // one drifted file → names exactly that file; missing env var → fails naming it;
-// a secret committed anywhere in history → fails (gitleaks).
+// a secret committed anywhere in history → fails (gitleaks); a manifest file
+// without a catalog entry, or an entry for an unshipped file → fails naming it.
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { execFileSync, spawnSync } from "node:child_process";
-import { mkdtempSync, writeFileSync, readFileSync, copyFileSync } from "node:fs";
+import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, copyFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -20,7 +21,7 @@ const ENV_OK = {
 const GIT_DIR = mkdtempSync(join(tmpdir(), "pawprint-gitdir-"));
 execFileSync("git", ["init", "-q", "--bare", GIT_DIR]);
 function imprint(t: string) {
-  execFileSync("bash", [join(REPO, "setup.sh"), "--target", t], { encoding: "utf8", env: { ...process.env, GIT_DIR } });
+  execFileSync("bash", [join(REPO, "setup.sh"), "--all", "--target", t], { encoding: "utf8", env: { ...process.env, GIT_DIR } });
 }
 function validate(t: string, env: NodeJS.ProcessEnv) {
   return spawnSync("bash", [join(REPO, "scripts", "validate.sh"), "--target", t], {
@@ -37,6 +38,25 @@ test("fresh imprint → validate green, exit 0", () => {
   assert.ok(r.stdout.includes("VALID: machine matches the print"));
   assert.ok(!r.stdout.includes("drift:") && !r.stdout.includes("missing:"));
   assert.ok(r.stdout.includes("tool ok:"), "tools audited");
+  assert.ok(r.stdout.includes("about ok:"), "catalog audited");
+});
+
+test("catalog: missing/empty `about` and an `about` for an unshipped file → fails naming each", () => {
+  // validate.sh resolves manifest.json relative to itself, so a two-file stand-in repo is enough
+  const fake = mkdtempSync(join(tmpdir(), "pawprint-v6-"));
+  mkdirSync(join(fake, "scripts"));
+  copyFileSync(join(REPO, "scripts", "validate.sh"), join(fake, "scripts", "validate.sh"));
+  writeFileSync(join(fake, "manifest.json"), JSON.stringify({
+    files: ["a.md", "b.md", "c.md"],
+    about: { "a.md": { does: "fine" }, "b.md": { does: "" }, "z.md": { does: "orphan" } },
+    tools: [], env: [],
+  }));
+  const r = spawnSync("bash", [join(fake, "scripts", "validate.sh"), "--target", fake], { encoding: "utf8", env: ENV_OK });
+  assert.equal(r.status, 1);
+  assert.deepEqual(
+    r.stdout.split("\n").filter((l) => l.startsWith("about ")),
+    ["about MISSING: b.md", "about MISSING: c.md", "about ORPHAN:  z.md (not in files[])"],
+  );
 });
 
 test("one drifted file → validate fails naming exactly that file", () => {

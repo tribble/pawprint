@@ -4,24 +4,68 @@
 # config through a symlink would write into this repo, and the leak vector
 # returns. Target files that differ are backed up to <path>.bak-pawprint-<ts>.
 #
-# Usage: setup.sh [--dry-run] [--target DIR] [--config-only]
+# Usage: setup.sh (--all | --only PATH...) [--dry-run] [--target DIR] [--config-only]
+#        setup.sh --list
 #   target default: $PAWPRINT_TARGET or ~/.pi/agent
+#   --all: the full imprint (every manifest file) + machine machinery
+#   --only: imprint just these manifest paths (no machinery)
+#   --list: print the catalog (manifest.json `about`, one entry per file) as
+#   JSON and exit
 #   --config-only (alias --imprint-only): run ONLY the imprint — skip the
 #   machine-machinery section (pi install/packages/mise/ghostty/gh-dash)
+#   Bare setup.sh (no selector) refuses and points at the three above.
 set -euo pipefail
 cd "$(dirname "$0")"
 
-dry=0 imprint_only=0 target="${PAWPRINT_TARGET:-$HOME/.pi/agent}"
+dry=0 imprint_only=0 list=0 all=0 only=() target="${PAWPRINT_TARGET:-$HOME/.pi/agent}"
 while [ $# -gt 0 ]; do
   case "$1" in
     --dry-run) dry=1;;
     --config-only|--imprint-only) imprint_only=1;;
     --target) shift; target="$1";;
+    --list) list=1;;
+    --all) all=1;;
+    --only)  # every following arg up to the next --flag is a path
+      shift; imprint_only=1
+      while [ $# -gt 0 ] && [ "${1#--}" = "$1" ]; do only+=("$1"); shift; done
+      [ ${#only[@]} -gt 0 ] || { echo "--only needs at least one manifest path (see --list)" >&2; exit 2; }
+      continue;;
     *) echo "unknown arg: $1" >&2; exit 2;;
   esac
   shift
 done
 run() { if [ "$dry" = 1 ]; then echo "DRY: $*"; else "$@"; fi }
+
+if [ "$list" = 1 ]; then
+  jq '[.files[] as $p | .about[$p] | {path: $p, does, needs: (.needs // []), personal: (.personal // false)}]' manifest.json
+  exit 0
+fi
+
+# No selector: a visitor who runs the bare script must not get the full imprint.
+if [ "$all" = 0 ] && [ ${#only[@]} -eq 0 ]; then
+  cat >&2 <<'EOF'
+pawprint: this is one person's pi config print. See AGENTS.md / README.
+  ./setup.sh --list                 what's in it
+  ./setup.sh --only <path>…         install pieces (add --dry-run first)
+  ./setup.sh --all                  full imprint — overwrites ~/.pi/agent (backups kept)
+EOF
+  exit 2
+fi
+[ "$all" = 0 ] || [ ${#only[@]} -eq 0 ] || { echo "--all and --only are exclusive" >&2; exit 2; }
+
+# --only: refuse before anything is copied if a path is not in the manifest;
+# warn on each file that encodes tribble's own choices, then proceed.
+if [ ${#only[@]} -gt 0 ]; then
+  # JSON-quoted on purpose: an empty arg must surface as "" — raw, it would vanish in $(...)
+  # and then imprint the target dir itself (cp -a of the whole dir into its own backup).
+  unknown=$(printf '%s\n' "${only[@]}" | jq -R --slurpfile m manifest.json -c 'select(IN($m[0].files[]) | not)')
+  [ -z "$unknown" ] || { echo "not in manifest.json files[]: $(printf '%s' "$unknown" | paste -sd' ' -)" >&2; exit 2; }
+  printf '%s\n' "${only[@]}" | jq -R --slurpfile m manifest.json -r 'select($m[0].about[.].personal == true)' |
+    while IFS= read -r rel; do echo "$rel encodes tribble's own choices — read it before you keep it" >&2; done
+fi
+selected() {  # the manifest paths this run imprints: the --only subset, else all
+  if [ ${#only[@]} -gt 0 ]; then printf '%s\n' "${only[@]}"; else jq -r '.files[]' manifest.json; fi
+}
 
 # ---------------------------------------------------------- this checkout ---
 # Pre-commit secret scan (.githooks/pre-commit): repo-local git config, not a
@@ -35,7 +79,7 @@ fi
 # ---------------------------------------------------------------- imprint ---
 ts=$(date +%Y%m%d%H%M%S)
 # manifest.json is the single source of truth for what imprints
-jq -r '.files[]' manifest.json | while IFS= read -r rel; do
+selected | while IFS= read -r rel; do
   dst="$target/$rel"
   src="$PWD/pi-agent/$rel"
   if [ -f "$dst" ] && cmp -s "$src" "$dst"; then
@@ -55,15 +99,17 @@ done
 # Imprint is additive/corrective, never destructive: it creates and
 # overwrites (with backup), but never deletes. Removing config is a
 # deliberate manual act on the machine.
-echo
-echo "Manual steps remain: /login cloudflare-ai-gateway (or env) · /mcp-auth per OAuth server · /trust per project — see README."
+if [ ${#only[@]} -eq 0 ]; then   # a subset install has no machine-level follow-ups
+  echo
+  echo "Manual steps remain: /login cloudflare-ai-gateway (or env) · /mcp-auth per OAuth server · /trust per project — see README."
+fi
 
 # --------------------------------------- machine machinery (not the print) -
 # Global, machine-level bootstrap. Skipped by --dry-run / --imprint-only /
 # non-default --target. Prereqs: fish env vars set (see README), gh.
 if [ "$dry" = 1 ] || [ "$imprint_only" = 1 ] || [ "$target" != "$HOME/.pi/agent" ]; then
   echo
-  echo "machine machinery: SKIPPED (dry-run / --imprint-only / non-default target)"
+  echo "machine machinery: SKIPPED (dry-run / --imprint-only / --only / non-default target)"
   exit 0
 fi
 

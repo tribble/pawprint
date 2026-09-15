@@ -20,10 +20,10 @@ adaptivity for a single-owner print.
 
 ```sh
 git clone git@github.com:tribble/pawprint.git ~/work/pawprint
-~/work/pawprint/setup.sh
+~/work/pawprint/setup.sh --all
 ```
 
-`setup.sh` imprints `pi-agent/*` into `~/.pi/agent` (override:
+`setup.sh --all` imprints `pi-agent/*` into `~/.pi/agent` (override:
 `--target DIR` or `PAWPRINT_TARGET`), backing up differing files to
 `<path>.bak-pawprint-<ts>` and skipping identical ones. `--dry-run` prints
 the plan and writes nothing. `--config-only` runs ONLY the imprint, skipping
@@ -44,6 +44,24 @@ extension. Prereq: `CLOUDFLARE_ACCOUNT_ID` / `CLOUDFLARE_GATEWAY_ID` set in
 Manual steps after setup: `/login cloudflare-ai-gateway` (or env) ·
 `/mcp-auth` per OAuth server · `/trust` per project.
 
+## Adopt a piece
+
+The print is one person's config, but pieces of it stand alone. The catalog
+is `manifest.json`'s `about` map — one entry per shipped file: what it does,
+what it needs, and `personal: true` where it encodes my own choices (models,
+gateway, rules) rather than something to copy blind. A bare `./setup.sh`
+(no `--all`, no `--only`) refuses to run and prints these three commands, so
+a visitor cannot imprint the whole thing by accident.
+
+```sh
+./setup.sh --list                              # catalog as JSON: [{path, does, needs, personal}]
+./setup.sh --dry-run --only extensions/btw.ts  # plan only
+./setup.sh --only extensions/btw.ts            # copy just that (same backup rules; no machinery)
+```
+
+A pi agent that `cd`s into a checkout gets the same instructions from the
+root `AGENTS.md`.
+
 ## Drift repair
 
 ```sh
@@ -53,7 +71,7 @@ scripts/validate.sh   # READ-ONLY audit: same/drift/missing per manifest file,
                       # on any mismatch
 ```
 
-Then re-run `setup.sh` to repair: files you changed locally are backed up,
+Then re-run `setup.sh --all` to repair: files you changed locally are backed up,
 then restored to the print. `validate.sh` again should be green.
 
 Cloudflare-routed Anthropic models failing with "credentials … expired" or
