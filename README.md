@@ -16,7 +16,28 @@ repo, and the leak vector returns.
 There is deliberately no prompt-driven `/setup` installer: determinism beats
 adaptivity for a single-owner print.
 
-## Fresh machine
+## Adopt a piece
+
+The print is one person's config, but pieces of it stand alone. The catalog
+is `manifest.json`'s `about` map — one entry per shipped file: what it does,
+what it needs, and `personal: true` where it encodes my own choices (models,
+gateway, rules) rather than something to copy blind. A bare `./setup.sh`
+(no `--all`, no `--only`) refuses to run and prints these three commands, so
+a visitor cannot imprint the whole thing by accident.
+
+```sh
+./setup.sh --list                              # catalog as JSON: [{path, does, needs, personal}]
+./setup.sh --dry-run --only extensions/btw.ts  # plan only
+./setup.sh --only extensions/btw.ts            # copy just that (same backup rules; no machinery)
+```
+
+A pi agent that `cd`s into a checkout gets the same instructions from the
+root `AGENTS.md`.
+
+## Fresh machine (mine)
+
+This is how *I* imprint a new machine. `--all` overwrites the whole live
+config with my print; if you are not me, you want "Adopt a piece" above.
 
 ```sh
 git clone git@github.com:tribble/pawprint.git ~/work/pawprint
@@ -43,24 +64,6 @@ extension. Prereq: `CLOUDFLARE_ACCOUNT_ID` / `CLOUDFLARE_GATEWAY_ID` set in
 
 Manual steps after setup: `/login cloudflare-ai-gateway` (or env) ·
 `/mcp-auth` per OAuth server · `/trust` per project.
-
-## Adopt a piece
-
-The print is one person's config, but pieces of it stand alone. The catalog
-is `manifest.json`'s `about` map — one entry per shipped file: what it does,
-what it needs, and `personal: true` where it encodes my own choices (models,
-gateway, rules) rather than something to copy blind. A bare `./setup.sh`
-(no `--all`, no `--only`) refuses to run and prints these three commands, so
-a visitor cannot imprint the whole thing by accident.
-
-```sh
-./setup.sh --list                              # catalog as JSON: [{path, does, needs, personal}]
-./setup.sh --dry-run --only extensions/btw.ts  # plan only
-./setup.sh --only extensions/btw.ts            # copy just that (same backup rules; no machinery)
-```
-
-A pi agent that `cd`s into a checkout gets the same instructions from the
-root `AGENTS.md`.
 
 ## Drift repair
 
