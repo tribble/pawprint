@@ -22,6 +22,7 @@
     "models.json",
     "presets.json",
     "prompts/extract-process-improvements.md",
+    "prompts/start-ticket.md",
     "settings.json",
     "tsconfig.json",
     "bin/agent-costs",
@@ -117,6 +118,10 @@
     },
     "prompts/extract-process-improvements.md": {
       "does": "`/extract-process-improvements`: a prompt template that asks the agent to look back over the session and fold any durable lesson into the project's AGENTS.md as a general rule — or change nothing if there is none."
+    },
+    "prompts/start-ticket.md": {
+      "does": "`/start-ticket <LINEAR-ID> [repo]`: a prompt template that makes the current session start a ticket as a workstream: read the Linear ticket (read-only) only to pick repo, branch type and slug, run `ws create <type>/<ID>-<slug>` (worktree + herdr workspace + named pi), then hand the new agent one line naming the ticket — it reads the ticket itself, plans first and waits for go. Repo ids come from `configs/ws.json`.",
+      "needs": ["linear MCP", "ws (~/.local/bin/ws)", "herdr", "configs/ws.json"]
     },
     "settings.json": {
       "does": "pi's main settings, tribble's: default model claude-fable-5-1 through the Cloudflare AI Gateway, the enabled model list, retry and compaction tuning, the packages pi installs (fitch-kit tools, pi-subagents pinned to a commit, ponytail, pi-cloak, pi-mcp-adapter, …), which model each subagent runs on, theme `calm-tribble`.",
