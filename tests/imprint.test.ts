@@ -24,8 +24,13 @@ const printFiles: string[] = execFileSync("git", ["-C", REPO, "ls-files", "pi-ag
 function mktmp(prefix: string) {
   return mkdtempSync(join(tmpdir(), prefix));
 }
+// setup.sh wires core.hooksPath into the checkout it runs from; GIT_DIR sends
+// that write to a scratch repo so tests never touch this checkout's .git/config.
+const GIT_DIR = mktmp("pawprint-gitdir-");
+execFileSync("git", ["init", "-q", "--bare", GIT_DIR]);
+const SETUP_ENV = { ...process.env, GIT_DIR };
 function runSetup(args: string[]) {
-  return execFileSync("bash", [join(REPO, "setup.sh"), ...args], { encoding: "utf8" });
+  return execFileSync("bash", [join(REPO, "setup.sh"), ...args], { encoding: "utf8", env: SETUP_ENV });
 }
 function manifest(dir: string): Map<string, string> {
   const out = new Map<string, string>();
@@ -155,7 +160,7 @@ test("8. --config-only on nonexistent target: created, imprinted, machinery neve
   }
   const out = execFileSync("bash", [join(REPO, "setup.sh"), "--config-only", "--target", t], {
     encoding: "utf8",
-    env: { ...process.env, PATH: `${bin}:/usr/bin:/bin` },
+    env: { ...SETUP_ENV, PATH: `${bin}:/usr/bin:/bin` },
   });
   for (const f of printFiles) assert.ok(existsSync(join(t, f)), `landed: ${f}`);
   assert.ok(out.includes("machine machinery: SKIPPED"));

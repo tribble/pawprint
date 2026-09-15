@@ -1,6 +1,7 @@
-// .githooks/pre-commit: a staged secret is refused by `git commit` itself — also
-// when git is told to color its output (a colored patch scans as clean) and when
-// git fails outright (gitleaks then exits 0 having scanned nothing).
+// .githooks/pre-commit, wired by setup.sh: a staged secret is refused by
+// `git commit` itself — also when git is told to color its output (a colored
+// patch scans as clean) and when git fails outright (gitleaks then exits 0
+// having scanned nothing).
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { execFileSync, spawnSync } from "node:child_process";
@@ -10,13 +11,14 @@ import { join } from "node:path";
 
 const REPO = join(import.meta.dirname, "..");
 
-test("staged ghp_ token: commit refused, redacted; color and git errors fail closed", () => {
+test("setup.sh wires the hook; staged ghp_ token: commit refused, redacted; color and git errors fail closed", () => {
   const clone = join(mkdtempSync(join(tmpdir(), "pawprint-hook-")), "repo");
   execFileSync("git", ["clone", "-q", REPO, clone]);
-  copyFileSync(join(REPO, ".githooks", "pre-commit"), join(clone, ".githooks", "pre-commit"));
+  for (const f of [".githooks/pre-commit", "setup.sh"]) copyFileSync(join(REPO, f), join(clone, f));
   const git = (...a: string[]) =>
     spawnSync("git", ["-C", clone, "-c", "user.name=t", "-c", "user.email=t@t", ...a], { encoding: "utf8" });
-  assert.equal(git("config", "core.hooksPath", ".githooks").status, 0);
+  execFileSync("bash", [join(clone, "setup.sh"), "--config-only", "--target", mkdtempSync(join(tmpdir(), "pawprint-hook-t-"))]);
+  assert.equal(git("config", "core.hooksPath").stdout.trim(), ".githooks", "setup.sh wired the hook in the clone");
   // split so this source file never contains a token-shaped literal itself
   const fake = "ghp_" + "Qm7xT2vLp9RkZs4WnJ3hYb8CdF6gAe1UiO5tX0".slice(0, 36);
   writeFileSync(join(clone, "pi-agent", "leak.txt"), `token = "${fake}"\n`);

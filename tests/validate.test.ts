@@ -15,8 +15,12 @@ const ENV_OK = {
   CLOUDFLARE_GATEWAY_ID: "SENTINEL-GATEWAY-2b7",
 };
 
+// setup.sh wires core.hooksPath into the checkout it runs from; GIT_DIR sends
+// that write to a scratch repo so tests never touch this checkout's .git/config.
+const GIT_DIR = mkdtempSync(join(tmpdir(), "pawprint-gitdir-"));
+execFileSync("git", ["init", "-q", "--bare", GIT_DIR]);
 function imprint(t: string) {
-  execFileSync("bash", [join(REPO, "setup.sh"), "--target", t], { encoding: "utf8" });
+  execFileSync("bash", [join(REPO, "setup.sh"), "--target", t], { encoding: "utf8", env: { ...process.env, GIT_DIR } });
 }
 function validate(t: string, env: NodeJS.ProcessEnv) {
   return spawnSync("bash", [join(REPO, "scripts", "validate.sh"), "--target", t], {
