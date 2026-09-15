@@ -3,6 +3,9 @@
 # to git until deliberately allowlisted.
 *
 !.gitignore
+!.githooks/
+!.githooks/pre-commit
+!.gitleaksignore
 !README.md
 !setup.sh
 !scripts/

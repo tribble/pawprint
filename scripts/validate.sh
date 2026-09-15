@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # validate.sh — READ-ONLY audit: does the machine match the print?
 # Per manifest file: same / drift / missing. Tools on PATH. Env vars SET
-# (presence only, never values). Exit non-zero on any mismatch.
+# (presence only, never values). Repo history free of secrets (gitleaks;
+# missing scanner fails — this repo is public). Exit non-zero on any mismatch.
 # Usage: validate.sh [--target DIR]   (default ~/.pi/agent)
 set -uo pipefail
 cd "$(dirname "$0")/.." || exit 1
@@ -37,6 +38,16 @@ while IFS= read -r var; do
     echo "env MISSING:   $var"; fail=1
   fi
 done < <(jq -r '.env[]' manifest.json)
+
+# gitleaks exits 0 even when git itself fails ("0 commits scanned"), so a
+# scan only counts as clean when it also logged no error.
+if ! command -v gitleaks >/dev/null 2>&1; then
+  echo "secrets:       gitleaks MISSING — brew install gitleaks"; fail=1
+elif err=$(gitleaks git --no-banner --no-color --redact -l error . 2>&1) && [ -z "$err" ]; then
+  echo "secrets ok:    git history clean (gitleaks)"
+else
+  echo "secrets FAIL:  ${err:-leak in git history — see: gitleaks git --redact -v .}"; fail=1
+fi
 
 if [ "$fail" = 0 ]; then echo "VALID: machine matches the print"; else echo "INVALID: mismatches above" >&2; fi
 exit "$fail"

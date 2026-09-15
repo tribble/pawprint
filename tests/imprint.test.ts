@@ -132,7 +132,8 @@ test("7. never destructive: print file removed from a repo copy stays in target"
   runSetup(["--target", t]);
   const copy = mktmp("pawprint-t7repo-");
   // Skip .git: in a linked worktree it is a pointer FILE, and any git command in the copy would
-  // mutate the real worktree's index. setup.sh reads manifest.json, never git, so plain rm suffices.
+  // mutate the real worktree's index. setup.sh reads manifest.json and only touches git when the
+  // copy has a .git (hooksPath), so plain rm suffices.
   cpSync(REPO, copy, { recursive: true, filter: (src) => !src.endsWith("/.git") });
   rmSync(join(copy, "pi-agent", "AGENTS.md"));
   // manifest.json is the source of truth — removal means out of the manifest too

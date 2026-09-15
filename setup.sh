@@ -23,6 +23,11 @@ while [ $# -gt 0 ]; do
 done
 run() { if [ "$dry" = 1 ]; then echo "DRY: $*"; else "$@"; fi }
 
+# ---------------------------------------------------------- this checkout ---
+# Pre-commit secret scan (.githooks/pre-commit): repo-local git config, not a
+# machine change, so it runs in every mode. Skipped in a copy without .git.
+[ -e .git ] && run git config core.hooksPath .githooks
+
 # ---------------------------------------------------------------- imprint ---
 ts=$(date +%Y%m%d%H%M%S)
 # manifest.json is the single source of truth for what imprints

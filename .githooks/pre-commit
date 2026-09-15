@@ -1,0 +1,14 @@
+#!/usr/bin/env bash
+# pawprint pre-commit: refuse to commit a secret. Active via
+# `git config core.hooksPath .githooks` (setup.sh does it). Fails CLOSED —
+# this repo is public, so a missing scanner is a failure, not a skip.
+set -uo pipefail
+
+command -v gitleaks >/dev/null 2>&1 || {
+  echo "pawprint: gitleaks missing — brew install gitleaks" >&2
+  exit 1
+}
+
+gitleaks git --pre-commit --staged --no-banner --redact -v -l warn . && exit 0
+echo "pawprint: secret in staged changes (redacted above) — false positive? add its Fingerprint to .gitleaksignore with a comment, then commit again (never bare --no-verify)" >&2
+exit 1

@@ -48,8 +48,9 @@ Manual steps after setup: `/login cloudflare-ai-gateway` (or env) ·
 
 ```sh
 scripts/validate.sh   # READ-ONLY audit: same/drift/missing per manifest file,
-                      # tools on PATH, env vars set (presence, never values);
-                      # exit non-zero on any mismatch
+                      # tools on PATH, env vars set (presence, never values),
+                      # git history free of secrets (gitleaks); exit non-zero
+                      # on any mismatch
 ```
 
 Then re-run `setup.sh` to repair: files you changed locally are backed up,
@@ -102,3 +103,14 @@ package clones) and prints `git diff --stat` afterwards. Read the diff, then
 commit. A new keeper is added by hand to both the list and the default-deny
 `.gitignore` — which is structural hygiene, not a guard: nothing is tracked
 unless allowlisted, so read the staged diff before every commit.
+
+Three structural layers keep secrets out of the print — the manifest
+allowlist (only reviewed paths sync back), the default-deny `.gitignore`
+(nothing is tracked unless allowlisted), and secrets-by-reference in the
+config itself (`mcp.json` holds `"!gh auth token"`, a command, never a
+token) — plus one content scan: `.githooks/pre-commit` runs `gitleaks` on
+every staged diff (`setup.sh` sets `core.hooksPath`; a missing scanner
+fails the commit, since this repo is public) and `scripts/validate.sh`
+scans the whole history. Fingerprints for genuine false positives go in
+`.gitleaksignore`, each with a comment. The loop is: `scripts/sync-back.sh`
+→ `npm test` → commit (the hook scans) → push.
