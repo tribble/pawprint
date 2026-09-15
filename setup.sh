@@ -26,7 +26,11 @@ run() { if [ "$dry" = 1 ]; then echo "DRY: $*"; else "$@"; fi }
 # ---------------------------------------------------------- this checkout ---
 # Pre-commit secret scan (.githooks/pre-commit): repo-local git config, not a
 # machine change, so it runs in every mode. Skipped in a copy without .git.
-[ -e .git ] && run git config core.hooksPath .githooks
+# Read before write: the test suite runs this concurrently against one .git,
+# and two writers race for config.lock — if we lose, the winner set the same value.
+if [ -e .git ] && [ "$(git config core.hooksPath)" != .githooks ]; then
+  run git config core.hooksPath .githooks || { sleep 1; [ "$(git config core.hooksPath)" = .githooks ]; }
+fi
 
 # ---------------------------------------------------------------- imprint ---
 ts=$(date +%Y%m%d%H%M%S)

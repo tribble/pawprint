@@ -39,6 +39,9 @@ while IFS= read -r var; do
   fi
 done < <(jq -r '.env[]' manifest.json)
 
+# A colored diff scans as clean: git's color settings inject ANSI codes into the
+# patch gitleaks parses. `-c` (this variable) beats every config source; last wins.
+export GIT_CONFIG_PARAMETERS="${GIT_CONFIG_PARAMETERS:+$GIT_CONFIG_PARAMETERS }'color.diff=never'"
 # gitleaks exits 0 even when git itself fails ("0 commits scanned"), so a
 # scan only counts as clean when it also logged no error.
 if ! command -v gitleaks >/dev/null 2>&1; then

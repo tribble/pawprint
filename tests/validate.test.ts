@@ -72,8 +72,8 @@ test("fake ghp_ token committed in a clone → validate fails on the secrets lin
   const clone = join(mkdtempSync(join(tmpdir(), "pawprint-v5repo-")), "repo");
   execFileSync("git", ["clone", "-q", REPO, clone]);
   copyFileSync(join(REPO, "scripts", "validate.sh"), join(clone, "scripts", "validate.sh"));
-  const validateClone = () =>
-    spawnSync("bash", [join(clone, "scripts", "validate.sh"), "--target", t], { encoding: "utf8", env: ENV_OK });
+  const validateClone = (env = ENV_OK) =>
+    spawnSync("bash", [join(clone, "scripts", "validate.sh"), "--target", t], { encoding: "utf8", env });
   assert.ok(validateClone().stdout.includes("secrets ok:"), "clean history passes the scan");
   // split so this source file never contains a token-shaped literal itself
   const fake = "ghp_" + "Qm7xT2vLp9RkZs4WnJ3hYb8CdF6gAe1UiO5tX0".slice(0, 36);
@@ -86,4 +86,12 @@ test("fake ghp_ token committed in a clone → validate fails on the secrets lin
   assert.equal(r.status, 1);
   assert.ok(r.stdout.includes("secrets FAIL:"), r.stdout);
   assert.ok(!r.stdout.includes(fake), "secret never printed");
+  // gitleaks parses git's patch output: a colored patch silently scans as clean,
+  // and a git failure leaves gitleaks exiting 0 with "0 commits scanned"
+  const gitEnv = (key: string, value: string) =>
+    ({ ...ENV_OK, GIT_CONFIG_COUNT: "1", GIT_CONFIG_KEY_0: key, GIT_CONFIG_VALUE_0: value });
+  assert.ok(validateClone(gitEnv("color.ui", "always")).stdout.includes("secrets FAIL:"), "colored patch still fails");
+  const broken = validateClone(gitEnv("diff.algorithm", "nope"));
+  assert.equal(broken.status, 1);
+  assert.match(broken.stdout, /secrets FAIL:.*diff\.algorithm/, "git error is reported, not passed as clean");
 });
