@@ -59,6 +59,20 @@ test("catalog: missing/empty `about` and an `about` for an unshipped file → fa
   );
 });
 
+test("catalog: a `does` over 80 chars → fails naming the path and length", () => {
+  const fake = mkdtempSync(join(tmpdir(), "pawprint-v7-"));
+  mkdirSync(join(fake, "scripts"));
+  copyFileSync(join(REPO, "scripts", "validate.sh"), join(fake, "scripts", "validate.sh"));
+  writeFileSync(join(fake, "manifest.json"), JSON.stringify({
+    files: ["a.md"],
+    about: { "a.md": { does: "x".repeat(81) } },
+    tools: [], env: [],
+  }));
+  const r = spawnSync("bash", [join(fake, "scripts", "validate.sh"), "--target", fake], { encoding: "utf8", env: ENV_OK });
+  assert.equal(r.status, 1);
+  assert.ok(r.stdout.includes("about LONG:    a.md (81 chars)"), r.stdout);
+});
+
 test("one drifted file → validate fails naming exactly that file", () => {
   const t = mkdtempSync(join(tmpdir(), "pawprint-v2-"));
   imprint(t);

@@ -26,7 +26,7 @@ gateway, rules) rather than something to copy blind. A bare `./setup.sh`
 a visitor cannot imprint the whole thing by accident.
 
 ```sh
-./setup.sh --list                              # catalog as JSON: [{path, does, needs, personal}]
+./setup.sh --list                              # catalog — table on a TTY, JSON [{path, does, needs, personal}] when piped
 ./setup.sh --dry-run --only extensions/btw.ts  # plan only
 ./setup.sh --only extensions/btw.ts            # copy just that (same backup rules; no machinery)
 ```

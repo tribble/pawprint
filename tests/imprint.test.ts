@@ -203,6 +203,18 @@ test("11. --list: JSON catalog on stdout only, one entry per manifest file, ever
   }
 });
 
+test("11b. --list on a TTY: prints a table (path, P, does), not JSON", () => {
+  // `script` gives setup.sh a pseudo-TTY so [ -t 1 ] is true; col -b strips the
+  // ^D/backspace/CR artifacts `script` emits. macOS-only (script/col syntax).
+  const r = spawnSync("bash", ["-c", `script -q /dev/null bash "${join(REPO, "setup.sh")}" --list 2>/dev/null | col -b`], { encoding: "utf8", env: SETUP_ENV });
+  if (r.status !== 0 || !r.stdout.trim()) return; // script/col unavailable — skip silently
+  const lines = r.stdout.split("\n").filter((l) => l.trim());
+  assert.ok(lines[0]!.startsWith("path"), `table header, got: ${lines[0]!.trim()}`);
+  assert.ok(r.stdout.includes("does"), "has the does column");
+  assert.ok(r.stdout.includes("AGENTS.md"), "has a data row");
+  assert.throws(() => JSON.parse(r.stdout), "TTY output is a table, not JSON");
+});
+
 test("12. --only: exactly the named files (+ backup of a differing one); unknown path exits 2 untouched; personal warns", () => {
   const t = mktmp("pawprint-t12-");
   const bad = spawnSetup(["--target", t, "--only", "extensions/btw.ts", "nope/x.ts"]);

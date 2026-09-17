@@ -3,7 +3,8 @@
 // Registers a single tool, open_pr_review, that shells out to `pr-review --nvim`
 // (bash, ~/.local/bin) to open a new herdr tab in the current workspace running
 // Neovim + octo.nvim, so the human can read their own PR's diff and reviewer
-// comments. All real logic (repo/PR resolution, herdr calls) lives in
+// comments; the human's line notes route back to this session as intercom.
+// All real logic (repo/PR resolution, herdr calls) lives in
 // pr-review; this file stays thin and only computes this session's own
 // intercom ID, passing it via the --coordinator argv flag. NOTE: pi.exec()
 // (dist/core/exec.d.ts ExecOptions) only supports signal|timeout|cwd — an

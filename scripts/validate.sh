@@ -25,16 +25,19 @@ while IFS= read -r rel; do
   fi
 done < <(jq -r '.files[]' manifest.json)
 
-# Catalog (setup.sh --list): every shipped file has an `about` with a `does`,
-# and `about` names nothing that isn't shipped.
+# Catalog (setup.sh --list): every shipped file has an `about` with a `does`
+# (≤ 80 chars), and `about` names nothing that isn't shipped.
 catalog_ok=1
 while IFS= read -r rel; do
   echo "about MISSING: $rel"; fail=1 catalog_ok=0
 done < <(jq -r '.about as $a | .files[] | select(($a[.].does // "") == "")' manifest.json)
+while IFS= read -r line; do
+  echo "about LONG:    $line"; fail=1 catalog_ok=0
+done < <(jq -r '.about as $a | .files[] | select(($a[.].does // "") | length > 80) | "\(.) (\($a[.].does|length) chars)"' manifest.json)
 while IFS= read -r rel; do
   echo "about ORPHAN:  $rel (not in files[])"; fail=1 catalog_ok=0
 done < <(jq -r '.files as $f | (.about // {}) | keys[] | select(IN($f[]) | not)' manifest.json)
-[ "$catalog_ok" = 1 ] && echo "about ok:      every manifest file is catalogued"
+[ "$catalog_ok" = 1 ] && echo "about ok:      every manifest file is catalogued (does ≤ 80 chars)"
 
 while IFS= read -r tool; do
   if command -v "$tool" >/dev/null 2>&1; then

@@ -3,6 +3,7 @@
 // deliberately not exposed by pi ("safe only in user-initiated commands"), so
 // applying extension updates is one `/reload` — or `/update` to do it all now.
 // A pi self-update always applies on next launch (core code can't hot-swap).
+// Several sessions starting together (herdr): a mkdir lock means only one runs it.
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { getAgentDir } from "@earendil-works/pi-coding-agent";
 import { mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";

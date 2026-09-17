@@ -1,7 +1,7 @@
 // herdr-fleet.ts — herdr-native fleet UX.
 //   /fleet                  compact status surface: named agents + live state + owner [mine]/[yours] (zero-token)
-//   /delegate <name> <task> spawn a named pi in a new tab of THIS workspace, hand it the task
-//   /ws [repo|dir] <purpose> new focused workspace: dir from identifier or the model's read of the purpose; name from purpose
+//   /delegate <name> <task> spawn a named pi in a new tab of THIS workspace, hand it the task; refuses without an `Owner outcome:` block
+//   /ws [repo|dir] <purpose> new focused workspace: dir from identifier or the model's read of the purpose; name from purpose; repo ids from `configs/ws.json`
 // Delegated pane agents are first-class: they join intercom under their herdr name,
 // and you talk to them by focusing their pane (herdr agent focus <name>).
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";

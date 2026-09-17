@@ -9,8 +9,8 @@
 #   target default: $PAWPRINT_TARGET or ~/.pi/agent
 #   --all: the full imprint (every manifest file) + machine machinery
 #   --only: imprint just these manifest paths (no machinery)
-#   --list: print the catalog (manifest.json `about`, one entry per file) as
-#   JSON and exit
+#   --list: print the catalog (manifest.json `about`, one entry per file) — a
+#   table on a TTY, JSON otherwise — and exit
 #   --config-only (alias --imprint-only): run ONLY the imprint — skip the
 #   machine-machinery section (pi install/packages/mise/ghostty/gh-dash)
 #   Bare setup.sh (no selector) refuses and points at the three above.
@@ -37,7 +37,14 @@ done
 run() { if [ "$dry" = 1 ]; then echo "DRY: $*"; else "$@"; fi }
 
 if [ "$list" = 1 ]; then
-  jq '[.files[] as $p | .about[$p] | {path: $p, does, needs: (.needs // []), personal: (.personal // false)}]' manifest.json
+  if [ -t 1 ]; then
+    maxpath=$(jq -r '.files[]' manifest.json | awk '{ if (length > m) m = length } END { print m+0 }')
+    printf '%-*s  P  does\n' "$maxpath" "path"
+    jq -r '.files[] as $p | .about[$p] | "\($p)\t\(.personal // false | if . then "P" else " " end)\t\(.does)"' manifest.json |
+      while IFS=$'\t' read -r pth p does; do printf '%-*s  %s  %s\n' "$maxpath" "$pth" "$p" "$does"; done
+  else
+    jq '[.files[] as $p | .about[$p] | {path: $p, does, needs: (.needs // []), personal: (.personal // false)}]' manifest.json
+  fi
   exit 0
 fi
 

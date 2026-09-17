@@ -1,5 +1,6 @@
 // compaction-fallback.ts — when compaction's summarization call fails (provider
 // refusal, overload), switch to a cross-family model and retry once, then restore.
+// Needs ≥2 enabled models; no-op if none is scoped besides the current one.
 // Fixes the stranded-session failure: at/above the compaction threshold a refusal
 // re-fires on every turn, and at true overflow the turn can't proceed without it —
 // same model, same deterministic refusal, dead loop. (Scout-verified: core treats
@@ -9,6 +10,7 @@ import type { Model } from "@earendil-works/pi-ai";
 
 // Ordered preference by id substring; first match in the session's scoped models wins.
 // Cross-family on purpose: a same-family fallback may trip the same refusal classifier.
+// No PREFER match → any other scoped model (may be same-family).
 const PREFER = ["gpt-5.6-sol", "kimi", "deepseek", "glm", "minimax"];
 
 export default function compactionFallback(pi: ExtensionAPI) {

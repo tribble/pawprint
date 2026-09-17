@@ -8,7 +8,7 @@ is their own `~/.pi/agent`; nothing here touches it unless you run `setup.sh`.
 ## Look, then pick
 
 ```sh
-./setup.sh --list                       # the catalog: [{path, does, needs, personal}] as JSON
+./setup.sh --list                       # the catalog — table on a TTY, JSON [{path, does, needs, personal}] when piped
 ./setup.sh --dry-run --only <path>...   # plan: what would be copied where, nothing written
 ./setup.sh --only <path>...             # copy just those files into ~/.pi/agent (or --target DIR)
 ```
