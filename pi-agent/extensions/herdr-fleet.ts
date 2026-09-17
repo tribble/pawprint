@@ -198,8 +198,8 @@ export default function herdrFleet(pi: ExtensionAPI) {
         if (!paneId) throw new Error("tab created but no pane_id in response");
         // --name makes session name = herdr name = intercom address (same contract as `ws create`).
         await herdr(pi, ["agent", "start", name, "--kind", "pi", "--pane", paneId, "--timeout", "60000", "--", "--name", name, "--thinking", "max"]);
-        // herdr >=0.9 confirms text+Enter landed before reporting success (was a 5s settle hack on 0.8).
-        await herdr(pi, ["agent", "prompt", name, `${task}\n\n${CONTRACT(me, name)}`, "--wait"]);
+        // --wait --until working = text+Enter landed and the child started; bare --wait would block until its whole turn ends.
+        await herdr(pi, ["agent", "prompt", name, `${task}\n\n${CONTRACT(me, name)}`, "--wait", "--until", "working", "--timeout", "10000"]);
         ctx.ui.notify(
           `🐑 ${name} delegated — \`herdr agent focus ${name}\` to watch; it can reach this session via intercom.`,
           "info"

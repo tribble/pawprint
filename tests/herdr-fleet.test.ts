@@ -85,7 +85,7 @@ const delegateExec = (roster: unknown[]) => async (_c: string, args: string[]) =
   return { code: 0, stdout: JSON.stringify({ result: {} }), stderr: "" };
 };
 
-test("/delegate: agent list → tab in MY workspace → agent start --name → prompt --wait (task + report-to-my-ID/close contract)", async () => {
+test("/delegate: agent list → tab in MY workspace → agent start --name → prompt --wait --until working (task + report-to-my-ID/close contract)", async () => {
   const pi = makePi({ execImpl: delegateExec([ME]) });
   herdrFleet(pi);
   const ctx = fleetCtx();
@@ -99,7 +99,7 @@ test("/delegate: agent list → tab in MY workspace → agent start --name → p
     ["herdr", "agent", "start", "scout", "--kind", "pi", "--pane", "wH:p2", "--timeout", "60000", "--", "--name", "scout", "--thinking", "max"],
   ]);
   const [prompt, ...rest] = pi.execCalls[3].slice(4);
-  assert.deepEqual([pi.execCalls[3].slice(0, 4), rest], [["herdr", "agent", "prompt", "scout"], ["--wait"]]);
+  assert.deepEqual([pi.execCalls[3].slice(0, 4), rest], [["herdr", "agent", "prompt", "scout"], ["--wait", "--until", "working", "--timeout", "10000"]]);
   assert.ok(prompt.startsWith("Owner outcome: fix the flake\n\n"), prompt);
   assert.ok(prompt.includes("Copy the block unchanged into every subagent brief"), prompt);
   assert.ok(prompt.includes(`report ONCE to intercom session \`${MY_ID}\` (that is your spawner's ID; use it verbatim)`), prompt);
