@@ -13,6 +13,7 @@
     "extensions/herdr-agent-name.ts",
     "extensions/herdr-agent-state.ts",
     "extensions/herdr-fleet.ts",
+    "extensions/md.ts",
     "extensions/pr-footer.ts",
     "extensions/pr-review.ts",
     "extensions/preset.ts",
@@ -80,6 +81,9 @@
     "extensions/herdr-fleet.ts": {
       "does": "herdr-fleet.ts: `/fleet`, `/delegate <name> <task>`, `/ws <purpose>` commands",
       "needs": ["herdr", "pi-subagents"]
+    },
+    "extensions/md.ts": {
+      "does": "`/md [path]`: render a markdown file inline; no arg = last .md the agent named"
     },
     "extensions/pr-footer.ts": {
       "does": "`⚑ N need review` in the pi footer, from pr-watch's cache (never calls GitHub)",

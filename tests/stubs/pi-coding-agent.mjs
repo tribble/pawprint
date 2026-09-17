@@ -18,6 +18,7 @@ export const CONFIG_DIR_NAME = ".pi";
 export class DynamicBorder {
   constructor() {}
 }
+export const getMarkdownTheme = () => ({});
 
 // Minimal mirrors of pi's context pipeline (session-manager.ts, messages.ts, compaction/utils.ts):
 // entries → AgentMessages → LLM messages → transcript text. Only the shapes the tests exercise.

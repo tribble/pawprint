@@ -17,6 +17,11 @@ export class Text {
     this.text = text;
   }
 }
+export class Markdown {
+  constructor(text) {
+    this.text = text;
+  }
+}
 export class SelectList {
   constructor(items) {
     this.items = items;
