@@ -1,6 +1,7 @@
 # pawprint — default-deny: nothing is tracked unless allowlisted below.
-# pi-agent/ is the curated print; new files dropped there stay invisible
-# to git until deliberately allowlisted.
+# ~/.pi is a sparse worktree of this repo (cone: agent/), so this file is also
+# what keeps auth.json, sessions/, git/ and every other runtime file pi writes
+# under agent/ invisible to git. Allowlist directories, never `agent/**`.
 *
 !.gitignore
 !.githooks/
@@ -10,7 +11,6 @@
 !AGENTS.md
 !setup.sh
 !scripts/
-!scripts/sync-back.sh
 !scripts/validate.sh
 !scripts/sync-forks.sh
 !scripts/patch-pi-anthropic-gateway
@@ -19,5 +19,29 @@
 !tsconfig.json
 !tests/
 !tests/**
-!pi-agent/
-!pi-agent/**
+!agent/
+!agent/AGENTS.md
+!agent/cloak.json
+!agent/mcp.json
+!agent/mise.toml
+!agent/models.json
+!agent/presets.json
+!agent/settings.json
+!agent/tsconfig.json
+!agent/agents/
+!agent/agents/**
+!agent/bin/
+!agent/bin/**
+!agent/configs/
+!agent/configs/**
+!agent/extensions/
+!agent/extensions/**
+!agent/ghostty/
+!agent/ghostty/**
+!agent/prompts/
+!agent/prompts/**
+!agent/skills/
+!agent/skills/**
+!agent/themes/
+!agent/themes/**
+*.bak-pawprint-*

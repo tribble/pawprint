@@ -6,7 +6,7 @@ import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { makePi, makeCtx } from "./harness.mjs";
-import herdrFleet from "../pi-agent/extensions/herdr-fleet.ts";
+import herdrFleet from "../agent/extensions/herdr-fleet.ts";
 
 const agentsReply = (agents: unknown) => ({
   code: 0,

@@ -1,18 +1,22 @@
 #!/usr/bin/env bash
-# pawprint: imprint the curated pi-agent config onto a machine.
-# COPIES pi-agent/* into the target dir — never symlinks: a tool writing its
-# config through a symlink would write into this repo, and the leak vector
-# returns. Target files that differ are backed up to <path>.bak-pawprint-<ts>.
+# pawprint: put the curated pi config on a machine.
+#   --only: COPIES agent/<path> into the target dir (adopters) — never symlinks:
+#   a tool writing its config through a symlink would write into this repo.
+#   Target files that differ are backed up to <path>.bak-pawprint-<ts>.
+#   --all: the owner's machine. The target's parent (~/.pi) becomes a locked,
+#   sparse (cone: agent) worktree of this repo on main — the live config IS the
+#   checkout. Files already there and equal are adopted, missing ones checked
+#   out, a differing one is DRIFT: nothing is overwritten and the run stops.
 #
 # Usage: setup.sh (--all | --only PATH...) [--dry-run] [--target DIR] [--config-only]
 #        setup.sh --list
-#   target default: $PAWPRINT_TARGET or ~/.pi/agent
-#   --all: the full imprint (every manifest file) + machine machinery
-#   --only: imprint just these manifest paths (no machinery)
+#   target default: $PAWPRINT_TARGET or ~/.pi/agent (--all needs it named agent/)
+#   --all: worktree at dirname(target) + machine machinery
+#   --only: copy just these manifest paths (no machinery)
 #   --list: print the catalog (manifest.json `about`, one entry per file) — a
 #   table on a TTY, JSON otherwise — and exit
-#   --config-only (alias --imprint-only): run ONLY the imprint — skip the
-#   machine-machinery section (pi install/packages/mise/ghostty/gh-dash)
+#   --config-only (alias --imprint-only): run ONLY the worktree/copy step — skip
+#   the machine-machinery section (pi install/packages/mise/ghostty/gh-dash)
 #   Bare setup.sh (no selector) refuses and points at the three above.
 set -euo pipefail
 cd "$(dirname "$0")"
@@ -54,7 +58,7 @@ if [ "$all" = 0 ] && [ ${#only[@]} -eq 0 ]; then
 pawprint: this is one person's pi config print. See AGENTS.md / README.
   ./setup.sh --list                 what's in it
   ./setup.sh --only <path>…         install pieces (add --dry-run first)
-  ./setup.sh --all                  full imprint — overwrites ~/.pi/agent (backups kept)
+  ./setup.sh --all                  owner only — makes ~/.pi a worktree of this repo
 EOF
   exit 2
 fi
@@ -70,9 +74,6 @@ if [ ${#only[@]} -gt 0 ]; then
   printf '%s\n' "${only[@]}" | jq -R --slurpfile m manifest.json -r 'select($m[0].about[.].personal == true)' |
     while IFS= read -r rel; do echo "$rel encodes tribble's own choices — read it before you keep it" >&2; done
 fi
-selected() {  # the manifest paths this run imprints: the --only subset, else all
-  if [ ${#only[@]} -gt 0 ]; then printf '%s\n' "${only[@]}"; else jq -r '.files[]' manifest.json; fi
-}
 
 # ---------------------------------------------------------- this checkout ---
 # Pre-commit secret scan (.githooks/pre-commit): repo-local git config, not a
@@ -83,40 +84,77 @@ if [ -e .git ] && [ "$(git config core.hooksPath)" != .githooks ]; then
   run git config core.hooksPath .githooks || { sleep 1; [ "$(git config core.hooksPath)" = .githooks ]; }
 fi
 
-# ---------------------------------------------------------------- imprint ---
-ts=$(date +%Y%m%d%H%M%S)
-# manifest.json is the single source of truth for what imprints
-selected | while IFS= read -r rel; do
-  dst="$target/$rel"
-  src="$PWD/pi-agent/$rel"
-  if [ -f "$dst" ] && cmp -s "$src" "$dst"; then
-    echo "ok (same):     $dst"
-    continue
-  fi
-  if [ -e "$dst" ]; then
-    run cp -a "$dst" "$dst.bak-pawprint-$ts"
-    echo "backed up:     $dst -> $dst.bak-pawprint-$ts"
-  fi
-  [ -f "$src" ] || continue   # index lists it but worktree lacks it
-  run mkdir -p "$(dirname "$dst")"
-  run cp -a "$src" "$dst"     # -a: preserve modes (exec bits) + timestamps
-  echo "imprinted:     $dst"
-done
-
-# Imprint is additive/corrective, never destructive: it creates and
-# overwrites (with backup), but never deletes. Removing config is a
-# deliberate manual act on the machine.
-if [ ${#only[@]} -eq 0 ]; then   # a subset install has no machine-level follow-ups
+# ------------------------------------------------------- --only: copy in ---
+if [ ${#only[@]} -gt 0 ]; then
+  ts=$(date +%Y%m%d%H%M%S)
+  printf '%s\n' "${only[@]}" | while IFS= read -r rel; do
+    dst="$target/$rel"
+    src="$PWD/agent/$rel"
+    if [ -f "$dst" ] && cmp -s "$src" "$dst"; then
+      echo "ok (same):     $dst"
+      continue
+    fi
+    if [ -e "$dst" ]; then
+      run cp -a "$dst" "$dst.bak-pawprint-$ts"
+      echo "backed up:     $dst -> $dst.bak-pawprint-$ts"
+    fi
+    [ -f "$src" ] || continue   # index lists it but worktree lacks it
+    run mkdir -p "$(dirname "$dst")"
+    run cp -a "$src" "$dst"     # -a: preserve modes (exec bits) + timestamps
+    echo "imprinted:     $dst"
+  done
   echo
-  echo "Manual steps remain: /login cloudflare-ai-gateway (or env) · /mcp-auth per OAuth server · /trust per project — see README."
+  echo "machine machinery: SKIPPED (--only)"
+  exit 0
 fi
 
+# ------------------------------------------------- --all: live worktree ---
+# The live config dir must be the cone (agent/) of the worktree at its parent.
+[ "$(basename "$target")" = agent ] || { echo "--all: target must be an agent/ dir (got $target)" >&2; exit 2; }
+root=$(dirname "$target")
+git=(git -C "$root")
+common=$(git rev-parse --path-format=absolute --git-common-dir)
+if [ "$("${git[@]}" rev-parse --path-format=absolute --git-common-dir 2>/dev/null)" != "$common" ]; then
+  [ -e "$root/.git" ] && { echo "$root is a git checkout of something else — not touching it" >&2; exit 1; }
+  if [ "$dry" = 1 ]; then echo "DRY: make $root a locked sparse worktree (agent/) of $PWD on main"; exit 0; fi
+  # main can be checked out once; this checkout gives it up (no file changes).
+  [ "$(git branch --show-current)" != main ] || { git switch -q --detach; echo "detached $PWD from main: main now lives in $root"; }
+  # `worktree add` wants an empty path; the live dir is not. Add at a scratch
+  # path, move the .git pointer file over, let git repair the back-link.
+  mkdir -p "$root"
+  scratch=$(mktemp -d "$root/pi.XXXXXX")
+  git worktree add -q --no-checkout --lock --reason "live pi config" "$scratch" main
+  mv "$scratch/.git" "$root/.git" && rmdir "$scratch"
+  git worktree repair "$root" >/dev/null 2>&1
+  "${git[@]}" sparse-checkout set --cone agent .githooks   # .githooks: the gitleaks pre-commit hook
+  "${git[@]}" reset -q   # index = main, files untouched
+  echo "worktree:      $root (main, sparse: agent/ .githooks/, locked)"
+elif [ "$dry" = 0 ] && "${git[@]}" rev-parse -q --verify '@{u}' >/dev/null 2>&1; then
+  "${git[@]}" pull -q --ff-only
+fi
+[ "$("${git[@]}" branch --show-current)" = main ] || { echo "$root is not on main — fix by hand" >&2; exit 1; }
+# Missing files first (.gitignore among them: it is what hides auth.json & co).
+"${git[@]}" diff --name-only --diff-filter=D | while IFS= read -r f; do
+  run "${git[@]}" checkout -q -- "$f"; echo "checked out:   $root/$f"
+done
+# Never overwrite a live file: a differing one is DRIFT, resolve it in $root with git.
+drift=$("${git[@]}" status --porcelain | cut -c4-)
+if [ -n "$drift" ]; then
+  sed 's/^/DRIFT:         /' <<<"$drift" >&2
+  echo "resolve in $root (git add -p / git checkout -- <file>), then re-run" >&2
+  exit 1
+fi
+echo "live:          clean ($root on main $("${git[@]}" rev-parse --short HEAD))"
+
+echo
+echo "Manual steps remain: /login cloudflare-ai-gateway (or env) · /mcp-auth per OAuth server · /trust per project — see README."
+
 # --------------------------------------- machine machinery (not the print) -
-# Global, machine-level bootstrap. Skipped by --dry-run / --imprint-only /
+# Global, machine-level bootstrap. Skipped by --dry-run / --config-only /
 # non-default --target. Prereqs: fish env vars set (see README), gh.
 if [ "$dry" = 1 ] || [ "$imprint_only" = 1 ] || [ "$target" != "$HOME/.pi/agent" ]; then
   echo
-  echo "machine machinery: SKIPPED (dry-run / --imprint-only / --only / non-default target)"
+  echo "machine machinery: SKIPPED (dry-run / --config-only / non-default target)"
   exit 0
 fi
 
@@ -126,7 +164,7 @@ fi
 command -v pi >/dev/null 2>&1 || npm install -g @earendil-works/pi-coding-agent
 
 # toolchain (typecheck): pinned via mise; types resolve the LIVE pi through a symlink
-command -v mise >/dev/null 2>&1 && (cd pi-agent && mise trust -q mise.toml 2>/dev/null; mise install)
+command -v mise >/dev/null 2>&1 && (cd agent && mise trust -q mise.toml 2>/dev/null; mise install)
 ln -sfn "$(npm root -g)/@earendil-works" "$target/.pi-types"
 command -v agent-browser >/dev/null 2>&1 || npm install -g agent-browser
 agent-browser install >/dev/null 2>&1 || true   # browser runtime
@@ -134,7 +172,7 @@ agent-browser install >/dev/null 2>&1 || true   # browser runtime
 # Packages: settings.json is the manifest. Skip any whose clone already exists —
 # re-running `pi install` on a listed source risks rewriting filtered
 # object-form entries (e.g. the kit's extension filters).
-jq -r '.packages[] | if type == "object" then .source else . end' pi-agent/settings.json |
+jq -r '.packages[] | if type == "object" then .source else . end' agent/settings.json |
   while IFS= read -r src; do
     dir="$target/git/$(printf '%s' "$src" | sed -E 's#^(git:|https?://|ssh://git@)##; s#:#/#; s#\.git$##')"
     if [ -d "$dir" ]; then
@@ -147,9 +185,9 @@ jq -r '.packages[] | if type == "object" then .source else . end' pi-agent/setti
 # ghostty: canonical config lives in this repo; install to the path Ghostty honors
 if [ -d /Applications/Ghostty.app ]; then
   mkdir -p "$HOME/Library/Application Support/com.mitchellh.ghostty"
-  cp pi-agent/ghostty/config.ghostty "$HOME/Library/Application Support/com.mitchellh.ghostty/config.ghostty"
+  cp agent/ghostty/config.ghostty "$HOME/Library/Application Support/com.mitchellh.ghostty/config.ghostty"
   mkdir -p "$HOME/.config/ghostty"
-  printf '# Canonical: pawprint repo pi-agent/ghostty/config.ghostty (installed by setup.sh)\n' \
+  printf '# Canonical: pawprint repo agent/ghostty/config.ghostty (installed by setup.sh)\n' \
     > "$HOME/.config/ghostty/config"
 fi
 

@@ -1,29 +1,49 @@
 #!/usr/bin/env bash
-# validate.sh — READ-ONLY audit: does the machine match the print?
-# Per manifest file: same / drift / missing. Every manifest file catalogued
-# (`about` entry with a `does`; no entry for a file that isn't shipped). Tools
-# on PATH. Env vars SET (presence only, never values). Repo history free of
-# secrets (gitleaks; missing scanner fails — this repo is public). Exit
-# non-zero on any mismatch.
+# validate.sh — READ-ONLY audit: is the live config the checkout it should be?
+# Live: dirname(target) is a locked worktree of this repo, on main, status
+# clean, main == origin/main. Manifest files[] == tracked agent/ files. Every
+# manifest file catalogued (`about` entry with a `does`; no entry for a file
+# that isn't shipped). Tools on PATH. Env vars SET (presence only, never
+# values). Repo history free of secrets (gitleaks; missing scanner fails —
+# this repo is public). Exit non-zero on any mismatch.
 # Usage: validate.sh [--target DIR]   (default ~/.pi/agent)
 set -uo pipefail
 cd "$(dirname "$0")/.." || exit 1
 
 target="$HOME/.pi/agent"
 if [ "${1:-}" = "--target" ]; then target="$2"; fi
+root=$(dirname "$target")
+git=(git -C "$root")
 
 fail=0
-while IFS= read -r rel; do
-  src="pi-agent/$rel"
-  dst="$target/$rel"
-  if [ ! -f "$dst" ]; then
-    echo "missing:       $rel"; fail=1
-  elif cmp -s "$src" "$dst"; then
-    echo "same:          $rel"
+mine=$(git rev-parse --path-format=absolute --git-common-dir 2>/dev/null)
+if [ -z "$mine" ] || [ "$("${git[@]}" rev-parse --path-format=absolute --git-common-dir 2>/dev/null)" != "$mine" ]; then
+  echo "live NOT WORKTREE: $root is not a worktree of this repo — setup.sh --all"; fail=1
+else
+  branch=$("${git[@]}" branch --show-current); sha=$("${git[@]}" rev-parse --short HEAD)
+  live_ok=1
+  [ "$branch" = main ] || { echo "live BRANCH:   $branch (want main)"; live_ok=0; }
+  [ -e "$("${git[@]}" rev-parse --path-format=absolute --git-dir)/locked" ] ||
+    { echo "live UNLOCKED: git -C $root worktree lock --reason 'live pi config' $root"; live_ok=0; }
+  while IFS= read -r line; do
+    echo "DRIFT:         ${line:3}"; live_ok=0
+  done < <("${git[@]}" status --porcelain)
+  if "${git[@]}" rev-parse -q --verify origin/main >/dev/null; then
+    ahead=$("${git[@]}" rev-list --count origin/main..HEAD); behind=$("${git[@]}" rev-list --count HEAD..origin/main)
+    [ "$ahead" = 0 ] || { echo "live UNPUSHED: $ahead commit(s) — git -C $root push"; live_ok=0; }
+    [ "$behind" = 0 ] || { echo "live BEHIND:   $behind commit(s) — git -C $root pull --ff-only"; live_ok=0; }
   else
-    echo "drift:         $rel"; fail=1
+    echo "live NO ORIGIN: origin/main unknown"; live_ok=0
   fi
-done < <(jq -r '.files[]' manifest.json)
+  [ "$live_ok" = 1 ] && echo "live:          clean ($branch $sha == origin/main)" || fail=1
+fi
+
+# manifest.json files[] is the adopters' catalog: exactly the tracked agent/ files
+if diff=$(diff <(jq -r '.files[]' manifest.json | sort) <(git ls-files agent/ | sed 's#^agent/##' | sort)); then
+  echo "manifest ok:   files[] == git ls-files agent/"
+else
+  echo "manifest DIFF: files[] vs git ls-files agent/ (< manifest, > tracked)"; echo "$diff" | grep '^[<>]'; fail=1
+fi
 
 # Catalog (setup.sh --list): every shipped file has an `about` with a `does`
 # (≤ 80 chars), and `about` names nothing that isn't shipped.
@@ -68,5 +88,5 @@ else
   echo "secrets FAIL:  ${err:-leak in git history — see: gitleaks git --redact -v .}"; fail=1
 fi
 
-if [ "$fail" = 0 ]; then echo "VALID: machine matches the print"; else echo "INVALID: mismatches above" >&2; fi
+if [ "$fail" = 0 ]; then echo "VALID: live config is the checkout"; else echo "INVALID: mismatches above" >&2; fi
 exit "$fail"

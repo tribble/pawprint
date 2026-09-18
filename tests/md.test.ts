@@ -7,7 +7,7 @@ import { mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { makePi, makeCtx } from "./harness.mjs";
-import md, { expandPath, lastMarkdownPath } from "../pi-agent/extensions/md.ts";
+import md, { expandPath, lastMarkdownPath } from "../agent/extensions/md.ts";
 
 const dir = mkdtempSync(join(tmpdir(), "pi-md-"));
 const assistant = (text: string) => ({ type: "message", message: { role: "assistant", content: [{ type: "thinking", thinking: "…" }, { type: "text", text }] } });

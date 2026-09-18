@@ -23,5 +23,5 @@
       ]
     }
   },
-  "include": ["tests/**/*.ts", "pi-agent/extensions/*.ts"]
+  "include": ["tests/**/*.ts", "agent/extensions/*.ts"]
 }
