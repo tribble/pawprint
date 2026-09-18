@@ -1,7 +1,8 @@
 # pawprint — default-deny: nothing is tracked unless allowlisted below.
 # ~/.pi is a sparse worktree of this repo (cone: agent/), so this file is also
 # what keeps auth.json, sessions/, git/ and every other runtime file pi writes
-# under agent/ invisible to git. Allowlist directories, never `agent/**`.
+# under agent/ invisible to git. Allowlist directories, never `agent/**`;
+# agent/bin/ by name: a binary dropped there must never become trackable.
 *
 !.gitignore
 !.githooks/
@@ -31,7 +32,7 @@
 !agent/agents/
 !agent/agents/**
 !agent/bin/
-!agent/bin/**
+!agent/bin/agent-costs
 !agent/configs/
 !agent/configs/**
 !agent/extensions/

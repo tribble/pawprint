@@ -123,7 +123,7 @@ if [ "$("${git[@]}" rev-parse --path-format=absolute --git-common-dir 2>/dev/nul
   # path, move the .git pointer file over, let git repair the back-link.
   mkdir -p "$root"
   scratch=$(mktemp -d "$root/pi.XXXXXX")
-  git worktree add -q --no-checkout --lock --reason "live pi config" "$scratch" main
+  git worktree add -q --no-checkout --lock --reason "live pi config" "$scratch" main || { rmdir "$scratch"; exit 1; }
   mv "$scratch/.git" "$root/.git" && rmdir "$scratch"
   git worktree repair "$root" >/dev/null 2>&1
   "${git[@]}" sparse-checkout set --cone agent .githooks   # .githooks: the gitleaks pre-commit hook

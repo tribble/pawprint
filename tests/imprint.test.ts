@@ -100,6 +100,7 @@ test("2. existing non-empty target, equal files + runtime decoys: adopted as-is,
   mkdirSync(join(live, "agent", "git", "x"), { recursive: true });
   writeFileSync(join(live, "agent", "git", "x", "y"), "clone");
   writeFileSync(join(live, "agent", "extensions", "btw.ts.bak-pawprint-20260101000000"), "old");
+  writeFileSync(join(live, "agent", "bin", "fd"), "\xcf\xfa\xed\xfe not-a-real-binary");   // unlisted binary under bin/
   const before = manifest(join(live, "agent"));
   const r = setupAll(repo, live);
   assert.equal(r.status, 0, r.stderr + r.stdout);
@@ -109,6 +110,7 @@ test("2. existing non-empty target, equal files + runtime decoys: adopted as-is,
   const add = spawnSync("git", ["-C", live, "add", "agent/auth.json"], { encoding: "utf8" });
   assert.notEqual(add.status, 0, "git add of an ignored runtime file is refused");
   assert.match(add.stderr, /ignored/);
+  assert.notEqual(spawnSync("git", ["-C", live, "add", "agent/bin/fd"], { encoding: "utf8" }).status, 0, "bin/ is allowlisted by name: an unlisted binary is ignored");
   assert.equal(JSON.parse(readFileSync(join(live, "agent", "auth.json"), "utf8")).junk, "SECRET-DECOY");
 });
 
@@ -159,6 +161,18 @@ test("5. --dry-run on a fresh target writes nothing; --all needs an agent/ targe
   const bad = spawnSync("bash", [join(repo, "setup.sh"), "--all", "--config-only", "--target", join(live, "config")], { encoding: "utf8" });
   assert.equal(bad.status, 2);
   assert.match(bad.stderr, /must be an agent\/ dir/);
+});
+
+test("6. main checked out in another worktree: refused naming it, nothing created", () => {
+  const repo = fixtureRepo();
+  git(repo, "switch", "-q", "--detach");
+  const other = join(mktmp("pawprint-w6o-"), "other");
+  git(repo, "worktree", "add", "-q", other, "main");
+  const live = join(mktmp("pawprint-w6-"), "pi");
+  const r = setupAll(repo, live);
+  assert.notEqual(r.status, 0);
+  assert.match(r.stderr, /'main' is already used by worktree at '.*other'/);
+  assert.deepEqual(readdirSync(live), [], "nothing left behind");
 });
 
 test("11. --list: JSON catalog on stdout only, one entry per manifest file, every `does` filled", () => {
