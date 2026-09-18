@@ -8,7 +8,7 @@ import assert from "node:assert/strict";
 import { execFileSync, spawnSync } from "node:child_process";
 import {
   mkdtempSync, mkdirSync, writeFileSync, readFileSync, existsSync,
-  cpSync, rmSync, chmodSync, readdirSync, statSync,
+  cpSync, rmSync, chmodSync, readdirSync, statSync, symlinkSync, lstatSync, readlinkSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, relative } from "node:path";
@@ -40,7 +40,9 @@ function manifest(dir: string): Map<string, string> {
   const walk = (d: string) => {
     for (const e of readdirSync(d)) {
       const p = join(d, e);
-      if (statSync(p).isDirectory()) walk(p);
+      const st = lstatSync(p);
+      if (st.isDirectory()) walk(p);
+      else if (st.isSymbolicLink()) out.set(relative(dir, p), "link:" + readlinkSync(p));
       else out.set(relative(dir, p), createHash("sha256").update(readFileSync(p)).digest("hex"));
     }
   };
@@ -119,10 +121,12 @@ test("3. differing live file: DRIFT names it, exit 1, nothing under agent/ overw
   const live = join(mktmp("pawprint-w3-"), "pi");
   cpSync(join(repo, "agent"), join(live, "agent"), { recursive: true });
   writeFileSync(join(live, "agent", "settings.json"), readFileSync(join(live, "agent", "settings.json")) + "\nDRIFT-MARKER\n");
+  writeFileSync(join(live, "agent", "auth.json"), "SENTINEL");
   const before = manifest(join(live, "agent"));
   const r = setupAll(repo, live);
   assert.equal(r.status, 1);
   assert.deepEqual(r.stderr.split("\n").filter((l) => l.startsWith("DRIFT:")), ["DRIFT:         agent/settings.json"]);
+  assert.notEqual(spawnSync("git", ["-C", live, "add", "--dry-run", "agent/auth.json"], { encoding: "utf8" }).status, 0, "refused run still leaves credentials unaddable");
   assert.deepEqual(manifestDiff(before, manifest(join(live, "agent"))), [], "agent/ byte-identical after the refused run");
   assert.ok(readFileSync(join(live, "agent", "settings.json"), "utf8").includes("DRIFT-MARKER"));
   assert.equal(git(live, "diff", "--name-only"), "agent/settings.json", "the drift is a plain git diff in live");
@@ -130,6 +134,54 @@ test("3. differing live file: DRIFT names it, exit 1, nothing under agent/ overw
   const again = setupAll(repo, live);
   assert.equal(again.status, 0, again.stderr + again.stdout);
   assert.equal(porcelain(live), "");
+});
+
+test("3b. a directory or symlink where a tracked file belongs, or a symlinked parent: DRIFT, left exactly as found", () => {
+  const repo = fixtureRepo();
+  const live = join(mktmp("pawprint-w3b-"), "pi");
+  mkdirSync(join(live, "agent", "settings.json"), { recursive: true });
+  writeFileSync(join(live, "agent", "settings.json", "must-survive"), "keep");
+  mkdirSync(join(live, "agent", "real-prompts"));
+  symlinkSync("real-prompts", join(live, "agent", "prompts"));
+  symlinkSync("/nonexistent-target", join(live, "agent", "mise.toml"));
+  const before = manifest(join(live, "agent"));
+  const r = setupAll(repo, live);
+  assert.equal(r.status, 1);
+  const drift = r.stderr.split("\n").filter((l) => l.startsWith("DRIFT:")).map((l) => l.replace(/ \(in the way: .*\)$/, ""));
+  assert.deepEqual(drift.sort(), [
+    "DRIFT:         agent/mise.toml",
+    "DRIFT:         agent/prompts/extract-process-improvements.md",
+    "DRIFT:         agent/prompts/start-ticket.md",
+    "DRIFT:         agent/settings.json",
+  ]);
+  const after = manifest(join(live, "agent"));
+  for (const [k, v] of before) assert.equal(after.get(k), v, `pre-existing entry untouched: ${k}`);
+  assert.ok(lstatSync(join(live, "agent", "prompts")).isSymbolicLink() && lstatSync(join(live, "agent", "mise.toml")).isSymbolicLink(), "symlinks intact");
+  assert.deepEqual(readdirSync(join(live, "agent", "real-prompts")), [], "nothing written through the symlink");
+  assert.ok(!r.stderr.includes("DRIFT:         \n"), "no empty DRIFT line");
+});
+
+test("3c. an ignore policy of its own in the live tree: refused BEFORE .git is attached", () => {
+  const repo = fixtureRepo();
+  for (const plant of [
+    (live: string) => writeFileSync(join(live, ".gitignore"), "*\n"),
+    (live: string) => { mkdirSync(join(live, "agent", "x")); writeFileSync(join(live, "agent", "x", ".gitignore"), "!auth.json\n"); },
+  ]) {
+    const live = join(mktmp("pawprint-w3c-"), "pi");
+    mkdirSync(join(live, "agent"), { recursive: true });
+    writeFileSync(join(live, "agent", "auth.json"), "SENTINEL");
+    plant(live);
+    const r = setupAll(repo, live);
+    assert.equal(r.status, 1);
+    assert.match(r.stderr, /^DRIFT:\s+(\.gitignore|agent\/x\/\.gitignore) .*not attaching$/m);
+    assert.ok(!existsSync(join(live, ".git")), "no .git attached");
+    assert.equal(git(repo, "branch", "--show-current"), "main", "fixture untouched");
+  }
+  // main's own .gitignore already in place is fine
+  const live = join(mktmp("pawprint-w3c-"), "pi");
+  mkdirSync(join(live, "agent"), { recursive: true });
+  writeFileSync(join(live, ".gitignore"), readFileSync(join(repo, ".gitignore")));
+  assert.equal(setupAll(repo, live).status, 0);
 });
 
 test("4. second run is a no-op: no worktree creation, no checkouts, still clean; unrelated .git dir at the target is refused", () => {
@@ -173,6 +225,39 @@ test("6. main checked out in another worktree: refused naming it, nothing create
   assert.notEqual(r.status, 0);
   assert.match(r.stderr, /'main' is already used by worktree at '.*other'/);
   assert.deepEqual(readdirSync(live), [], "nothing left behind");
+});
+
+test("7. machinery reads the LIVE main checkout: a package deployed to main is installed on re-run, from a detached script checkout", () => {
+  const repo = fixtureRepo();
+  const home = mktmp("pawprint-w7home-");
+  const live = join(home, ".pi");
+  const bin = mktmp("pawprint-w7bin-");
+  const trace = join(bin, "TRACE");
+  for (const tool of ["pi", "npm", "mise", "gh", "agent-browser"]) {   // every machinery tool records its argv
+    writeFileSync(join(bin, tool), `#!/bin/sh\necho "${tool} $*" >> "${trace}"\n`);
+    chmodSync(join(bin, tool), 0o755);
+  }
+  const env = { ...process.env, HOME: home, PATH: `${bin}:${process.env.PATH}`, CLOUDFLARE_ACCOUNT_ID: "x", CLOUDFLARE_GATEWAY_ID: "y" };
+  const run = () => spawnSync("bash", [join(repo, "setup.sh"), "--all"], { encoding: "utf8", env });
+  const installs = () => readFileSync(trace, "utf8").split("\n").filter((l) => l.startsWith("pi install ")).map((l) => l.split(" ")[2]);
+  const packages = (dir: string) => JSON.parse(readFileSync(join(dir, "agent", "settings.json"), "utf8")).packages
+    .map((p: string | { source: string }) => (typeof p === "string" ? p : p.source));
+
+  let r = run();
+  assert.equal(r.status, 0, r.stderr + r.stdout);
+  assert.deepEqual(installs(), packages(live), "first run: every package from the live settings.json");
+  assert.equal(git(repo, "branch", "--show-current"), "", "script checkout is detached now");
+
+  // deploy: main moves (in live), the script checkout stays where it was
+  const settings = JSON.parse(readFileSync(join(live, "agent", "settings.json"), "utf8"));
+  settings.packages.push("npm:@example/deployed-later");
+  writeFileSync(join(live, "agent", "settings.json"), JSON.stringify(settings, null, 2) + "\n");
+  git(live, "commit", "-q", "--no-verify", "-am", "deploy a package");
+  assert.ok(!packages(repo).includes("npm:@example/deployed-later"), "script checkout is stale by design");
+  rmSync(trace);
+  r = run();
+  assert.equal(r.status, 0, r.stderr + r.stdout);
+  assert.ok(installs().includes("npm:@example/deployed-later"), "re-run installs what main has, not what the stale checkout has");
 });
 
 test("11. --list: JSON catalog on stdout only, one entry per manifest file, every `does` filled", () => {
