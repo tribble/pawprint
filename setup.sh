@@ -120,11 +120,13 @@ if [ "$("${git[@]}" rev-parse --path-format=absolute --git-common-dir 2>/dev/nul
   # The ignore policy is what keeps auth.json & co out of git: before .git is
   # attached, the live tree must carry either no .gitignore or exactly main's,
   # and no nested one under agent/ (a nested file can un-ignore anything).
-  if [ -e "$root/.gitignore" ] && ! cmp -s "$root/.gitignore" <(git show main:.gitignore); then
-    echo "DRIFT:         .gitignore (differs from main's; the live ignore policy must be main's) — not attaching" >&2; exit 1
+  if [ -L "$root/.gitignore" ] || { [ -e "$root/.gitignore" ] && ! cmp -s "$root/.gitignore" <(git show main:.gitignore); }; then
+    echo "DRIFT:         .gitignore (must be main's as a regular file, or absent) — not attaching" >&2; exit 1
   fi
-  nested=$([ ! -d "$target" ] || find "$target" -name .gitignore)
-  [ -z "$nested" ] || { sed "s#^$root/#DRIFT:         #; s#\$# (nested ignore file overrides the allowlist) — not attaching#" <<<"$nested" >&2; exit 1; }
+  # A .gitignore inside an ignored directory (package clones under agent/git/…) is inert: git never re-includes below an excluded parent.
+  # ponytail: judged with THIS checkout's policy, not main's — they only differ while .gitignore itself is being changed on a branch.
+  nested=$([ ! -d "$target" ] || find "$target" -name .gitignore | while IFS= read -r f; do git check-ignore -q --no-index "$(dirname "${f#"$root/"}")" || echo "${f#"$root/"}"; done)
+  [ -z "$nested" ] || { sed "s#^#DRIFT:         #; s#\$# (nested ignore file overrides the allowlist) — not attaching#" <<<"$nested" >&2; exit 1; }
   # main can be checked out once; this checkout gives it up (no file changes).
   [ "$(git branch --show-current)" != main ] || { git switch -q --detach; echo "detached $PWD from main: main now lives in $root"; }
   # `worktree add` wants an empty path; the live dir is not. Add at a scratch

@@ -165,7 +165,10 @@ test("3c. an ignore policy of its own in the live tree: refused BEFORE .git is a
   const repo = fixtureRepo();
   for (const plant of [
     (live: string) => writeFileSync(join(live, ".gitignore"), "*\n"),
-    (live: string) => { mkdirSync(join(live, "agent", "x")); writeFileSync(join(live, "agent", "x", ".gitignore"), "!auth.json\n"); },
+    (live: string) => symlinkSync(join(repo, ".gitignore"), join(live, ".gitignore")),   // equal bytes, but git does not read a symlinked .gitignore
+    (live: string) => symlinkSync("/nonexistent", join(live, ".gitignore")),           // dangling: checkout would replace it
+    (live: string) => writeFileSync(join(live, "agent", ".gitignore"), "!auth.json\n"),
+    (live: string) => { mkdirSync(join(live, "agent", "extensions")); writeFileSync(join(live, "agent", "extensions", ".gitignore"), "!*\n"); },
   ]) {
     const live = join(mktmp("pawprint-w3c-"), "pi");
     mkdirSync(join(live, "agent"), { recursive: true });
@@ -173,15 +176,20 @@ test("3c. an ignore policy of its own in the live tree: refused BEFORE .git is a
     plant(live);
     const r = setupAll(repo, live);
     assert.equal(r.status, 1);
-    assert.match(r.stderr, /^DRIFT:\s+(\.gitignore|agent\/x\/\.gitignore) .*not attaching$/m);
+    assert.match(r.stderr, /^DRIFT:\s+(\.gitignore|agent\/\.gitignore|agent\/extensions\/\.gitignore) .*not attaching$/m);
     assert.ok(!existsSync(join(live, ".git")), "no .git attached");
     assert.equal(git(repo, "branch", "--show-current"), "main", "fixture untouched");
   }
-  // main's own .gitignore already in place is fine
+  // main's own .gitignore already in place is fine; so is a .gitignore inside an ignored dir (a package clone): inert
   const live = join(mktmp("pawprint-w3c-"), "pi");
-  mkdirSync(join(live, "agent"), { recursive: true });
+  mkdirSync(join(live, "agent", "git", "github.com", "example", "pkg"), { recursive: true });
+  writeFileSync(join(live, "agent", "git", "github.com", "example", "pkg", ".gitignore"), "!*\nnode_modules\n");
+  writeFileSync(join(live, "agent", "auth.json"), "SENTINEL");
   writeFileSync(join(live, ".gitignore"), readFileSync(join(repo, ".gitignore")));
-  assert.equal(setupAll(repo, live).status, 0);
+  const ok = setupAll(repo, live);
+  assert.equal(ok.status, 0, ok.stderr + ok.stdout);
+  assert.equal(git(live, "status", "--porcelain"), "", "clone and its .gitignore invisible");
+  assert.notEqual(spawnSync("git", ["-C", live, "add", "--dry-run", "agent/auth.json"], { encoding: "utf8" }).status, 0);
 });
 
 test("4. second run is a no-op: no worktree creation, no checkouts, still clean; unrelated .git dir at the target is refused", () => {
