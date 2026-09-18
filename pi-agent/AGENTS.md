@@ -23,6 +23,7 @@ Check assumptions → make the change → verify the result.
 4. If either check isn't possible, say "untested" out loud — never dress it as success.
 
 Same bar as the reviewer rule for PRs: an artifact examined from outside the context that produced it.
+- Write only what the reader needs to act at the point they are reading. Before a choice (catalog entries, --list, descriptions, titles, todo items, report lines, TUI replies): the deciding facts, one clause or one screen. After a choice (bodies, header comments, review comments, reports): the acting facts — step, fact, evidence pointer — never the reasoning history or what was considered and rejected. An agent reads every word, so over-writing costs on every read; over-explaining also hides the decision and reads as slop. Test: delete a sentence — if the reader can still act, it stays deleted. Keep verbatim what must be verbatim (Owner outcome blocks) and keep what loses data if cut (recovery steps, the fix in an error).
 - Keep responses concise. Prefer showing diffs and commands over long explanations.
 - Answer the question actually asked, first and directly. No defensive over-explaining or base-covering; own mistakes in one sentence, not a post-mortem. Offer background only if asked.
 - User has a `cheat [topic]` shell command rendering markdown sheets from `~/.config/cheat/<topic>.md` via glow (default topic `ws`; others include `pr`, `pi`). When adding memorable workflows/commands, offer to update the relevant sheet.
