@@ -71,7 +71,7 @@
       "does": "`/done`: archive this session out of the `/resume` list and quit (still on disk)"
     },
     "extensions/herdr-agent-name.ts": {
-      "does": "herdr-agent-name: renames the herdr agent + tab to match the pi session name",
+      "does": "herdr-agent-name: session name → herdr slug; sidebar, tab and intercom share it",
       "needs": ["herdr"]
     },
     "extensions/herdr-agent-state.ts": {
