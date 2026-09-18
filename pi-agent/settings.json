@@ -22,9 +22,9 @@
     "cloudflare-ai-gateway/claude-opus-5",
     "cloudflare-ai-gateway/claude-sonnet-5",
     "cloudflare-ai-gateway/accounts/fireworks/models/kimi-k3",
-    "cloudflare-ai-gateway/accounts/fireworks/models/glm-5p2",
+    "cloudflare-ai-gateway/accounts/fireworks/models/glm-5p3",
     "cloudflare-ai-gateway/accounts/fireworks/models/deepseek-v4-pro",
-    "cloudflare-ai-gateway/accounts/fireworks/models/qwen3p7-max",
+    "cloudflare-ai-gateway/accounts/fireworks/models/qwen3p8-max",
     "cloudflare-ai-gateway/accounts/fireworks/models/minimax-m3"
   ],
   "packages": [
@@ -70,7 +70,7 @@
         "model": "cloudflare-ai-gateway/claude-sonnet-5"
       },
       "fixer": {
-        "model": "cloudflare-ai-gateway/accounts/fireworks/models/glm-5p2"
+        "model": "cloudflare-ai-gateway/accounts/fireworks/models/glm-5p3"
       },
       "watcher": {
         "model": "cloudflare-ai-gateway/accounts/fireworks/models/minimax-m3"

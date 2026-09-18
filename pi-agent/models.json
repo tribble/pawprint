@@ -97,8 +97,8 @@
           }
         },
         {
-          "id": "accounts/fireworks/models/glm-5p2",
-          "name": "glm 5.2",
+          "id": "accounts/fireworks/models/glm-5p3",
+          "name": "glm 5.3",
           "api": "openai-completions",
           "baseUrl": "https://gateway.ai.cloudflare.com/v1/{CLOUDFLARE_ACCOUNT_ID}/{CLOUDFLARE_GATEWAY_ID}/custom-fireworks-ai/v1",
           "reasoning": true,
@@ -161,8 +161,8 @@
           }
         },
         {
-          "id": "accounts/fireworks/models/qwen3p7-max",
-          "name": "qwen3.7 max",
+          "id": "accounts/fireworks/models/qwen3p8-max",
+          "name": "qwen3.8 max",
           "api": "anthropic-messages",
           "baseUrl": "https://gateway.ai.cloudflare.com/v1/{CLOUDFLARE_ACCOUNT_ID}/{CLOUDFLARE_GATEWAY_ID}/custom-fireworks-ai",
           "reasoning": true,
@@ -176,7 +176,7 @@
             "text"
           ],
           "cost": {
-            "input": 1.2,
+            "input": 2.0,
             "output": 6,
             "cacheRead": 0.24,
             "cacheWrite": 0
