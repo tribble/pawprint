@@ -1,5 +1,5 @@
 ---
-description: "Start a Linear ticket: worktree + workspace + agent that plans first"
+description: "Start a Linear ticket: worktree + workspace + agent that shapes first"
 argument-hint: "<LINEAR-ID> [repo]"
 ---
 Start Linear ticket `$1` as a new workstream. You only coordinate: pick repo, branch type and slug, run `ws create`, hand the new agent ONE line. The agent reads the ticket itself — you never summarize, paraphrase or relay the ticket to it.
@@ -16,7 +16,7 @@ Start Linear ticket `$1` as a new workstream. You only coordinate: pick repo, br
 4. Wait until the new pi is listening: `herdr agent wait <agent-name> --until idle --timeout 60000`. If it does not exit 0, report its output verbatim plus <agent-name> and the worktree path and stop — nothing has been sent yet.
 
 5. Hand off ONCE. `<agent-name>` is the quoted name from that line (the lowercased slug — read it from the output, don't derive it). Run exactly:
-   `herdr agent prompt <agent-name> "Linear $1. Fetch it yourself with the Linear tools; that ticket is the Owner outcome — quote it verbatim in your first reply. Plan first: post the plan in this pane and wait for go before changing anything." --wait --until working`
+   `herdr agent prompt <agent-name> "Linear $1. Fetch it yourself with the Linear tools; that ticket is the Owner outcome — quote it verbatim in your first reply. Shape first: use the shape skill — post the mock in this pane and wait for go before changing anything." --wait --until working`
    Substitute only `<agent-name>`. Nothing else about the ticket goes to the agent — no title, no summary, no repo or type hints. If that command did not exit 0: check whether the line landed anyway — `herdr pane read <pane-id> | grep -c "Linear $1\."` (pane-id from the `ws` output). 0 → run the same prompt command once more; ≥1 → it landed, continue. If the retry also fails, report its error verbatim plus <agent-name>, <pane-id> and the worktree path (recovery: prompt it by hand) and stop — no focus. Only after exit 0 (or a confirmed landing): `herdr agent focus <agent-name>`.
 
-6. Reply with one line: `🐑 <agent-name> — planning $1 on <branch> in <worktree path, ~ for $HOME> (focused)`. If focus did not exit 0, replace `(focused)` with `(focus failed: <error>)` — never report what you did not observe.
+6. Reply with one line: `🐑 <agent-name> — shaping $1 on <branch> in <worktree path, ~ for $HOME> (focused)`. If focus did not exit 0, replace `(focused)` with `(focus failed: <error>)` — never report what you did not observe.

@@ -24,6 +24,7 @@
     "presets.json",
     "prompts/extract-process-improvements.md",
     "prompts/start-ticket.md",
+    "skills/shape/SKILL.md",
     "settings.json",
     "tsconfig.json",
     "bin/agent-costs",
@@ -124,8 +125,13 @@
       "does": "`/extract-process-improvements`: fold durable lessons into AGENTS.md, or nothing"
     },
     "prompts/start-ticket.md": {
-      "does": "`/start-ticket <LINEAR-ID>`: Linear → `ws create` + agent that plans and waits",
+      "does": "`/start-ticket <LINEAR-ID>`: Linear → `ws create` + agent that shapes and waits",
       "needs": ["linear MCP", "ws (~/.local/bin/ws)", "herdr", "configs/ws.json"]
+    },
+    "skills/shape/SKILL.md": {
+      "does": "`shape` skill: user approves a mock of the result before any build",
+      "needs": ["extensions/herdr-fleet.ts"],
+      "personal": true
     },
     "settings.json": {
       "does": "pi's main settings — tribble's: model routing, packages, subagent models",

@@ -78,6 +78,23 @@ test("/delegate: task without an `Owner outcome:` block is refused before anythi
   assert.equal(pi.execCalls.length, 0);
 });
 
+test("/delegate: task without `Approved mock:` or `Mock: skipped:` is refused before anything is spawned", async () => {
+  const pi = makePi({ execImpl: delegateExec([ME]) });
+  herdrFleet(pi);
+  const ctx = fleetCtx();
+  await pi.commands.delegate.handler("scout Owner outcome: fix the flake", ctx);
+  assert.equal(ctx.notes.at(-1).level, "error");
+  assert.ok(ctx.notes.at(-1).msg.includes("Approved mock:"), ctx.notes.at(-1).msg);
+  assert.ok(ctx.notes.at(-1).msg.includes("shape skill"), ctx.notes.at(-1).msg);
+  assert.equal(pi.execCalls.length, 0);
+  // an inline mention is not a block
+  await pi.commands.delegate.handler("scout Owner outcome: fix the flake\nsee the Approved mock: below", ctx);
+  assert.equal(pi.execCalls.length, 0);
+  // approved mock passes the gate
+  await pi.commands.delegate.handler("scout Owner outcome: fix the flake\nApproved mock:\n  $ x\n  ok", ctx);
+  assert.equal(pi.execCalls[0]?.[1], "agent");
+});
+
 // Fake herdr for /delegate: `agent list` returns the given roster, `tab create` a tab+pane, everything else {}.
 const delegateExec = (roster: unknown[]) => async (_c: string, args: string[]) => {
   if (args[0] === "agent" && args[1] === "list") return agentsReply(roster);
@@ -89,7 +106,7 @@ test("/delegate: agent list → tab in MY workspace → agent start --name → p
   const pi = makePi({ execImpl: delegateExec([ME]) });
   herdrFleet(pi);
   const ctx = fleetCtx();
-  await pi.commands.delegate.handler("scout Owner outcome: fix the flake", ctx);
+  await pi.commands.delegate.handler("scout Owner outcome: fix the flake\nMock: skipped: no user-visible surface", ctx);
   assert.deepEqual(pi.execCalls.slice(0, 3), [
     ["herdr", "agent", "list"],
     // a tab in the caller's workspace (grouped sidebar nests it under the caller), never a new workspace;
@@ -100,8 +117,9 @@ test("/delegate: agent list → tab in MY workspace → agent start --name → p
   ]);
   const [prompt, ...rest] = pi.execCalls[3].slice(4);
   assert.deepEqual([pi.execCalls[3].slice(0, 4), rest], [["herdr", "agent", "prompt", "scout"], ["--wait", "--until", "working", "--timeout", "10000"]]);
-  assert.ok(prompt.startsWith("Owner outcome: fix the flake\n\n"), prompt);
-  assert.ok(prompt.includes("Copy the block unchanged into every subagent brief"), prompt);
+  assert.ok(prompt.startsWith("Owner outcome: fix the flake\nMock: skipped: no user-visible surface\n\n"), prompt);
+  assert.ok(prompt.includes("`Approved mock:` is the acceptance criterion"), prompt);
+  assert.ok(prompt.includes("Copy both blocks unchanged into every subagent brief"), prompt);
   assert.ok(prompt.includes(`report ONCE to intercom session \`${MY_ID}\` (that is your spawner's ID; use it verbatim)`), prompt);
   assert.ok(!prompt.includes("coordinator-test"), "the spawner's name is not an address");
   assert.ok(prompt.includes('herdr tab close "$HERDR_TAB_ID"'), prompt);
@@ -113,7 +131,7 @@ test("/delegate: own pane not in agent list (not inside herdr) → error, nothin
   const pi = makePi({ execImpl: delegateExec([{ name: "other", pane_id: "w2:p1", workspace_id: "w2" }]) });
   herdrFleet(pi);
   const ctx = fleetCtx();
-  await pi.commands.delegate.handler("x Owner outcome: do thing", ctx);
+  await pi.commands.delegate.handler("x Owner outcome: do thing\nMock: skipped: test", ctx);
   assert.deepEqual(pi.execCalls, [["herdr", "agent", "list"]]);
   assert.deepEqual(ctx.notes.at(-1), { msg: "delegate: /delegate needs to run inside a herdr pane", level: "error" });
 });
@@ -121,7 +139,7 @@ test("/delegate: own pane not in agent list (not inside herdr) → error, nothin
 test("/delegate: name taken by a live agent → suffixed name for label, agent and --name", async () => {
   const pi = makePi({ execImpl: delegateExec([ME, { name: "scout", pane_id: "w2:p1", workspace_id: "w2" }, { name: "scout-2", pane_id: "wH:p3", workspace_id: "wH" }]) });
   herdrFleet(pi);
-  await pi.commands.delegate.handler("scout Owner outcome: go", fleetCtx());
+  await pi.commands.delegate.handler("scout Owner outcome: go\nMock: skipped: test", fleetCtx());
   assert.equal(pi.execCalls[1][8], "scout-3"); // --label
   assert.equal(pi.execCalls[2][3], "scout-3"); // agent start <name>
   assert.equal(pi.execCalls[2][12], "scout-3"); // -- --name <name>
@@ -134,7 +152,7 @@ test("/delegate: tab without pane_id → error notify", async () => {
   });
   herdrFleet(pi);
   const ctx = fleetCtx();
-  await pi.commands.delegate.handler("x Owner outcome: do thing", ctx);
+  await pi.commands.delegate.handler("x Owner outcome: do thing\nMock: skipped: test", ctx);
   assert.equal(ctx.notes.at(-1).level, "error");
   assert.ok(ctx.notes.at(-1).msg.includes("no pane_id"));
 });
