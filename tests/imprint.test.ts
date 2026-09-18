@@ -81,6 +81,13 @@ test("1. fresh target: locked sparse worktree on main, every manifest file, stat
   assert.ok(r.stdout.includes("machine machinery: SKIPPED"));
   assert.ok(!existsSync(trace), "no machinery tool was invoked");
   assert.ok(!existsSync(join(live, "agent", "auth.json")));
+  // the gitleaks hook guards commits made in live too (hooksPath is repo config; .githooks is in the cone)
+  const fake = "ghp_" + "Qm7xT2vLp9RkZs4WnJ3hYb8CdF6gAe1UiO5tX0".slice(0, 36);
+  writeFileSync(join(live, "agent", "extensions", "leak.ts"), `token = "${fake}"\n`);
+  git(live, "add", "agent/extensions/leak.ts");
+  const refused = spawnSync("git", ["-C", live, "-c", "user.name=t", "-c", "user.email=t@t", "commit", "-q", "-m", "leak"], { encoding: "utf8" });
+  assert.notEqual(refused.status, 0);
+  assert.match(refused.stderr, /pawprint: secret in staged changes/);
 });
 
 test("2. existing non-empty target, equal files + runtime decoys: adopted as-is, decoys byte-identical, ignored, unaddable", () => {

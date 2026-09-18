@@ -1,17 +1,16 @@
 # pawprint
 
-The curated print of my pi agent config. This repo is a **source of safe
-config, never a mirror of a sensitive directory**: `~/.pi/agent` contains
-`auth.json`, OAuth state, sessions, and tool-rewritable files, so it must
-never be a git root again. **Never `git init ~/.pi/agent` again.**
-
-`pi-agent/` mirrors `~/.pi/agent`-relative paths and holds exactly the
-reviewed-safe files. **`manifest.json` is the single source of truth** for
-what ships: its `files` list (agent-dir-relative) drives both `setup.sh`
-and `scripts/sync-back.sh`, plus `tools` (PATH audit) and `env` (presence
-audit). The repo imprints itself onto a machine by **copying** — never
+The curated print of my pi agent config. `agent/` mirrors `~/.pi/agent`-relative
+paths and holds exactly the reviewed-safe files; on my machine `~/.pi` **is a
+sparse worktree of this repo** (cone: `agent/`), so the live config is the
+checkout itself. The default-deny `.gitignore` is what keeps `auth.json`, OAuth
+state, sessions and package clones out: nothing under `agent/` is tracked
+unless its directory is allowlisted. **`manifest.json` is the adopters'
+catalog**: its `files` list (agent-dir-relative) must equal the tracked
+`agent/` files (`validate.sh` checks), plus `tools` (PATH audit) and `env`
+(presence audit). Adopters get pieces by **copying** (`--only`) — never
 symlinks: a tool writing its config through a symlink would write into this
-repo, and the leak vector returns.
+repo.
 
 There is deliberately no prompt-driven `/setup` installer: determinism beats
 adaptivity for a single-owner print.
@@ -36,29 +35,26 @@ root `AGENTS.md`.
 
 ## Fresh machine (mine)
 
-This is how *I* imprint a new machine. `--all` overwrites the whole live
-config with my print; if you are not me, you want "Adopt a piece" above.
+This is how *I* set up a new machine; if you are not me, you want "Adopt a
+piece" above.
 
 ```sh
 git clone git@github.com:tribble/pawprint.git ~/work/pawprint
 ~/work/pawprint/setup.sh --all
 ```
 
-`setup.sh --all` imprints `pi-agent/*` into `~/.pi/agent` (override:
-`--target DIR` or `PAWPRINT_TARGET`), backing up differing files to
-`<path>.bak-pawprint-<ts>` and skipping identical ones. `--dry-run` prints
-the plan and writes nothing. `--config-only` runs ONLY the imprint, skipping
-the machine machinery.
+`setup.sh --all` makes `~/.pi` a **locked sparse worktree on `main`** of the
+clone (cone `agent/` + `.githooks/`; root files come along), detaching the
+clone from `main` since a branch checks out once. An existing `~/.pi/agent` is
+adopted in place: equal files are left alone, missing ones checked out, a
+differing one is `DRIFT` — nothing is overwritten and the run stops until it
+is resolved with git in `~/.pi`. Re-runs `pull --ff-only`. `--dry-run` prints
+the plan and writes nothing; `--config-only` skips the machine machinery.
 
-Imprint is **additive/corrective, never destructive**: it creates and
-overwrites (with backup), but never deletes. A file removed from the repo
-stops being managed — its live copy is left alone. Removing config from a
-machine is a deliberate manual act.
-
-The machine machinery (skipped under `--dry-run` / `--imprint-only` /
+The machine machinery (skipped under `--dry-run` / `--config-only` /
 non-default target) then bootstraps the rest: pi + agent-browser via npm,
 mise toolchain pin, `.pi-types` symlink, packages from the
-`pi-agent/settings.json` manifest, ghostty config copy-out, gh-dash
+`agent/settings.json` manifest, ghostty config copy-out, gh-dash
 extension. Prereq: `CLOUDFLARE_ACCOUNT_ID` / `CLOUDFLARE_GATEWAY_ID` set in
 `~/.config/fish/conf.d` (see the dotfiles repo's `pi.fish.template`).
 
@@ -68,14 +64,16 @@ Manual steps after setup: `/login cloudflare-ai-gateway` (or env) ·
 ## Drift repair
 
 ```sh
-scripts/validate.sh   # READ-ONLY audit: same/drift/missing per manifest file,
+scripts/validate.sh   # READ-ONLY audit: ~/.pi is a locked worktree of this repo
+                      # on main, status clean, main == origin/main (else DRIFT /
+                      # UNPUSHED / BEHIND per line); manifest == tracked agent/;
                       # tools on PATH, env vars set (presence, never values),
                       # git history free of secrets (gitleaks); exit non-zero
                       # on any mismatch
 ```
 
-Then re-run `setup.sh --all` to repair: files you changed locally are backed up,
-then restored to the print. `validate.sh` again should be green.
+Drift is a git diff in `~/.pi`: `git -C ~/.pi diff`, then keep it
+(`add -p && commit && push`) or drop it (`checkout -- <file>`).
 
 Cloudflare-routed Anthropic models failing with "credentials … expired" or
 "Credentials file not found"? Root cause is a stale Anthropic SDK profile in
@@ -94,8 +92,8 @@ touches nothing if a future pi version changes the patched lines.
 
 ## Developing
 
-The repo has a dev side that never imprints (`tests/` lives outside
-`pi-agent/`).
+The repo has a dev side that never reaches `~/.pi` (`tests/`, `scripts/` are
+outside the sparse cone).
 
 ```sh
 npm test            # extension behavior suites + the encoded imprint matrix
@@ -105,33 +103,29 @@ npm run typecheck   # pinned typescript@5.9.3 over tests + extensions
 Zero dependencies: Node 24 runs the `.ts` natively; an ESM loader hook
 (`tests/loader.mjs`) redirects pi's runtime packages to stubs in
 `tests/stubs/`, and `tests/harness.mjs` fakes the ExtensionAPI/ctx. The
-imprint matrix (`tests/imprint.test.ts`) drives `setup.sh`/`sync-back.sh`
-against mktemp scratch targets only — never the live dir — and is the
-regression net for script changes. The full 210k-file replica imprint stays
+imprint matrix (`tests/imprint.test.ts`) drives `setup.sh` against throwaway
+fixture repos and mktemp targets only — never this checkout's git, never
+`~/.pi` — and is the regression net for script changes. The full 210k-file replica imprint stays
 a manual pre-ship gate. `npm run typecheck` needs the `.pi-types` symlink
 (`ln -s "$(npm root -g)/@earendil-works" .pi-types`; setup.sh's machinery
 creates the equivalent in the agent dir).
 
-## Keeping a change (live → repo)
+## Changing config
 
-```sh
-scripts/sync-back.sh   # copies live → pi-agent/ for a hardcoded known-safe list
-```
+`~/.pi` is the `main` checkout; never author on it. Branch in a dev worktree,
+edit `agent/<path>`, `npm test`, commit, then deploy by merging:
+`git -C ~/.pi merge --ff-only <branch> && git -C ~/.pi push`. Something pi or
+an MCP adapter wrote into the live config shows up in `git -C ~/.pi status`;
+keep it with `git -C ~/.pi add -p agent/<file> && commit && push`. Never in
+`~/.pi`: `add -f`, `add -A`, `clean`, `stash -u`, branch switches — the
+untracked files there are the credentials and sessions.
 
-That copy is the review moment: the script touches only the paths in its
-`paths=(...)` list (never a wildcard; never `auth.json`, `mcp-oauth/`, or
-package clones) and prints `git diff --stat` afterwards. Read the diff, then
-commit. A new keeper is added by hand to both the list and the default-deny
-`.gitignore` — which is structural hygiene, not a guard: nothing is tracked
-unless allowlisted, so read the staged diff before every commit.
-
-Three structural layers keep secrets out of the print — the manifest
-allowlist (only reviewed paths sync back), the default-deny `.gitignore`
-(nothing is tracked unless allowlisted), and secrets-by-reference in the
-config itself (`mcp.json` holds `"!gh auth token"`, a command, never a
-token) — plus one content scan: `.githooks/pre-commit` runs `gitleaks` on
-every staged diff (`setup.sh` sets `core.hooksPath`; a missing scanner
-fails the commit, since this repo is public) and `scripts/validate.sh`
-scans the whole history. Fingerprints for genuine false positives go in
-`.gitleaksignore`, each with a comment. The loop is: `scripts/sync-back.sh`
-→ `npm test` → commit (the hook scans) → push.
+Two structural layers keep secrets out — the default-deny `.gitignore`
+(nothing under `agent/` is tracked unless its directory is allowlisted; never
+`agent/**`) and secrets-by-reference in the config itself (`mcp.json` holds
+`"!gh auth token"`, a command, never a token) — plus one content scan:
+`.githooks/pre-commit` runs `gitleaks` on every staged diff, in `~/.pi` too
+(`setup.sh` sets `core.hooksPath`, repo-wide; a missing scanner fails the
+commit, since this repo is public) and `scripts/validate.sh` scans the whole
+history. Fingerprints for genuine false positives go in `.gitleaksignore`,
+each with a comment.
