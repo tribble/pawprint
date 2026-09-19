@@ -112,7 +112,7 @@ fi
 # The live config dir must be the cone (agent/) of the worktree at its parent.
 [ "$(basename "$target")" = agent ] || { echo "--all: target must be an agent/ dir (got $target)" >&2; exit 2; }
 root=$(dirname "$target")
-git=(git -C "$root")
+git=(git --literal-pathspecs -C "$root")   # literal: a tracked name like `[ab].ts` must never glob onto siblings
 # Nested .gitignore files under the live agent/ that git would READ under the
 # policy of <rev>: a nested file can un-ignore anything, so any active one is
 # DRIFT. One inside a directory the policy ignores (package clones under

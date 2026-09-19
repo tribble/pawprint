@@ -359,6 +359,21 @@ test("9. paths with spaces and non-ASCII: in the way is still DRIFT, both on fir
   assert.equal(readFileSync(join(live, "agent", "späce d.json"), "utf8"), "mine\n");
 });
 
+test("10. a missing tracked file whose name is a glob never restores its siblings: literal pathspecs", () => {
+  const repo = fixtureRepo();
+  writeFileSync(join(repo, "agent", "extensions", "[ab].ts"), "export const glob = 1\n");
+  git(repo, "add", "-A"); git(repo, "commit", "-q", "--no-verify", "-m", "glob-named file");
+  const live = join(mktmp("pawprint-w10-"), "pi");
+  cpSync(join(repo, "agent"), join(live, "agent"), { recursive: true });
+  rmSync(join(live, "agent", "extensions", "[ab].ts"));
+  writeFileSync(join(live, "agent", "extensions", "a.ts"), "// mine\n");   // a sibling `[ab].ts` would match as a pattern
+  const r = setupAll(repo, live);
+  assert.equal(r.status, 1, r.stdout + r.stderr);
+  assert.equal(readFileSync(join(live, "agent", "extensions", "a.ts"), "utf8"), "// mine\n", "sibling untouched");
+  assert.ok(existsSync(join(live, "agent", "extensions", "[ab].ts")), "the literally-named file was checked out");
+  assert.deepEqual(r.stderr.split("\n").filter((l) => l.startsWith("DRIFT:")), ["DRIFT:         agent/extensions/a.ts"]);
+});
+
 test("11. --list: JSON catalog on stdout only, one entry per manifest file, every `does` filled", () => {
   const files: string[] = JSON.parse(readFileSync(join(REPO, "manifest.json"), "utf8")).files;
   const r = spawnSetup(["--list"]);
