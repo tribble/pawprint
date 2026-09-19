@@ -180,6 +180,32 @@ test("3c. an ignore policy of its own in the live tree: refused BEFORE .git is a
     assert.ok(!existsSync(join(live, ".git")), "no .git attached");
     assert.equal(git(repo, "branch", "--show-current"), "main", "fixture untouched");
   }
+  // case-insensitive live filesystem (macOS default): git reads agent/.GITIGNORE as .gitignore
+  {
+    const live = join(mktmp("pawprint-w3c-"), "pi");
+    mkdirSync(join(live, "agent"), { recursive: true });
+    writeFileSync(join(live, "agent", ".GITIGNORE"), "!auth.json\n");
+    if (existsSync(join(live, "agent", ".gitignore"))) {
+      const r = setupAll(repo, live);
+      assert.equal(r.status, 1);
+      assert.match(r.stderr, /^DRIFT:\s+agent\/\.GITIGNORE .*not attaching$/m);
+      assert.ok(!existsSync(join(live, ".git")));
+    }
+  }
+  // judged with MAIN's policy, not the script checkout's: main newly allowlists a dir the checkout still ignores
+  {
+    const stale = fixtureRepo();
+    writeFileSync(join(stale, ".gitignore"), readFileSync(join(stale, ".gitignore"), "utf8") + "!agent/newdir/\n!agent/newdir/**\n");
+    git(stale, "commit", "-q", "--no-verify", "-am", "allowlist newdir");
+    git(stale, "switch", "-q", "--detach", "HEAD~1");
+    const live = join(mktmp("pawprint-w3c-"), "pi");
+    mkdirSync(join(live, "agent", "newdir"), { recursive: true });
+    writeFileSync(join(live, "agent", "newdir", ".gitignore"), "!*\n");
+    const r = setupAll(stale, live);
+    assert.equal(r.status, 1, r.stdout + r.stderr);
+    assert.match(r.stderr, /^DRIFT:\s+agent\/newdir\/\.gitignore .*not attaching$/m);
+    assert.ok(!existsSync(join(live, ".git")));
+  }
   // main's own .gitignore already in place is fine; so is a .gitignore inside an ignored dir (a package clone): inert
   const live = join(mktmp("pawprint-w3c-"), "pi");
   mkdirSync(join(live, "agent", "git", "github.com", "example", "pkg"), { recursive: true });
@@ -266,6 +292,34 @@ test("7. machinery reads the LIVE main checkout: a package deployed to main is i
   r = run();
   assert.equal(r.status, 0, r.stderr + r.stdout);
   assert.ok(installs().includes("npm:@example/deployed-later"), "re-run installs what main has, not what the stale checkout has");
+});
+
+test("8. re-run with origin ahead: an incoming new file that would land on an ignored live file is DRIFT, nothing moves; cleared → fast-forwards", () => {
+  const repo = fixtureRepo();
+  const live = join(mktmp("pawprint-w8-"), "pi");
+  assert.equal(setupAll(repo, live).status, 0);
+  writeFileSync(join(live, "agent", "new-config.json"), "mine\n");   // ignored: not allowlisted
+  assert.equal(git(live, "status", "--porcelain"), "");
+  // upstream starts tracking that path with other contents, and touches a tracked file
+  writeFileSync(join(repo, ".gitignore"), readFileSync(join(repo, ".gitignore"), "utf8") + "!agent/new-config.json\n");
+  writeFileSync(join(repo, "agent", "new-config.json"), "theirs\n");
+  writeFileSync(join(repo, "agent", "mise.toml"), readFileSync(join(repo, "agent", "mise.toml"), "utf8") + "# upstream\n");
+  git(repo, "add", "-A");
+  git(repo, "commit", "-q", "--no-verify", "-m", "track new-config");
+  git(repo, "push", "-q", "origin", "HEAD:main");
+  const before = git(live, "rev-parse", "HEAD");
+  const r = setupAll(repo, live);
+  assert.equal(r.status, 1, r.stdout + r.stderr);
+  assert.match(r.stderr, /^DRIFT:\s+agent\/new-config\.json \(incoming from origin, in the way: .*\)$/m);
+  assert.equal(readFileSync(join(live, "agent", "new-config.json"), "utf8"), "mine\n", "live file untouched");
+  assert.equal(git(live, "rev-parse", "HEAD"), before, "main did not move");
+  assert.ok(!readFileSync(join(live, "agent", "mise.toml"), "utf8").includes("# upstream"));
+  rmSync(join(live, "agent", "new-config.json"));
+  const again = setupAll(repo, live);
+  assert.equal(again.status, 0, again.stdout + again.stderr);
+  assert.equal(git(live, "rev-parse", "HEAD"), git(live, "rev-parse", "origin/main"), "fast-forwarded");
+  assert.equal(readFileSync(join(live, "agent", "new-config.json"), "utf8"), "theirs\n");
+  assert.equal(git(live, "status", "--porcelain"), "");
 });
 
 test("11. --list: JSON catalog on stdout only, one entry per manifest file, every `does` filled", () => {

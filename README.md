@@ -48,8 +48,9 @@ clone (cone `agent/` + `.githooks/`; root files come along), detaching the
 clone from `main` since a branch checks out once. An existing `~/.pi/agent` is
 adopted in place: equal files are left alone, missing ones checked out, a
 differing one is `DRIFT` — nothing is overwritten and the run stops until it
-is resolved with git in `~/.pi`. Re-runs `pull --ff-only`. `--dry-run` prints
-the plan and writes nothing; `--config-only` skips the machine machinery.
+is resolved with git in `~/.pi`. Re-runs fast-forward to `origin/main`, refusing
+when an incoming new file would land on something already live. `--dry-run`
+prints the plan and writes nothing; `--config-only` skips the machine machinery.
 
 The machine machinery (skipped under `--dry-run` / `--config-only` /
 non-default target) then bootstraps the rest: pi + agent-browser via npm,
@@ -118,7 +119,9 @@ edit `agent/<path>`, `npm test`, commit, then deploy by merging:
 an MCP adapter wrote into the live config shows up in `git -C ~/.pi status`;
 keep it with `git -C ~/.pi add -p agent/<file> && commit && push`. Never in
 `~/.pi`: `add -f`, `add -A`, `clean`, `stash -u`, branch switches — the
-untracked files there are the credentials and sessions.
+untracked files there are the credentials and sessions. A branch that starts
+tracking a path already present live (an ignored file) overwrites it on merge —
+adopt such a file from `~/.pi` (`add` + commit) instead of from a branch.
 
 Two structural layers keep secrets out — the default-deny `.gitignore`
 (nothing under `agent/` is tracked unless its directory is allowlisted; never

@@ -119,19 +119,24 @@ if [ "$("${git[@]}" rev-parse --path-format=absolute --git-common-dir 2>/dev/nul
   if [ "$dry" = 1 ]; then echo "DRY: make $root a locked sparse worktree (agent/) of $PWD on main"; exit 0; fi
   # The ignore policy is what keeps auth.json & co out of git: before .git is
   # attached, the live tree must carry either no .gitignore or exactly main's,
-  # and no nested one under agent/ (a nested file can un-ignore anything).
+  # and no nested one that git would read (a nested file can un-ignore anything;
+  # one inside a directory main's policy ignores — package clones under
+  # agent/git/… — is inert: git never re-includes below an excluded parent).
+  # Judged with MAIN's policy, in a scratch repo holding only that file.
   if [ -L "$root/.gitignore" ] || { [ -e "$root/.gitignore" ] && ! cmp -s "$root/.gitignore" <(git show main:.gitignore); }; then
     echo "DRIFT:         .gitignore (must be main's as a regular file, or absent) — not attaching" >&2; exit 1
   fi
-  # A .gitignore inside an ignored directory (package clones under agent/git/…) is inert: git never re-includes below an excluded parent.
-  # ponytail: judged with THIS checkout's policy, not main's — they only differ while .gitignore itself is being changed on a branch.
-  nested=$([ ! -d "$target" ] || find "$target" -name .gitignore | while IFS= read -r f; do git check-ignore -q --no-index "$(dirname "${f#"$root/"}")" || echo "${f#"$root/"}"; done)
+  mkdir -p "$root"
+  policy=$(mktemp -d "$root/pi.policy.XXXXXX"); git -C "$policy" init -q; git show main:.gitignore > "$policy/.gitignore"
+  nested=$([ ! -d "$target" ] || find "$target" -iname .gitignore | while IFS= read -r f; do   # -iname: the live fs may be case-insensitive
+    rel=${f#"$root/"}; mkdir -p "$policy/$(dirname "$rel")"   # dir patterns (`!agent/`) only match a directory that exists
+    git -C "$policy" check-ignore -q --no-index "$(dirname "$rel")" || echo "$rel"; done)
+  rm -rf "$policy"
   [ -z "$nested" ] || { sed "s#^#DRIFT:         #; s#\$# (nested ignore file overrides the allowlist) — not attaching#" <<<"$nested" >&2; exit 1; }
   # main can be checked out once; this checkout gives it up (no file changes).
   [ "$(git branch --show-current)" != main ] || { git switch -q --detach; echo "detached $PWD from main: main now lives in $root"; }
   # `worktree add` wants an empty path; the live dir is not. Add at a scratch
   # path, move the .git pointer file over, let git repair the back-link.
-  mkdir -p "$root"
   scratch=$(mktemp -d "$root/pi.XXXXXX")
   git worktree add -q --no-checkout --lock --reason "live pi config" "$scratch" main || { rmdir "$scratch"; exit 1; }
   mv "$scratch/.git" "$root/.git" && rmdir "$scratch"
@@ -140,21 +145,23 @@ if [ "$("${git[@]}" rev-parse --path-format=absolute --git-common-dir 2>/dev/nul
   "${git[@]}" reset -q   # index = main, files untouched
   [ -e "$root/.gitignore" ] || "${git[@]}" checkout -q -- .gitignore   # ignore policy in place before anything else
   echo "worktree:      $root (main, sparse: agent/ .githooks/, locked)"
-elif [ "$dry" = 0 ] && "${git[@]}" rev-parse -q --verify '@{u}' >/dev/null 2>&1; then
-  "${git[@]}" pull -q --ff-only
 fi
 [ "$("${git[@]}" branch --show-current)" = main ] || { echo "$root is not on main — fix by hand" >&2; exit 1; }
-# Missing files first. "Missing" to git also covers a directory or symlink at
-# the path, or a symlink on the way to it: checkout would replace those, so
-# they are DRIFT instead. Only a truly absent path is checked out.
-drift=""
-while IFS= read -r f; do
-  p="$root"; blocked=""
-  for seg in ${f//\// }; do
+# Something already on disk where git wants to write a file — the path itself
+# (a dir, a symlink, an ignored live file), a symlink on the way, a non-dir
+# parent: git would replace it, so it is DRIFT instead. Prints the blocker.
+in_the_way() {
+  local p="$root" seg
+  for seg in ${1//\// }; do
     p="$p/$seg"
-    if [ -L "$p" ] || { [ "$p" = "$root/$f" ] && [ -e "$p" ]; } || { [ -e "$p" ] && [ ! -d "$p" ]; }; then blocked="$p"; break; fi
+    if [ -L "$p" ] || { [ "$p" = "$root/$1" ] && [ -e "$p" ]; } || { [ -e "$p" ] && [ ! -d "$p" ]; }; then echo "$p"; return; fi
   done
-  if [ -n "$blocked" ]; then drift+="$f (in the way: $blocked)"$'\n'; continue; fi
+}
+drift=""
+# Missing files: only a truly absent path is checked out.
+while IFS= read -r f; do
+  b=$(in_the_way "$f")
+  if [ -n "$b" ]; then drift+="$f (in the way: $b)"$'\n'; continue; fi
   run "${git[@]}" checkout -q -- "$f"; echo "checked out:   $root/$f"
 done < <("${git[@]}" diff --name-only --diff-filter=D)
 # Never overwrite a live file: a differing one is DRIFT, resolve it in $root with git.
@@ -163,6 +170,20 @@ if [ -n "$drift" ]; then
   sed '/^$/d; s/^/DRIFT:         /' <<<"$drift" >&2
   echo "resolve in $root (git add -p / git checkout -- <file>), then re-run" >&2
   exit 1
+fi
+# Clean: bring main up to date. An incoming NEW file landing on something live
+# (an ignored file, say) would be silently replaced by the merge — DRIFT instead.
+if [ "$dry" = 0 ] && "${git[@]}" rev-parse -q --verify '@{u}' >/dev/null 2>&1; then
+  "${git[@]}" fetch -q
+  while IFS= read -r f; do
+    b=$(in_the_way "$f"); [ -z "$b" ] || drift+="$f (incoming from origin, in the way: $b)"$'\n'
+  done < <("${git[@]}" diff --name-only --no-renames --diff-filter=AT HEAD '@{u}')
+  if [ -n "$drift" ]; then
+    sed '/^$/d; s/^/DRIFT:         /' <<<"$drift" >&2
+    echo "move it aside (or git add it in $root), then re-run" >&2
+    exit 1
+  fi
+  "${git[@]}" merge -q --ff-only '@{u}'
 fi
 echo "live:          clean ($root on main $("${git[@]}" rev-parse --short HEAD))"
 
