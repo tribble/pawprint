@@ -315,11 +315,48 @@ test("8. re-run with origin ahead: an incoming new file that would land on an ig
   assert.equal(git(live, "rev-parse", "HEAD"), before, "main did not move");
   assert.ok(!readFileSync(join(live, "agent", "mise.toml"), "utf8").includes("# upstream"));
   rmSync(join(live, "agent", "new-config.json"));
+  // the incoming .gitignore may also wake a nested ignore file that was inert so far
+  writeFileSync(join(repo, ".gitignore"), readFileSync(join(repo, ".gitignore"), "utf8") + "!agent/newdir/\n!agent/newdir/**\n");
+  mkdirSync(join(repo, "agent", "newdir")); writeFileSync(join(repo, "agent", "newdir", "x.md"), "x\n");
+  git(repo, "add", "-A"); git(repo, "commit", "-q", "--no-verify", "-m", "allowlist newdir"); git(repo, "push", "-q", "origin", "HEAD:main");
+  mkdirSync(join(live, "agent", "newdir")); writeFileSync(join(live, "agent", "newdir", ".gitignore"), "!*\n");
+  writeFileSync(join(live, "agent", "auth.json"), "SENTINEL");
+  const woken = setupAll(repo, live);
+  assert.equal(woken.status, 1, woken.stdout + woken.stderr);
+  assert.match(woken.stderr, /^DRIFT:\s+agent\/newdir\/\.gitignore \(nested ignore file, active under the incoming/m);
+  assert.equal(git(live, "rev-parse", "HEAD"), before, "main still did not move");
+  rmSync(join(live, "agent", "newdir"), { recursive: true });
   const again = setupAll(repo, live);
   assert.equal(again.status, 0, again.stdout + again.stderr);
   assert.equal(git(live, "rev-parse", "HEAD"), git(live, "rev-parse", "origin/main"), "fast-forwarded");
   assert.equal(readFileSync(join(live, "agent", "new-config.json"), "utf8"), "theirs\n");
   assert.equal(git(live, "status", "--porcelain"), "");
+  assert.notEqual(spawnSync("git", ["-C", live, "add", "--dry-run", "agent/auth.json"], { encoding: "utf8" }).status, 0);
+});
+
+test("9. paths with spaces and non-ASCII: in the way is still DRIFT, both on first checkout and for incoming files", () => {
+  const repo = fixtureRepo();
+  writeFileSync(join(repo, ".gitignore"), readFileSync(join(repo, ".gitignore"), "utf8") + "!agent/odd names/\n!agent/odd names/**\n");
+  mkdirSync(join(repo, "agent", "odd names"));
+  writeFileSync(join(repo, "agent", "odd names", "café note.md"), "theirs\n");
+  git(repo, "add", "-A"); git(repo, "commit", "-q", "--no-verify", "-m", "odd names"); git(repo, "push", "-q", "origin", "HEAD:main");
+  const live = join(mktmp("pawprint-w9-"), "pi");
+  mkdirSync(join(live, "agent", "odd names", "café note.md"), { recursive: true });   // a directory in the file's place
+  let r = setupAll(repo, live);
+  assert.equal(r.status, 1, r.stdout + r.stderr);
+  assert.match(r.stderr, /^DRIFT:\s+agent\/odd names\/café note\.md \(in the way/m);
+  assert.ok(statSync(join(live, "agent", "odd names", "café note.md")).isDirectory(), "directory untouched");
+  rmSync(join(live, "agent", "odd names", "café note.md"), { recursive: true });
+  assert.equal(setupAll(repo, live).status, 0);
+  // now an incoming odd-named file landing on an ignored live one
+  writeFileSync(join(repo, ".gitignore"), readFileSync(join(repo, ".gitignore"), "utf8") + "!agent/späce d.json\n");
+  writeFileSync(join(repo, "agent", "späce d.json"), "theirs\n");
+  git(repo, "add", "-A"); git(repo, "commit", "-q", "--no-verify", "-m", "odd incoming"); git(repo, "push", "-q", "origin", "HEAD:main");
+  writeFileSync(join(live, "agent", "späce d.json"), "mine\n");
+  r = setupAll(repo, live);
+  assert.equal(r.status, 1, r.stdout + r.stderr);
+  assert.match(r.stderr, /^DRIFT:\s+agent\/späce d\.json \(incoming from origin/m);
+  assert.equal(readFileSync(join(live, "agent", "späce d.json"), "utf8"), "mine\n");
 });
 
 test("11. --list: JSON catalog on stdout only, one entry per manifest file, every `does` filled", () => {
