@@ -362,7 +362,8 @@ test("9. paths with spaces and non-ASCII: in the way is still DRIFT, both on fir
 test("10. a missing tracked file whose name is a glob never restores its siblings: literal pathspecs", () => {
   const repo = fixtureRepo();
   writeFileSync(join(repo, "agent", "extensions", "[ab].ts"), "export const glob = 1\n");
-  git(repo, "add", "-A"); git(repo, "commit", "-q", "--no-verify", "-m", "glob-named file");
+  writeFileSync(join(repo, "agent", "extensions", "a.ts"), "export const a = 1\n");   // tracked sibling the pattern would match
+  git(repo, "add", "-A"); git(repo, "commit", "-q", "--no-verify", "-m", "glob-named file + sibling");
   const live = join(mktmp("pawprint-w10-"), "pi");
   cpSync(join(repo, "agent"), join(live, "agent"), { recursive: true });
   rmSync(join(live, "agent", "extensions", "[ab].ts"));
