@@ -122,7 +122,7 @@ nested_ignores() {
   [ -d "$target" ] || return 0
   local policy rel; policy=$(mktemp -d "$root/pi.policy.XXXXXX")
   git -C "$policy" init -q; git show "$1:.gitignore" > "$policy/.gitignore"
-  find "$target" -iname .gitignore | while IFS= read -r f; do   # -iname: the live fs may be case-insensitive
+  find "$target" -iname .gitignore -print0 | while IFS= read -r -d '' f; do   # -iname: the live fs may be case-insensitive
     rel=${f#"$root/"}; mkdir -p "$policy/$(dirname "$rel")"    # dir patterns (`!agent/`) only match a directory that exists
     git -C "$policy" check-ignore -q --no-index "$(dirname "$rel")" || echo "$rel"
   done
@@ -132,10 +132,9 @@ nested_ignores() {
 # dir, a symlink, an ignored live file), a symlink on the way, a non-dir
 # parent: git would replace it, so it is DRIFT instead. Prints the blocker.
 in_the_way() {
-  local p="$root" seg segs
-  IFS=/ read -ra segs <<<"$1"
-  for seg in "${segs[@]}"; do
-    p="$p/$seg"
+  local p="$root" rest="$1"
+  while [ -n "$rest" ]; do   # component walk by parameter expansion: safe for spaces, non-ASCII, even newlines
+    p="$p/${rest%%/*}"; [ "${rest#*/}" != "$rest" ] && rest="${rest#*/}" || rest=""
     if [ -L "$p" ] || { [ "$p" = "$root/$1" ] && [ -e "$p" ]; } || { [ -e "$p" ] && [ ! -d "$p" ]; }; then echo "$p"; return; fi
   done
 }
