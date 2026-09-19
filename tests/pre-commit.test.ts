@@ -17,17 +17,17 @@ test("setup.sh wires the hook; staged ghp_ token: commit refused, redacted; colo
   for (const f of [".githooks/pre-commit", "setup.sh"]) copyFileSync(join(REPO, f), join(clone, f));
   const git = (...a: string[]) =>
     spawnSync("git", ["-C", clone, "-c", "user.name=t", "-c", "user.email=t@t", ...a], { encoding: "utf8" });
-  execFileSync("bash", [join(clone, "setup.sh"), "--all", "--config-only", "--target", mkdtempSync(join(tmpdir(), "pawprint-hook-t-"))]);
+  execFileSync("bash", [join(clone, "setup.sh"), "--only", "AGENTS.md", "--target", mkdtempSync(join(tmpdir(), "pawprint-hook-t-"))]);
   assert.equal(git("config", "core.hooksPath").stdout.trim(), ".githooks", "setup.sh wired the hook in the clone");
   // split so this source file never contains a token-shaped literal itself
   const fake = "ghp_" + "Qm7xT2vLp9RkZs4WnJ3hYb8CdF6gAe1UiO5tX0".slice(0, 36);
-  writeFileSync(join(clone, "pi-agent", "leak.txt"), `token = "${fake}"\n`);
-  assert.equal(git("add", "-f", "pi-agent/leak.txt").status, 0);
+  writeFileSync(join(clone, "agent", "leak.txt"), `token = "${fake}"\n`);
+  assert.equal(git("add", "-f", "agent/leak.txt").status, 0);
 
   const refused = git("commit", "-q", "-m", "leak");
   assert.notEqual(refused.status, 0);
   assert.match(refused.stderr, /pawprint: secret in staged changes/);
-  assert.match(refused.stderr, /Fingerprint: pi-agent\/leak\.txt:github-pat:1/);
+  assert.match(refused.stderr, /Fingerprint: agent\/leak\.txt:github-pat:1/);
   assert.ok(!refused.stderr.includes(fake) && !refused.stdout.includes(fake), "secret never printed");
 
   // `git -c` travels into the hook as GIT_CONFIG_PARAMETERS and outranks config files
@@ -36,11 +36,11 @@ test("setup.sh wires the hook; staged ghp_ token: commit refused, redacted; colo
   assert.match(colored.stderr, /pawprint: secret in staged changes/);
 
   // a textconv git cannot exec makes `git diff --staged` fatal; gitleaks still exits 0
-  writeFileSync(join(clone, ".gitattributes"), "pi-agent/leak.txt diff=rf\n");
+  writeFileSync(join(clone, ".gitattributes"), "agent/leak.txt diff=rf\n");
   assert.equal(git("config", "diff.rf.textconv", "/nonexistent/textconv").status, 0);
   const broken = git("commit", "-q", "-m", "leak");
   assert.notEqual(broken.status, 0);
   assert.match(broken.stderr, /pawprint: gitleaks could not scan/);
 
-  assert.equal(git("log", "--oneline", "-1", "--", "pi-agent/leak.txt").stdout, "", "nothing was committed");
+  assert.equal(git("log", "--oneline", "-1", "--", "agent/leak.txt").stdout, "", "nothing was committed");
 });

@@ -10,7 +10,7 @@ import { makePi, makeCtx } from "./harness.mjs";
 const stateDir = mkdtempSync(join(tmpdir(), "pr-footer-"));
 process.env.PR_WATCH_STATE_DIR = stateDir;
 const stateFile = join(stateDir, "state.json");
-const { default: prFooter } = await import("../pi-agent/extensions/pr-footer.ts");
+const { default: prFooter } = await import("../agent/extensions/pr-footer.ts");
 
 const pr = (isDraft = false) => ({ repo: "o/r", number: 1, title: "t", isDraft });
 const state = (needs_review: unknown) => JSON.stringify({ fetched_at: 0, needs_review, mine: [], involves: [] });

@@ -8,7 +8,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { setAgentDir } from "./stubs/pi-coding-agent.mjs";
 import { makePi, makeCtx } from "./harness.mjs";
-import presetExtension from "../pi-agent/extensions/preset.ts";
+import presetExtension from "../agent/extensions/preset.ts";
 
 function writePresets(agentDir: string, cwd: string) {
   writeFileSync(

@@ -1,44 +1,87 @@
-// validate.sh: the read-only machine-vs-print audit. Fresh imprint → green;
-// one drifted file → names exactly that file; missing env var → fails naming it;
-// a secret committed anywhere in history → fails (gitleaks); a manifest file
+// validate.sh: the read-only audit of the live worktree. Fresh setup → green
+// naming main == origin/main; a modified, deleted or new file under agent/ →
+// DRIFT naming exactly it; an unpushed commit / unlock → named; a target that
+// is no worktree of this repo → fails; missing env var → fails naming it; a
+// secret committed anywhere in history → fails (gitleaks); a manifest file
 // without a catalog entry, or an entry for an unshipped file → fails naming it.
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { execFileSync, spawnSync } from "node:child_process";
-import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, copyFileSync } from "node:fs";
+import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, copyFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { REPO, fixtureRepo, git, setupAll } from "./fixture.ts";
 
-const REPO = join(import.meta.dirname, "..");
 const ENV_OK = {
   ...process.env,
   CLOUDFLARE_ACCOUNT_ID: "SENTINEL-ACCOUNT-9f8",
   CLOUDFLARE_GATEWAY_ID: "SENTINEL-GATEWAY-2b7",
 };
 
-// setup.sh wires core.hooksPath into the checkout it runs from; GIT_DIR sends
-// that write to a scratch repo so tests never touch this checkout's .git/config.
-const GIT_DIR = mkdtempSync(join(tmpdir(), "pawprint-gitdir-"));
-execFileSync("git", ["init", "-q", "--bare", GIT_DIR]);
-function imprint(t: string) {
-  execFileSync("bash", [join(REPO, "setup.sh"), "--all", "--target", t], { encoding: "utf8", env: { ...process.env, GIT_DIR } });
-}
-function validate(t: string, env: NodeJS.ProcessEnv) {
-  return spawnSync("bash", [join(REPO, "scripts", "validate.sh"), "--target", t], {
-    encoding: "utf8",
-    env,
-  });
-}
-
-test("fresh imprint → validate green, exit 0", () => {
-  const t = mkdtempSync(join(tmpdir(), "pawprint-v1-"));
-  imprint(t);
-  const r = validate(t, ENV_OK);
+/** fixture repo + its live worktree at <tmp>/pi; validate runs from the fixture. */
+function liveFixture() {
+  const repo = fixtureRepo();
+  const live = join(mkdtempSync(join(tmpdir(), "pawprint-v-")), "pi");
+  const r = setupAll(repo, live);
   assert.equal(r.status, 0, r.stderr + r.stdout);
-  assert.ok(r.stdout.includes("VALID: machine matches the print"));
-  assert.ok(!r.stdout.includes("drift:") && !r.stdout.includes("missing:"));
+  return { repo, live };
+}
+function validate(repo: string, live: string, env: NodeJS.ProcessEnv = ENV_OK) {
+  return spawnSync("bash", [join(repo, "scripts", "validate.sh"), "--target", join(live, "agent")], { encoding: "utf8", env });
+}
+const liveLines = (out: string) => out.split("\n").filter((l) => /^(live|DRIFT)/.test(l));
+
+test("fresh setup → validate green, exit 0, live line names main == origin/main", () => {
+  const { repo, live } = liveFixture();
+  const r = validate(repo, live);
+  assert.equal(r.status, 0, r.stderr + r.stdout);
+  assert.ok(r.stdout.includes("VALID: live config is the checkout"));
+  assert.deepEqual(liveLines(r.stdout), [`live:          clean (main ${git(live, "rev-parse", "--short", "HEAD")} == origin/main)`]);
+  assert.ok(r.stdout.includes("manifest ok:"), "manifest == tracked agent/ files");
   assert.ok(r.stdout.includes("tool ok:"), "tools audited");
   assert.ok(r.stdout.includes("about ok:"), "catalog audited");
+});
+
+test("modified, deleted and new file under agent/ → DRIFT names exactly those; runtime files never", () => {
+  const { repo, live } = liveFixture();
+  writeFileSync(join(live, "agent", "settings.json"), readFileSync(join(live, "agent", "settings.json")) + "\n");
+  rmSync(join(live, "agent", "mise.toml"));
+  writeFileSync(join(live, "agent", "extensions", "new.ts"), "export {}\n");
+  writeFileSync(join(live, "agent", "auth.json"), "SENTINEL");
+  mkdirSync(join(live, "agent", "sessions")); writeFileSync(join(live, "agent", "sessions", "s.jsonl"), "{}");
+  const r = validate(repo, live);
+  assert.equal(r.status, 1);
+  assert.deepEqual(liveLines(r.stdout).sort(), ["DRIFT:         agent/extensions/new.ts", "DRIFT:         agent/mise.toml", "DRIFT:         agent/settings.json"]);
+});
+
+test("unpushed commit, unlocked worktree, wrong branch → each named, exit 1", () => {
+  const { repo, live } = liveFixture();
+  writeFileSync(join(live, "agent", "settings.json"), readFileSync(join(live, "agent", "settings.json")) + "\n");
+  git(live, "commit", "-q", "--no-verify", "-am", "local change");
+  git(live, "worktree", "unlock", live);
+  let r = validate(repo, live);
+  assert.equal(r.status, 1);
+  assert.deepEqual(liveLines(r.stdout).map((l) => l.split(":")[0]), ["live UNLOCKED", "live UNPUSHED"]);
+  assert.match(r.stdout, /live UNPUSHED: 1 commit\(s\)/);
+  git(live, "switch", "-q", "-c", "side");
+  r = validate(repo, live);
+  assert.equal(r.status, 1);
+  assert.match(r.stdout, /^live BRANCH:\s+side \(want main\)$/m);
+});
+
+test("target that is no worktree of this repo → fails naming the fix", () => {
+  const { repo } = liveFixture();
+  const r = validate(repo, mkdtempSync(join(tmpdir(), "pawprint-vn-")));
+  assert.equal(r.status, 1);
+  assert.match(r.stdout, /^live NOT WORKTREE: .* setup\.sh --all$/m);
+});
+
+test("manifest files[] out of step with tracked agent/ files → fails naming both sides", () => {
+  const { repo, live } = liveFixture();
+  execFileSync("sh", ["-c", "jq '.files |= map(select(. != \"mise.toml\")) + [\"ghost.md\"] | .about[\"ghost.md\"] = {does: \"x\"}' manifest.json > m.json && mv m.json manifest.json"], { cwd: repo });
+  const r = validate(repo, live);
+  assert.equal(r.status, 1);
+  assert.deepEqual(r.stdout.split("\n").filter((l) => /^[<>] /.test(l)), ["< ghost.md", "> mise.toml"]);
 });
 
 test("catalog: missing/empty `about` and an `about` for an unshipped file → fails naming each", () => {
@@ -73,32 +116,11 @@ test("catalog: a `does` over 80 chars → fails naming the path and length", () 
   assert.ok(r.stdout.includes("about LONG:    a.md (81 chars)"), r.stdout);
 });
 
-test("one drifted file → validate fails naming exactly that file", () => {
-  const t = mkdtempSync(join(tmpdir(), "pawprint-v2-"));
-  imprint(t);
-  writeFileSync(join(t, "settings.json"), readFileSync(join(t, "settings.json")) + "\n");
-  const r = validate(t, ENV_OK);
-  assert.equal(r.status, 1);
-  const drift = r.stdout.split("\n").filter((l) => l.startsWith("drift:"));
-  assert.deepEqual(drift, ["drift:         settings.json"]);
-  assert.ok(!r.stdout.includes("missing:"));
-});
-
-test("missing managed file → reported as missing, exit 1", () => {
-  const t = mkdtempSync(join(tmpdir(), "pawprint-v3-"));
-  imprint(t);
-  execFileSync("rm", [join(t, "mise.toml")]);
-  const r = validate(t, ENV_OK);
-  assert.equal(r.status, 1);
-  assert.ok(r.stdout.includes("missing:       mise.toml"));
-});
-
 test("missing env var → validate fails naming it (presence, never values)", () => {
-  const t = mkdtempSync(join(tmpdir(), "pawprint-v4-"));
-  imprint(t);
+  const { repo, live } = liveFixture();
   const env: Record<string, string | undefined> = { ...ENV_OK };
   delete env.CLOUDFLARE_ACCOUNT_ID;
-  const r = validate(t, env);
+  const r = validate(repo, live, env);
   assert.equal(r.status, 1);
   assert.ok(r.stdout.includes("env MISSING:   CLOUDFLARE_ACCOUNT_ID"));
   assert.ok(!r.stdout.includes("SENTINEL-GATEWAY-2b7"), "values never printed");
@@ -106,7 +128,6 @@ test("missing env var → validate fails naming it (presence, never values)", ()
 
 test("fake ghp_ token committed in a clone → validate fails on the secrets line", () => {
   const t = mkdtempSync(join(tmpdir(), "pawprint-v5-"));
-  imprint(t);
   const clone = join(mkdtempSync(join(tmpdir(), "pawprint-v5repo-")), "repo");
   execFileSync("git", ["clone", "-q", REPO, clone]);
   copyFileSync(join(REPO, "scripts", "validate.sh"), join(clone, "scripts", "validate.sh"));
@@ -115,10 +136,10 @@ test("fake ghp_ token committed in a clone → validate fails on the secrets lin
   assert.ok(validateClone().stdout.includes("secrets ok:"), "clean history passes the scan");
   // split so this source file never contains a token-shaped literal itself
   const fake = "ghp_" + "Qm7xT2vLp9RkZs4WnJ3hYb8CdF6gAe1UiO5tX0".slice(0, 36);
-  writeFileSync(join(clone, "pi-agent", "leak.txt"), `token = "${fake}"\n`);
+  writeFileSync(join(clone, "agent", "leak.txt"), `token = "${fake}"\n`);
   const git = (...a: string[]) =>
     execFileSync("git", ["-C", clone, "-c", "user.name=t", "-c", "user.email=t@t", ...a]);
-  git("add", "-f", "pi-agent/leak.txt");
+  git("add", "-f", "agent/leak.txt");
   git("commit", "-q", "--no-verify", "-m", "leak");
   const r = validateClone();
   assert.equal(r.status, 1);

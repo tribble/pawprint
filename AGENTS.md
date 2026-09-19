@@ -1,7 +1,7 @@
 # pawprint — for the pi agent that just `cd`'d in
 
 This is not a project. It is a *print* of one person's (tribble's) pi config:
-`pi-agent/` mirrors the layout of a `~/.pi/agent` directory; `manifest.json`
+`agent/` mirrors the layout of a `~/.pi/agent` directory; `manifest.json`
 lists exactly which files ship and what each is for. Your user's live config
 is their own `~/.pi/agent`; nothing here touches it unless you run `setup.sh`.
 
@@ -25,16 +25,16 @@ is their own `~/.pi/agent`; nothing here touches it unless you run `setup.sh`.
 
 ## Never
 
-- Bare `./setup.sh` refuses to run. `--all` is the full imprint: it writes the
-  *whole* print over the live config and then runs machine setup (installs,
-  package list, terminal config). Backups are made — it is still not what a
-  visitor wants. Always `--only`, and `--dry-run` first.
-- Don't edit `pi-agent/AGENTS.md`: those are the owner's rules, not yours.
+- Bare `./setup.sh` refuses to run. `--all` is the owner's: it turns `~/.pi`
+  into a git worktree of this repo and then runs machine setup (installs,
+  package list, terminal config). It refuses to overwrite a differing file —
+  it is still not what a visitor wants. Always `--only`, and `--dry-run` first.
+- Don't edit `agent/AGENTS.md`: those are the owner's rules, not yours.
 
 ## Everything else
 
 - How a piece works is in the header comment of the file itself
-  (`pi-agent/<path>`); read that before installing it.
+  (`agent/<path>`); read that before installing it.
 - `npm test` and `scripts/validate.sh` are the print owner's tooling (they
   check tribble's machine against the print) — not needed to adopt anything.
 - Questions or a broken piece → open an issue on the repo.

@@ -9,7 +9,7 @@ import { makePi, makeCtx } from "./harness.mjs";
 
 const agentDir = mkdtempSync(join(tmpdir(), "pi-done-"));
 process.env.PI_CODING_AGENT_DIR = agentDir;
-const { default: done } = await import("../pi-agent/extensions/done.ts");
+const { default: done } = await import("../agent/extensions/done.ts");
 
 function setup(name: string) {
   const dir = join(agentDir, "sessions", "--proj--");
