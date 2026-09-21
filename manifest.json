@@ -6,6 +6,7 @@
     "agents/reviewer-kimi.md",
     "agents/scout-kimi.md",
     "agents/worker-kimi.md",
+    "extensions/artifacts.ts",
     "extensions/auto-update.ts",
     "extensions/btw.ts",
     "extensions/compaction-fallback.ts",
@@ -57,6 +58,10 @@
       "does": "`worker-kimi` subagent: end-to-end implementer for bounded tasks, on kimi-k3",
       "needs": ["pi-subagents", "cloudflare-ai-gateway", "models.json"],
       "personal": true
+    },
+    "extensions/artifacts.ts": {
+      "does": "`artifact` tool + `/artifacts`: the agent's list of what it made; Enter opens it",
+      "needs": ["extensions/md.ts"]
     },
     "extensions/auto-update.ts": {
       "does": "`/update`: pi + package self-update and reload; also daily on session start"

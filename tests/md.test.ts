@@ -3,7 +3,7 @@
 // notify, no entry. Pure helpers lastMarkdownPath / expandPath are tested directly.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { mkdtempSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { makePi, makeCtx } from "./harness.mjs";
@@ -33,6 +33,15 @@ test("lastMarkdownPath: last of several; ~ and relative forms; trailing punctuat
   assert.equal(lastMarkdownPath("Report at `/tmp/my report.md`."), "/tmp/my report.md");
   assert.equal(lastMarkdownPath('wrote "~/Notes/todo list.md" for you'), "~/Notes/todo list.md");
   assert.equal(lastMarkdownPath("`notes on x.md and more`"), "x.md");
+  // the whole `/md <path>` command in a span names the path after it (the owner hit `/md /tmp/...` → ENOENT on "/md /tmp/...");
+  // a space anywhere else stays part of the path, slashes or not
+  assert.equal(lastMarkdownPath("You'd read it with `/md /tmp/agents-md-rewrite/AGENTS.new.md`"), "/tmp/agents-md-rewrite/AGENTS.new.md");
+  assert.equal(lastMarkdownPath("run `/md report.md` to see it"), "report.md");
+  assert.equal(lastMarkdownPath("run `/md docs/a.md` to see it"), "docs/a.md");
+  assert.equal(lastMarkdownPath('run "/md ~/a.md" to see it'), "~/a.md");
+  assert.equal(lastMarkdownPath("see `/md /tmp/my report.md`"), "/tmp/my report.md");
+  assert.equal(lastMarkdownPath("see `/tmp/my project/report.md`"), "/tmp/my project/report.md");
+  assert.equal(lastMarkdownPath("see `/mdx notes.md`"), "/mdx notes.md");
   // not markdown files: x.md.bak and URLs (herdr already makes those clickable)
   assert.equal(lastMarkdownPath("Report updated at report.md. Previous backup: previous.md.bak."), "report.md");
   assert.equal(lastMarkdownPath("Report at /tmp/r.md. Reference: [README](https://example.com/README.md)."), "/tmp/r.md");
@@ -78,6 +87,27 @@ test("/md (no arg) → last .md the agent named, newest message first; none → 
   await spaced.run("");
   assert.deepEqual(spaced.ctx.notes, []);
   assert.equal(spaced.pi.state.entries[0]?.data.text, "spaced");
+
+  // the owner's case: the agent backticked the whole `/md <path>` command — absolute and cwd-relative
+  writeFileSync(join(dir, "AGENTS.new.md"), "rewritten");
+  const cmd = boot([assistant(`You'd read it with \`/md ${join(dir, "AGENTS.new.md")}\``)]);
+  await cmd.run("");
+  assert.deepEqual(cmd.ctx.notes, []);
+  assert.equal(cmd.pi.state.entries[0]?.data.text, "rewritten");
+  const rel = boot([assistant("You'd read it with `/md AGENTS.new.md`")]);
+  await rel.run("");
+  assert.deepEqual(rel.ctx.notes, []);
+  assert.equal(rel.pi.state.entries[0]?.data.text, "rewritten");
+
+  // a directory with a space in a backticked path opens that file, not a decoy at the slash-split path
+  mkdirSync(join(dir, "project"), { recursive: true });
+  mkdirSync(join(dir, "my project"), { recursive: true });
+  writeFileSync(join(dir, "project", "report.md"), "decoy");
+  writeFileSync(join(dir, "my project", "report.md"), "the real one");
+  const spacedDir = boot([assistant(`Report at \`${join(dir, "my project", "report.md")}\`.`)]);
+  await spacedDir.run("");
+  assert.deepEqual(spacedDir.ctx.notes, []);
+  assert.equal(spacedDir.pi.state.entries[0]?.data.text, "the real one");
 
   const none = boot([assistant("nothing to show"), user("ok")]);
   await none.run("");
