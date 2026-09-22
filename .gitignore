@@ -2,7 +2,8 @@
 # ~/.pi is a sparse worktree of this repo (cone: agent/), so this file is also
 # what keeps auth.json, sessions/, git/ and every other runtime file pi writes
 # under agent/ invisible to git. Allowlist directories, never `agent/**`;
-# agent/bin/ by name: a binary dropped there must never become trackable.
+# agent/bin/ is pi's (fd, rg) and stays ignored: a binary dropped there must
+# never become trackable.
 *
 !.gitignore
 !.githooks/
@@ -18,6 +19,9 @@
 !manifest.json
 !package.json
 !tsconfig.json
+!mise.toml
+!ghostty/
+!ghostty/config.ghostty
 !extensions/
 !extensions/**
 !prompts/
@@ -33,16 +37,11 @@
 !agent/cloak.json
 !agent/fitch-mcp-adapter/
 !agent/fitch-mcp-adapter/mcp.json
-!agent/mise.toml
 !agent/models.json
 !agent/presets.json
 !agent/settings.json
 !agent/agents/
 !agent/agents/**
-!agent/bin/
-!agent/bin/agent-costs
 !agent/configs/
 !agent/configs/**
-!agent/ghostty/
-!agent/ghostty/**
 *.bak-pawprint-*

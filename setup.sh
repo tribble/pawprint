@@ -217,14 +217,15 @@ fi
 
 command -v pi >/dev/null 2>&1 || npm install -g @earendil-works/pi-coding-agent
 
-# toolchain (typecheck): pinned via mise; types resolve the LIVE pi through a symlink
-# Inputs below come from $target — the live main checkout — not from this (possibly stale) checkout.
-command -v mise >/dev/null 2>&1 && (cd "$target" && mise trust -q mise.toml 2>/dev/null; mise install)
-ln -sfn "$(npm root -g)/@earendil-works" "$target/.pi-types"
+# toolchain (typecheck): pinned via mise.toml at the repo root; tsconfig resolves
+# pi's types through the .pi-types symlink next to it (the live global install).
+command -v mise >/dev/null 2>&1 && { mise trust -q mise.toml 2>/dev/null; mise install; }
+ln -sfn "$(npm root -g)/@earendil-works" .pi-types
 command -v agent-browser >/dev/null 2>&1 || npm install -g agent-browser
 agent-browser install >/dev/null 2>&1 || true   # browser runtime
 
-# Packages: settings.json is the manifest. Skip any whose clone already exists —
+# Packages: settings.json is the manifest — the LIVE one in $target, not this
+# (possibly stale) checkout's. Skip any whose clone already exists —
 # re-running `pi install` on a listed source risks rewriting filtered
 # object-form entries (e.g. the kit's extension filters).
 jq -r '.packages[] | if type == "object" then .source else . end' "$target/settings.json" |
@@ -240,9 +241,9 @@ jq -r '.packages[] | if type == "object" then .source else . end' "$target/setti
 # ghostty: canonical config lives in this repo; install to the path Ghostty honors
 if [ -d /Applications/Ghostty.app ]; then
   mkdir -p "$HOME/Library/Application Support/com.mitchellh.ghostty"
-  cp "$target/ghostty/config.ghostty" "$HOME/Library/Application Support/com.mitchellh.ghostty/config.ghostty"
+  cp ghostty/config.ghostty "$HOME/Library/Application Support/com.mitchellh.ghostty/config.ghostty"
   mkdir -p "$HOME/.config/ghostty"
-  printf '# Canonical: pawprint repo agent/ghostty/config.ghostty (installed by setup.sh)\n' \
+  printf '# Canonical: pawprint repo ghostty/config.ghostty (installed by setup.sh)\n' \
     > "$HOME/.config/ghostty/config"
 fi
 

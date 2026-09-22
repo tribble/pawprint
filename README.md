@@ -4,7 +4,9 @@ The curated print of my pi agent config, in two halves. The repo root is a
 **pi package** (`package.json` → `pi` manifest): `extensions/`, `skills/`,
 `prompts/`, `themes/` — code pi loads from a package, installed with
 `pi install git:github.com/tribble/pawprint` (floating `main`;
-`pi update --extensions` pulls). `agent/` mirrors `~/.pi/agent`-relative paths and holds exactly the
+`pi update --extensions` pulls). Next to it, not pi's: `ghostty/config.ghostty`
+(copied out by `setup.sh`) and `mise.toml` (the typecheck toolchain).
+`agent/` mirrors `~/.pi/agent`-relative paths and holds exactly the
 reviewed-safe *config* files; on my machine `~/.pi` **is a sparse worktree of
 this repo** (cone: `agent/`), so the live config is the checkout itself. The default-deny `.gitignore` is what keeps `auth.json`, OAuth
 state, sessions and package clones out: nothing under `agent/` is tracked
@@ -62,9 +64,9 @@ prints the plan and writes nothing; `--config-only` skips the machine machinery.
 
 The machine machinery (skipped under `--dry-run` / `--config-only` /
 non-default target) then bootstraps the rest: pi + agent-browser via npm,
-mise toolchain pin, `.pi-types` symlink, packages from the
-`agent/settings.json` manifest, ghostty config copy-out, gh-dash
-extension. Prereq: `CLOUDFLARE_ACCOUNT_ID` / `CLOUDFLARE_GATEWAY_ID` set in
+mise toolchain pin + `.pi-types` symlink (both at the repo root, for the
+typecheck), packages from the live `settings.json` manifest, ghostty config
+copy-out, gh-dash extension. Prereq: `CLOUDFLARE_ACCOUNT_ID` / `CLOUDFLARE_GATEWAY_ID` set in
 `~/.config/fish/conf.d` (see the dotfiles repo's `pi.fish.template`).
 
 Manual steps after setup: `/login cloudflare-ai-gateway` (or env) ·
@@ -116,8 +118,8 @@ imprint matrix (`tests/imprint.test.ts`) drives `setup.sh` against throwaway
 fixture repos and mktemp targets only — never this checkout's git, never
 `~/.pi` — and is the regression net for script changes. The full 210k-file replica imprint stays
 a manual pre-ship gate. `npm run typecheck` needs the `.pi-types` symlink
-(`ln -s "$(npm root -g)/@earendil-works" .pi-types`; setup.sh's machinery
-creates the equivalent in the agent dir).
+(`ln -s "$(npm root -g)/@earendil-works" .pi-types`; `setup.sh --all`'s
+machinery creates it).
 
 ## Changing config
 

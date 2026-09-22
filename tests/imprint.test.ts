@@ -102,7 +102,8 @@ test("2. existing non-empty target, equal files + runtime decoys: adopted as-is,
   mkdirSync(join(live, "agent", "git", "x"), { recursive: true });
   writeFileSync(join(live, "agent", "git", "x", "y"), "clone");
   writeFileSync(join(live, "agent", "agents", "x.md.bak-pawprint-20260101000000"), "old");
-  writeFileSync(join(live, "agent", "bin", "fd"), "\xcf\xfa\xed\xfe not-a-real-binary");   // unlisted binary under bin/
+  mkdirSync(join(live, "agent", "bin"));
+  writeFileSync(join(live, "agent", "bin", "fd"), "\xcf\xfa\xed\xfe not-a-real-binary");   // pi's managed binaries live here
   const before = manifest(join(live, "agent"));
   const r = setupAll(repo, live);
   assert.equal(r.status, 0, r.stderr + r.stdout);
@@ -112,7 +113,7 @@ test("2. existing non-empty target, equal files + runtime decoys: adopted as-is,
   const add = spawnSync("git", ["-C", live, "add", "agent/auth.json"], { encoding: "utf8" });
   assert.notEqual(add.status, 0, "git add of an ignored runtime file is refused");
   assert.match(add.stderr, /ignored/);
-  assert.notEqual(spawnSync("git", ["-C", live, "add", "agent/bin/fd"], { encoding: "utf8" }).status, 0, "bin/ is allowlisted by name: an unlisted binary is ignored");
+  assert.notEqual(spawnSync("git", ["-C", live, "add", "agent/bin/fd"], { encoding: "utf8" }).status, 0, "agent/bin/ is pi's: a binary there is never trackable");
   assert.equal(JSON.parse(readFileSync(join(live, "agent", "auth.json"), "utf8")).junk, "SECRET-DECOY");
 });
 
@@ -143,19 +144,19 @@ test("3b. a directory or symlink where a tracked file belongs, or a symlinked pa
   writeFileSync(join(live, "agent", "settings.json", "must-survive"), "keep");
   mkdirSync(join(live, "agent", "real-configs"));
   symlinkSync("real-configs", join(live, "agent", "configs"));
-  symlinkSync("/nonexistent-target", join(live, "agent", "mise.toml"));
+  symlinkSync("/nonexistent-target", join(live, "agent", "cloak.json"));
   const before = manifest(join(live, "agent"));
   const r = setupAll(repo, live);
   assert.equal(r.status, 1);
   const drift = r.stderr.split("\n").filter((l) => l.startsWith("DRIFT:")).map((l) => l.replace(/ \(in the way: .*\)$/, ""));
   assert.deepEqual(drift.sort(), [
+    "DRIFT:         agent/cloak.json",
     "DRIFT:         agent/configs/ws.json",
-    "DRIFT:         agent/mise.toml",
     "DRIFT:         agent/settings.json",
   ]);
   const after = manifest(join(live, "agent"));
   for (const [k, v] of before) assert.equal(after.get(k), v, `pre-existing entry untouched: ${k}`);
-  assert.ok(lstatSync(join(live, "agent", "configs")).isSymbolicLink() && lstatSync(join(live, "agent", "mise.toml")).isSymbolicLink(), "symlinks intact");
+  assert.ok(lstatSync(join(live, "agent", "configs")).isSymbolicLink() && lstatSync(join(live, "agent", "cloak.json")).isSymbolicLink(), "symlinks intact");
   assert.deepEqual(readdirSync(join(live, "agent", "real-configs")), [], "nothing written through the symlink");
   assert.ok(!r.stderr.includes("DRIFT:         \n"), "no empty DRIFT line");
 });
@@ -302,7 +303,7 @@ test("8. re-run with origin ahead: an incoming new file that would land on an ig
   // upstream starts tracking that path with other contents, and touches a tracked file
   writeFileSync(join(repo, ".gitignore"), readFileSync(join(repo, ".gitignore"), "utf8") + "!agent/new-config.json\n");
   writeFileSync(join(repo, "agent", "new-config.json"), "theirs\n");
-  writeFileSync(join(repo, "agent", "mise.toml"), readFileSync(join(repo, "agent", "mise.toml"), "utf8") + "# upstream\n");
+  writeFileSync(join(repo, "agent", "cloak.json"), readFileSync(join(repo, "agent", "cloak.json"), "utf8") + "\n// upstream\n");
   git(repo, "add", "-A");
   git(repo, "commit", "-q", "--no-verify", "-m", "track new-config");
   git(repo, "push", "-q", "origin", "HEAD:main");
@@ -312,7 +313,7 @@ test("8. re-run with origin ahead: an incoming new file that would land on an ig
   assert.match(r.stderr, /^DRIFT:\s+agent\/new-config\.json \(incoming from origin, in the way: .*\)$/m);
   assert.equal(readFileSync(join(live, "agent", "new-config.json"), "utf8"), "mine\n", "live file untouched");
   assert.equal(git(live, "rev-parse", "HEAD"), before, "main did not move");
-  assert.ok(!readFileSync(join(live, "agent", "mise.toml"), "utf8").includes("# upstream"));
+  assert.ok(!readFileSync(join(live, "agent", "cloak.json"), "utf8").includes("// upstream"));
   rmSync(join(live, "agent", "new-config.json"));
   // the incoming .gitignore may also wake a nested ignore file that was inert so far
   writeFileSync(join(repo, ".gitignore"), readFileSync(join(repo, ".gitignore"), "utf8") + "!agent/newdir/\n!agent/newdir/**\n");
@@ -413,21 +414,21 @@ test("12. --only: exactly the named files (+ backup of a differing one); unknown
   assert.deepEqual([...manifest(t).keys()], ["auth.json"], "empty path: nothing copied, nothing backed up");
   rmSync(join(t, "auth.json"));
 
-  mkdirSync(join(t, "bin"), { recursive: true });
-  writeFileSync(join(t, "bin", "agent-costs"), "// mine\n");
-  const dry = runSetup(["--dry-run", "--target", t, "--only", "bin/agent-costs", "cloak.json"]);
+  mkdirSync(join(t, "fitch-mcp-adapter"), { recursive: true });
+  writeFileSync(join(t, "fitch-mcp-adapter", "mcp.json"), "// mine\n");
+  const dry = runSetup(["--dry-run", "--target", t, "--only", "fitch-mcp-adapter/mcp.json", "cloak.json"]);
   assert.equal((dry.match(/^DRY: cp -a /gm) ?? []).length, 3, "plan: one backup + two copies");
-  assert.deepEqual([...manifest(t).keys()], ["bin/agent-costs"], "dry-run wrote nothing");
+  assert.deepEqual([...manifest(t).keys()], ["fitch-mcp-adapter/mcp.json"], "dry-run wrote nothing");
 
-  const r = spawnSetup(["--target", t, "--only", "bin/agent-costs", "cloak.json"]);
+  const r = spawnSetup(["--target", t, "--only", "fitch-mcp-adapter/mcp.json", "cloak.json"]);
   assert.equal(r.status, 0, r.stderr);
   const got = [...manifest(t).keys()].sort();
-  const bak = got.find((f) => f.startsWith("bin/agent-costs.bak-pawprint-"));
+  const bak = got.find((f) => f.startsWith("fitch-mcp-adapter/mcp.json.bak-pawprint-"));
   assert.ok(bak, "differing file was backed up");
-  assert.deepEqual(got, ["bin/agent-costs", bak!, "cloak.json"].sort(), "exactly the two files + the backup");
+  assert.deepEqual(got, ["fitch-mcp-adapter/mcp.json", bak!, "cloak.json"].sort(), "exactly the two files + the backup");
   assert.equal(readFileSync(join(t, bak!), "utf8"), "// mine\n");
-  assert.equal(readFileSync(join(t, "bin", "agent-costs"), "utf8"), readFileSync(join(PRINT, "bin", "agent-costs"), "utf8"));
-  assert.equal(r.stderr, "", "non-personal files: no warning");
+  assert.equal(readFileSync(join(t, "fitch-mcp-adapter", "mcp.json"), "utf8"), readFileSync(join(PRINT, "fitch-mcp-adapter", "mcp.json"), "utf8"));
+  assert.equal(r.stderr.trim(), "fitch-mcp-adapter/mcp.json encodes tribble's own choices — read it before you keep it", "personal file warns, non-personal is silent");
   assert.ok(!r.stdout.includes("Manual steps remain") && r.stdout.includes("machine machinery: SKIPPED"));
 
   const p = spawnSetup(["--target", t, "--only", "settings.json"]);

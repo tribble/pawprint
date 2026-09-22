@@ -45,13 +45,13 @@ test("fresh setup → validate green, exit 0, live line names main == origin/mai
 test("modified, deleted and new file under agent/ → DRIFT names exactly those; runtime files never", () => {
   const { repo, live } = liveFixture();
   writeFileSync(join(live, "agent", "settings.json"), readFileSync(join(live, "agent", "settings.json")) + "\n");
-  rmSync(join(live, "agent", "mise.toml"));
+  rmSync(join(live, "agent", "cloak.json"));
   writeFileSync(join(live, "agent", "agents", "new.md"), "new\n");
   writeFileSync(join(live, "agent", "auth.json"), "SENTINEL");
   mkdirSync(join(live, "agent", "sessions")); writeFileSync(join(live, "agent", "sessions", "s.jsonl"), "{}");
   const r = validate(repo, live);
   assert.equal(r.status, 1);
-  assert.deepEqual(liveLines(r.stdout).sort(), ["DRIFT:         agent/agents/new.md", "DRIFT:         agent/mise.toml", "DRIFT:         agent/settings.json"]);
+  assert.deepEqual(liveLines(r.stdout).sort(), ["DRIFT:         agent/agents/new.md", "DRIFT:         agent/cloak.json", "DRIFT:         agent/settings.json"]);
 });
 
 test("pi's lastChangelogVersion stamp alone → `live:` names the keep command with the new version, exit 0; any other change → DRIFT", () => {
@@ -72,11 +72,11 @@ test("pi's lastChangelogVersion stamp alone → `live:` names the keep command w
   assert.deepEqual(liveLines(r.stdout), ["DRIFT:         agent/settings.json"]);
   // the stamp plus another modified file: both DRIFT
   stamp("0.88.0"); writeFileSync(settings, readFileSync(settings, "utf8").replace('"quietStartup": false', '"quietStartup": true'));
-  writeFileSync(join(live, "agent", "mise.toml"), "\n", { flag: "a" });
+  writeFileSync(join(live, "agent", "cloak.json"), "\n", { flag: "a" });
   r = validate(repo, live);
   assert.equal(r.status, 1);
-  assert.deepEqual(liveLines(r.stdout).sort(), ["DRIFT:         agent/mise.toml", "DRIFT:         agent/settings.json"]);
-  git(live, "checkout", "--", "agent/mise.toml");
+  assert.deepEqual(liveLines(r.stdout).sort(), ["DRIFT:         agent/cloak.json", "DRIFT:         agent/settings.json"]);
+  git(live, "checkout", "--", "agent/cloak.json");
   // a property smuggled onto the stamp line is not a stamp
   writeFileSync(settings, readFileSync(settings, "utf8").replace(/"lastChangelogVersion": "0.88.0",/, '"lastChangelogVersion": "0.88.0", "enableSkillCommands": false,'));
   r = validate(repo, live);
@@ -125,10 +125,10 @@ test("target that is no worktree of this repo → fails naming the fix", () => {
 
 test("manifest files[] out of step with tracked agent/ files → fails naming both sides", () => {
   const { repo, live } = liveFixture();
-  execFileSync("sh", ["-c", "jq '.files |= map(select(. != \"mise.toml\")) + [\"ghost.md\"] | .about[\"ghost.md\"] = {does: \"x\"}' manifest.json > m.json && mv m.json manifest.json"], { cwd: repo });
+  execFileSync("sh", ["-c", "jq '.files |= map(select(. != \"cloak.json\")) + [\"ghost.md\"] | .about[\"ghost.md\"] = {does: \"x\"}' manifest.json > m.json && mv m.json manifest.json"], { cwd: repo });
   const r = validate(repo, live);
   assert.equal(r.status, 1);
-  assert.deepEqual(r.stdout.split("\n").filter((l) => /^[<>] /.test(l)), ["< ghost.md", "> mise.toml"]);
+  assert.deepEqual(r.stdout.split("\n").filter((l) => /^[<>] /.test(l)), ["> cloak.json", "< ghost.md"]);
 });
 
 test("catalog: missing/empty `about` and an `about` for an unshipped file → fails naming each", () => {

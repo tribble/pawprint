@@ -6,13 +6,10 @@
     "agents/reviewer-kimi.md",
     "agents/scout-kimi.md",
     "agents/worker-kimi.md",
-    "ghostty/config.ghostty",
     "fitch-mcp-adapter/mcp.json",
-    "mise.toml",
     "models.json",
     "presets.json",
     "settings.json",
-    "bin/agent-costs",
     "cloak.json",
     "configs/ws.json"
   ],
@@ -42,19 +39,10 @@
       "needs": ["pi-subagents", "cloudflare-ai-gateway", "models.json"],
       "personal": true
     },
-    "ghostty/config.ghostty": {
-      "does": "tribble's Ghostty config: Catppuccin Mocha, JetBrains Mono 15pt, fish + cmd keys",
-      "needs": ["ghostty"],
-      "personal": true
-    },
     "fitch-mcp-adapter/mcp.json": {
       "does": "tribble's MCP servers for pi-mcp-adapter (Slack, GitHub, Notion, Linear, …)",
       "needs": ["pi-mcp-adapter", "gh"],
       "personal": true
-    },
-    "mise.toml": {
-      "does": "mise.toml: pins node 24 + typescript for the `tsc -p tsconfig.json` typecheck",
-      "needs": ["mise"]
     },
     "models.json": {
       "does": "tribble's model catalog for cloudflare-ai-gateway: Fireworks, Anthropic, GPT",
@@ -70,10 +58,6 @@
       "does": "pi's main settings — tribble's: model routing, packages, subagent models",
       "needs": ["cloudflare-ai-gateway", "models.json", "pawprint package (themes/calm-tribble.json)"],
       "personal": true
-    },
-    "bin/agent-costs": {
-      "does": "`agent-costs [--days N]`: per-model median cost, turns, tokens and shares",
-      "needs": ["python3", "pi-subagents"]
     },
     "cloak.json": {
       "does": "pi-cloak config: masks .env, auth.json and token-shaped strings before the model",
