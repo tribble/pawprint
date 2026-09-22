@@ -46,12 +46,36 @@ test("modified, deleted and new file under agent/ → DRIFT names exactly those;
   const { repo, live } = liveFixture();
   writeFileSync(join(live, "agent", "settings.json"), readFileSync(join(live, "agent", "settings.json")) + "\n");
   rmSync(join(live, "agent", "mise.toml"));
-  writeFileSync(join(live, "agent", "extensions", "new.ts"), "export {}\n");
+  writeFileSync(join(live, "agent", "agents", "new.md"), "new\n");
   writeFileSync(join(live, "agent", "auth.json"), "SENTINEL");
   mkdirSync(join(live, "agent", "sessions")); writeFileSync(join(live, "agent", "sessions", "s.jsonl"), "{}");
   const r = validate(repo, live);
   assert.equal(r.status, 1);
-  assert.deepEqual(liveLines(r.stdout).sort(), ["DRIFT:         agent/extensions/new.ts", "DRIFT:         agent/mise.toml", "DRIFT:         agent/settings.json"]);
+  assert.deepEqual(liveLines(r.stdout).sort(), ["DRIFT:         agent/agents/new.md", "DRIFT:         agent/mise.toml", "DRIFT:         agent/settings.json"]);
+});
+
+test("pi's lastChangelogVersion stamp alone → `live:` names the keep command with the new version, exit 0; any other change → DRIFT", () => {
+  const { repo, live } = liveFixture();
+  const settings = join(live, "agent", "settings.json");
+  const stamp = (v: string) => writeFileSync(settings, readFileSync(settings, "utf8").replace(/"lastChangelogVersion": "[^"]*"/, `"lastChangelogVersion": "${v}"`));
+  stamp("0.88.0");
+  let r = validate(repo, live);
+  assert.equal(r.status, 0, r.stderr + r.stdout);
+  assert.deepEqual(liveLines(r.stdout), [
+    "live:          pi wrote agent/settings.json (lastChangelogVersion) — keep: git -C " + live + " add -p agent/settings.json && git -C " + live + " commit -m 'pi 0.88.0 stamp' && git -C " + live + " push",
+  ]);
+  assert.ok(r.stdout.includes("VALID: live config is the checkout"));
+  // the stamp plus any other settings change is ordinary drift
+  writeFileSync(settings, readFileSync(settings, "utf8").replace('"quietStartup": true', '"quietStartup": false'));
+  r = validate(repo, live);
+  assert.equal(r.status, 1);
+  assert.deepEqual(liveLines(r.stdout), ["DRIFT:         agent/settings.json"]);
+  // the stamp plus another modified file: both DRIFT
+  stamp("0.88.0"); writeFileSync(settings, readFileSync(settings, "utf8").replace('"quietStartup": false', '"quietStartup": true'));
+  writeFileSync(join(live, "agent", "mise.toml"), "\n", { flag: "a" });
+  r = validate(repo, live);
+  assert.equal(r.status, 1);
+  assert.deepEqual(liveLines(r.stdout).sort(), ["DRIFT:         agent/mise.toml", "DRIFT:         agent/settings.json"]);
 });
 
 test("unpushed commit, unlocked worktree, wrong branch → each named, exit 1", () => {

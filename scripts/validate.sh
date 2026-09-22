@@ -25,9 +25,24 @@ else
   [ "$branch" = main ] || { echo "live BRANCH:   $branch (want main)"; live_ok=0; }
   [ -e "$("${git[@]}" rev-parse --path-format=absolute --git-dir)/locked" ] ||
     { echo "live UNLOCKED: git -C $root worktree lock --reason 'live pi config' $root"; live_ok=0; }
-  while IFS= read -r line; do
-    echo "DRIFT:         ${line:3}"; live_ok=0
-  done < <("${git[@]}" status --porcelain)
+  # pi stamps lastChangelogVersion into settings.json on every upgrade: when that
+  # is the only change in the whole worktree, name the keep command instead of DRIFT.
+  status=$("${git[@]}" status --porcelain)
+  stamp=""
+  if [ "$status" = " M agent/settings.json" ]; then
+    changed=$("${git[@]}" diff -U0 agent/settings.json | grep '^[-+][^-+]')
+    if [ -n "$changed" ] && ! printf '%s\n' "$changed" | grep -qv '"lastChangelogVersion"'; then
+      stamp=$(printf '%s\n' "$changed" | sed -n 's/^+.*"lastChangelogVersion": *"\([^"]*\)".*/\1/p' | head -1)
+    fi
+  fi
+  if [ -n "$stamp" ]; then
+    echo "live:          pi wrote agent/settings.json (lastChangelogVersion) — keep: git -C $root add -p agent/settings.json && git -C $root commit -m 'pi $stamp stamp' && git -C $root push"
+  else
+    while IFS= read -r line; do
+      [ -n "$line" ] || continue
+      echo "DRIFT:         ${line:3}"; live_ok=0
+    done <<<"$status"
+  fi
   if "${git[@]}" rev-parse -q --verify origin/main >/dev/null; then
     ahead=$("${git[@]}" rev-list --count origin/main..HEAD); behind=$("${git[@]}" rev-list --count HEAD..origin/main)
     [ "$ahead" = 0 ] || { echo "live UNPUSHED: $ahead commit(s) — git -C $root push"; live_ok=0; }
@@ -35,7 +50,7 @@ else
   else
     echo "live NO ORIGIN: origin/main unknown"; live_ok=0
   fi
-  [ "$live_ok" = 1 ] && echo "live:          clean ($branch $sha == origin/main)" || fail=1
+  if [ "$live_ok" != 1 ]; then fail=1; elif [ -z "$stamp" ]; then echo "live:          clean ($branch $sha == origin/main)"; fi
 fi
 
 # manifest.json files[] is the adopters' catalog: exactly the tracked agent/ files
