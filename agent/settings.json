@@ -42,22 +42,22 @@
         "themes/calm.json"
       ]
     },
-    "git:github.com/fitchmultz/pi-apply-edits",
-    "git:github.com/fitchmultz/pi-todo-list",
-    "git:github.com/fitchmultz/pi-change-working-dir",
-    "git:github.com/fitchmultz/pi-ctx-info",
-    "git:github.com/fitchmultz/pi-tool-duration",
-    "git:github.com/fitchmultz/pi-edit-session-in-place",
-    "git:github.com/fitchmultz/pi-stash",
-    "git:github.com/fitchmultz/pi-copy-message",
-    "git:github.com/fitchmultz/pi-calculator",
-    "git:github.com/fitchmultz/pi-agent-skills",
-    "git:github.com/DietrichGebert/ponytail",
-    "git:github.com/fitchmultz/pi-agent-browser-native",
+    "git:github.com/fitchmultz/pi-apply-edits@1caaa9f81d0b69c09db649c2d2656c1aa8aa17f9",
+    "git:github.com/fitchmultz/pi-todo-list@4687ffae34864db98b93eae93990682c78f632bb",
+    "git:github.com/fitchmultz/pi-change-working-dir@72e580c9ba5185e7e6f0fb3a84838ded767c83fb",
+    "git:github.com/fitchmultz/pi-ctx-info@92c841c0f7114085bd3558e67e0c27dc3ffd92b2",
+    "git:github.com/fitchmultz/pi-tool-duration@7f77d2b80f9a3acbb1236b4f867cb7a7c9bb19f1",
+    "git:github.com/fitchmultz/pi-edit-session-in-place@48d612a5722f995881b45955bb5d94c2e2e5083f",
+    "git:github.com/fitchmultz/pi-stash@a8cfbcc3752e2b0cd2ce2411874fce31e659e82b",
+    "git:github.com/fitchmultz/pi-copy-message@12e337c621649378c4aa33c815f5bd5117598a27",
+    "git:github.com/fitchmultz/pi-calculator@7bc5c07ee704dab601d56a28756b49851a05708f",
+    "git:github.com/fitchmultz/pi-agent-skills@56b583f3bde8e3aa87ffbbfdaac1606f6341fddf",
+    "git:github.com/DietrichGebert/ponytail@e3ba2aa6f1e6f0bc4d69eb09c9f0d0a93af56156",
+    "git:github.com/fitchmultz/pi-agent-browser-native@76c39860ea84a2818f1a4cb9331b64f4b08eabab",
     "git:github.com/fitchmultz/pi-subagents@84614b38cbbf685c573302f87030f9b93a21a921",
-    "npm:@nicknisi/pi-cloak",
-    "npm:@nicknisi/pi-answer",
-    "git:github.com/fitchmultz/pi-mcp-adapter"
+    "npm:@nicknisi/pi-cloak@0.1.2",
+    "npm:@nicknisi/pi-answer@0.2.2",
+    "git:github.com/fitchmultz/pi-mcp-adapter@8fd151e4b63b76b71e9440eebe2a5accff977326"
   ],
   "subagents": {
     "agentOverrides": {

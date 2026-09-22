@@ -131,6 +131,15 @@ pi's clone under `~/.pi/agent/git/github.com/tribble/pawprint`, refreshed by
 `auto-update.ts`, ~daily, does both) and picked up on `/reload`. First cutover
 only: merge and push *before* the first `pi update --extensions`, or the clone
 is of a `main` that has no package yet and loads nothing.
+
+Every third-party package in `agent/settings.json` is pinned (`@<sha>` /
+`@<version>`), so the daily update moves only pawprint itself; a pin moves on
+purpose. Once a week a session start says `weekly package review due —
+/packages`: `/packages` lists each pin against upstream (read-only),
+`/packages bump <name>` or `bump --all` rewrites the pin, reconciles the clone
+(`pi update --extensions`) and commits + pushes `~/.pi` — then `/reload`.
+Before bumping `pi-subagents`, see the pin note in `agent/AGENTS.md`.
+
 Something pi or an MCP adapter wrote into the live config shows up in
 `git -C ~/.pi status`; keep it with
 `git -C ~/.pi add -p agent/<file> && commit && push` — `validate.sh` names the
