@@ -15,10 +15,12 @@ The user approves the **thing they will see**, never a plan. A plan reads like c
 Questions:                       ← 0–5. About what they'd DO with the result, never implementation.
 1. …                               Omit the section when the mock itself is the question.
 
-Mock — what you'd see:
-<the artifact as it would appear: exact terminal output / exact message text /
- the PR's behaviour bullets / before→after rows. Built from the user's REAL data
- where possible (this session, this repo, this ticket), not lorem ipsum.>
+Mock — what will be true when done, in the densest form the surface allows:
+  visual (UI/CLI/message)  → the picture: exact output as it would appear
+  behaviour                → 2–3 examples: given <real input> → <exact output>; these become the tests
+  contract (API/schema)    → the signature or schema diff, before → after
+  none of these            → Mock: skipped: <reason> — don't fake density
+<built from the user's REAL data where possible (this session, this repo, this ticket), not lorem ipsum>
 
 First slice: <one sentence — the smallest thing usable tomorrow>
 Later, only if the slice earns it: <one line, or omit>
@@ -40,4 +42,5 @@ Then **stop**. No agent spawned, no file edited, until the user answers.
 
 - Asking implementation questions ("where should the flag live?"). Decide; the mock exposes wrong decisions.
 - A mock that is a description of the mock ("a list of artifacts with timestamps"). Show the list.
+- Prose standing in for density ("the endpoint will return the user's teams"). Text carries none of a picture's information; an example or a signature diff does. If neither exists, skip — the questions and the slice carry that task.
 - Shaping the whole feature, then building the whole feature. Shape the slice.
