@@ -2,6 +2,19 @@
   "name": "pawprint",
   "private": true,
   "type": "module",
+  "keywords": ["pi-package"],
+  "pi": {
+    "extensions": ["./extensions"],
+    "skills": ["./skills"],
+    "prompts": ["./prompts"],
+    "themes": ["./themes"]
+  },
+  "peerDependencies": {
+    "@earendil-works/pi-ai": "*",
+    "@earendil-works/pi-coding-agent": "*",
+    "@earendil-works/pi-tui": "*",
+    "typebox": "*"
+  },
   "scripts": {
     "test": "node --import ./tests/register.mjs --test tests/*.test.ts",
     "typecheck": "npx -y typescript@5.9.3 tsc -p tsconfig.json"

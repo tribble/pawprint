@@ -4,7 +4,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { makePi, makeCtx } from "./harness.mjs";
-import prReview from "../agent/extensions/pr-review.ts";
+import prReview from "../extensions/pr-review.ts";
 
 // sha256("sess-1").hex[0:32], precomputed: the test must not share the implementation's formula.
 const SESSION_ID = "sess-1";

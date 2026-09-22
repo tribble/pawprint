@@ -9,7 +9,7 @@ import { homedir, tmpdir } from "node:os";
 import { join } from "node:path";
 import { selectLists } from "./stubs/pi-tui.mjs";
 import { makePi, makeCtx } from "./harness.mjs";
-import artifacts, { kindOf, replay, shortRef } from "../agent/extensions/artifacts.ts";
+import artifacts, { kindOf, replay, shortRef } from "../extensions/artifacts.ts";
 
 const dir = mkdtempSync(join(tmpdir(), "pi-artifacts-")); // not under $HOME, so paths here show unchanged
 const PR = "https://github.com/tribble/dotfiles/pull/1";

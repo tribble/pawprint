@@ -6,32 +6,15 @@
     "agents/reviewer-kimi.md",
     "agents/scout-kimi.md",
     "agents/worker-kimi.md",
-    "extensions/artifacts.ts",
-    "extensions/auto-update.ts",
-    "extensions/btw.ts",
-    "extensions/compaction-fallback.ts",
-    "extensions/done.ts",
-    "extensions/herdr-agent-name.ts",
-    "extensions/herdr-agent-state.ts",
-    "extensions/herdr-fleet.ts",
-    "extensions/md.ts",
-    "extensions/pr-footer.ts",
-    "extensions/pr-review.ts",
-    "extensions/preset.ts",
     "ghostty/config.ghostty",
     "mcp.json",
     "mise.toml",
     "models.json",
     "presets.json",
-    "prompts/extract-process-improvements.md",
-    "prompts/start-ticket.md",
-    "skills/shape/SKILL.md",
     "settings.json",
-    "tsconfig.json",
     "bin/agent-costs",
     "cloak.json",
-    "configs/ws.json",
-    "themes/calm-tribble.json"
+    "configs/ws.json"
   ],
   "about": {
     "AGENTS.md": {
@@ -59,49 +42,6 @@
       "needs": ["pi-subagents", "cloudflare-ai-gateway", "models.json"],
       "personal": true
     },
-    "extensions/artifacts.ts": {
-      "does": "`artifact` tool + `/artifacts`: the agent's list of what it made; Enter opens it",
-      "needs": ["extensions/md.ts"]
-    },
-    "extensions/auto-update.ts": {
-      "does": "`/update`: pi + package self-update and reload; also daily on session start"
-    },
-    "extensions/btw.ts": {
-      "does": "`/btw <q>`: side question answered inline, outside the main model's context"
-    },
-    "extensions/compaction-fallback.ts": {
-      "does": "compaction-fallback: on summary failure, retry once cross-family, then restore",
-      "personal": true
-    },
-    "extensions/done.ts": {
-      "does": "`/done`: archive this session out of the `/resume` list and quit (still on disk)"
-    },
-    "extensions/herdr-agent-name.ts": {
-      "does": "herdr-agent-name: session name → herdr slug; sidebar, tab and intercom share it",
-      "needs": ["herdr"]
-    },
-    "extensions/herdr-agent-state.ts": {
-      "does": "herdr-agent-state: reports working/blocked/idle to the sidebar over its socket",
-      "needs": ["herdr"]
-    },
-    "extensions/herdr-fleet.ts": {
-      "does": "herdr-fleet.ts: `/fleet`, `/delegate <name> <task>`, `/ws <purpose>` commands",
-      "needs": ["herdr", "pi-subagents"]
-    },
-    "extensions/md.ts": {
-      "does": "`/md [path]`: render a markdown file inline; no arg = last .md the agent named"
-    },
-    "extensions/pr-footer.ts": {
-      "does": "`⚑ N need review` in the pi footer, from pr-watch's cache (never calls GitHub)",
-      "needs": ["pr-watch"]
-    },
-    "extensions/pr-review.ts": {
-      "does": "`open_pr_review` tool: opens your PR in a herdr Neovim + octo.nvim tab",
-      "needs": ["herdr", "pr-review", "pi-subagents"]
-    },
-    "extensions/preset.ts": {
-      "does": "`/preset <name>`: switch model, thinking, tools and prompt as one named bundle"
-    },
     "ghostty/config.ghostty": {
       "does": "tribble's Ghostty config: Catppuccin Mocha, JetBrains Mono 15pt, fish + cmd keys",
       "needs": ["ghostty"],
@@ -123,29 +63,13 @@
     },
     "presets.json": {
       "does": "tribble's presets for `/preset`: `plan`, `implement`, `kimi` (→ *-kimi agents)",
-      "needs": ["extensions/preset.ts", "cloudflare-ai-gateway", "agents/worker-kimi.md", "agents/scout-kimi.md"],
-      "personal": true
-    },
-    "prompts/extract-process-improvements.md": {
-      "does": "`/extract-process-improvements`: fold durable lessons into AGENTS.md, or nothing"
-    },
-    "prompts/start-ticket.md": {
-      "does": "`/start-ticket <LINEAR-ID>`: Linear → `ws create` + agent that shapes and waits",
-      "needs": ["linear MCP", "ws (~/.local/bin/ws)", "herdr", "configs/ws.json"]
-    },
-    "skills/shape/SKILL.md": {
-      "does": "`shape` skill: user approves a mock of the result before any build",
-      "needs": ["extensions/herdr-fleet.ts"],
+      "needs": ["pawprint package (extensions/preset.ts)", "cloudflare-ai-gateway", "agents/worker-kimi.md", "agents/scout-kimi.md"],
       "personal": true
     },
     "settings.json": {
       "does": "pi's main settings — tribble's: model routing, packages, subagent models",
-      "needs": ["cloudflare-ai-gateway", "models.json", "themes/calm-tribble.json"],
+      "needs": ["cloudflare-ai-gateway", "models.json", "pawprint package (themes/calm-tribble.json)"],
       "personal": true
-    },
-    "tsconfig.json": {
-      "does": "tsconfig.json: `tsc -p` typecheck of extensions against pi's types via .pi-types",
-      "needs": ["typescript"]
     },
     "bin/agent-costs": {
       "does": "`agent-costs [--days N]`: per-model median cost, turns, tokens and shares",
@@ -157,11 +81,8 @@
     },
     "configs/ws.json": {
       "does": "tribble's repo map for `/ws`: short id → local checkout path (workos, infra)",
-      "needs": ["extensions/herdr-fleet.ts"],
+      "needs": ["pawprint package (extensions/herdr-fleet.ts)"],
       "personal": true
-    },
-    "themes/calm-tribble.json": {
-      "does": "pi TUI theme `calm-tribble`: dark steel-blue with sage and sand accents"
     }
   },
   "tools": [

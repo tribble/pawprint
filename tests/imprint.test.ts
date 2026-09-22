@@ -85,8 +85,8 @@ test("1. fresh target: locked sparse worktree on main, every manifest file, stat
   assert.ok(!existsSync(join(live, "agent", "auth.json")));
   // the gitleaks hook guards commits made in live too (hooksPath is repo config; .githooks is in the cone)
   const fake = "ghp_" + "Qm7xT2vLp9RkZs4WnJ3hYb8CdF6gAe1UiO5tX0".slice(0, 36);
-  writeFileSync(join(live, "agent", "extensions", "leak.ts"), `token = "${fake}"\n`);
-  git(live, "add", "agent/extensions/leak.ts");
+  writeFileSync(join(live, "agent", "agents", "leak.md"), `token = "${fake}"\n`);
+  git(live, "add", "agent/agents/leak.md");
   const refused = spawnSync("git", ["-C", live, "-c", "user.name=t", "-c", "user.email=t@t", "commit", "-q", "-m", "leak"], { encoding: "utf8" });
   assert.notEqual(refused.status, 0);
   assert.match(refused.stderr, /pawprint: secret in staged changes/);
@@ -101,7 +101,7 @@ test("2. existing non-empty target, equal files + runtime decoys: adopted as-is,
   writeFileSync(join(live, "agent", "sessions", "x.jsonl"), "{}");
   mkdirSync(join(live, "agent", "git", "x"), { recursive: true });
   writeFileSync(join(live, "agent", "git", "x", "y"), "clone");
-  writeFileSync(join(live, "agent", "extensions", "btw.ts.bak-pawprint-20260101000000"), "old");
+  writeFileSync(join(live, "agent", "agents", "x.md.bak-pawprint-20260101000000"), "old");
   writeFileSync(join(live, "agent", "bin", "fd"), "\xcf\xfa\xed\xfe not-a-real-binary");   // unlisted binary under bin/
   const before = manifest(join(live, "agent"));
   const r = setupAll(repo, live);
@@ -141,23 +141,22 @@ test("3b. a directory or symlink where a tracked file belongs, or a symlinked pa
   const live = join(mktmp("pawprint-w3b-"), "pi");
   mkdirSync(join(live, "agent", "settings.json"), { recursive: true });
   writeFileSync(join(live, "agent", "settings.json", "must-survive"), "keep");
-  mkdirSync(join(live, "agent", "real-prompts"));
-  symlinkSync("real-prompts", join(live, "agent", "prompts"));
+  mkdirSync(join(live, "agent", "real-configs"));
+  symlinkSync("real-configs", join(live, "agent", "configs"));
   symlinkSync("/nonexistent-target", join(live, "agent", "mise.toml"));
   const before = manifest(join(live, "agent"));
   const r = setupAll(repo, live);
   assert.equal(r.status, 1);
   const drift = r.stderr.split("\n").filter((l) => l.startsWith("DRIFT:")).map((l) => l.replace(/ \(in the way: .*\)$/, ""));
   assert.deepEqual(drift.sort(), [
+    "DRIFT:         agent/configs/ws.json",
     "DRIFT:         agent/mise.toml",
-    "DRIFT:         agent/prompts/extract-process-improvements.md",
-    "DRIFT:         agent/prompts/start-ticket.md",
     "DRIFT:         agent/settings.json",
   ]);
   const after = manifest(join(live, "agent"));
   for (const [k, v] of before) assert.equal(after.get(k), v, `pre-existing entry untouched: ${k}`);
-  assert.ok(lstatSync(join(live, "agent", "prompts")).isSymbolicLink() && lstatSync(join(live, "agent", "mise.toml")).isSymbolicLink(), "symlinks intact");
-  assert.deepEqual(readdirSync(join(live, "agent", "real-prompts")), [], "nothing written through the symlink");
+  assert.ok(lstatSync(join(live, "agent", "configs")).isSymbolicLink() && lstatSync(join(live, "agent", "mise.toml")).isSymbolicLink(), "symlinks intact");
+  assert.deepEqual(readdirSync(join(live, "agent", "real-configs")), [], "nothing written through the symlink");
   assert.ok(!r.stderr.includes("DRIFT:         \n"), "no empty DRIFT line");
 });
 
@@ -168,7 +167,7 @@ test("3c. an ignore policy of its own in the live tree: refused BEFORE .git is a
     (live: string) => symlinkSync(join(repo, ".gitignore"), join(live, ".gitignore")),   // equal bytes, but git does not read a symlinked .gitignore
     (live: string) => symlinkSync("/nonexistent", join(live, ".gitignore")),           // dangling: checkout would replace it
     (live: string) => writeFileSync(join(live, "agent", ".gitignore"), "!auth.json\n"),
-    (live: string) => { mkdirSync(join(live, "agent", "extensions")); writeFileSync(join(live, "agent", "extensions", ".gitignore"), "!*\n"); },
+    (live: string) => { mkdirSync(join(live, "agent", "agents")); writeFileSync(join(live, "agent", "agents", ".gitignore"), "!*\n"); },
   ]) {
     const live = join(mktmp("pawprint-w3c-"), "pi");
     mkdirSync(join(live, "agent"), { recursive: true });
@@ -176,7 +175,7 @@ test("3c. an ignore policy of its own in the live tree: refused BEFORE .git is a
     plant(live);
     const r = setupAll(repo, live);
     assert.equal(r.status, 1);
-    assert.match(r.stderr, /^DRIFT:\s+(\.gitignore|agent\/\.gitignore|agent\/extensions\/\.gitignore) .*not attaching$/m);
+    assert.match(r.stderr, /^DRIFT:\s+(\.gitignore|agent\/\.gitignore|agent\/agents\/\.gitignore) .*not attaching$/m);
     assert.ok(!existsSync(join(live, ".git")), "no .git attached");
     assert.equal(git(repo, "branch", "--show-current"), "main", "fixture untouched");
   }
@@ -361,18 +360,18 @@ test("9. paths with spaces and non-ASCII: in the way is still DRIFT, both on fir
 
 test("10. a missing tracked file whose name is a glob never restores its siblings: literal pathspecs", () => {
   const repo = fixtureRepo();
-  writeFileSync(join(repo, "agent", "extensions", "[ab].ts"), "export const glob = 1\n");
-  writeFileSync(join(repo, "agent", "extensions", "a.ts"), "export const a = 1\n");   // tracked sibling the pattern would match
+  writeFileSync(join(repo, "agent", "agents", "[ab].md"), "glob\n");
+  writeFileSync(join(repo, "agent", "agents", "a.md"), "a\n");   // tracked sibling the pattern would match
   git(repo, "add", "-A"); git(repo, "commit", "-q", "--no-verify", "-m", "glob-named file + sibling");
   const live = join(mktmp("pawprint-w10-"), "pi");
   cpSync(join(repo, "agent"), join(live, "agent"), { recursive: true });
-  rmSync(join(live, "agent", "extensions", "[ab].ts"));
-  writeFileSync(join(live, "agent", "extensions", "a.ts"), "// mine\n");   // a sibling `[ab].ts` would match as a pattern
+  rmSync(join(live, "agent", "agents", "[ab].md"));
+  writeFileSync(join(live, "agent", "agents", "a.md"), "// mine\n");   // a sibling `[ab].md` would match as a pattern
   const r = setupAll(repo, live);
   assert.equal(r.status, 1, r.stdout + r.stderr);
-  assert.equal(readFileSync(join(live, "agent", "extensions", "a.ts"), "utf8"), "// mine\n", "sibling untouched");
-  assert.ok(existsSync(join(live, "agent", "extensions", "[ab].ts")), "the literally-named file was checked out");
-  assert.deepEqual(r.stderr.split("\n").filter((l) => l.startsWith("DRIFT:")), ["DRIFT:         agent/extensions/a.ts"]);
+  assert.equal(readFileSync(join(live, "agent", "agents", "a.md"), "utf8"), "// mine\n", "sibling untouched");
+  assert.ok(existsSync(join(live, "agent", "agents", "[ab].md")), "the literally-named file was checked out");
+  assert.deepEqual(r.stderr.split("\n").filter((l) => l.startsWith("DRIFT:")), ["DRIFT:         agent/agents/a.md"]);
 });
 
 test("11. --list: JSON catalog on stdout only, one entry per manifest file, every `does` filled", () => {
@@ -402,32 +401,32 @@ test("11b. --list on a TTY: prints a table (path, P, does), not JSON", () => {
 
 test("12. --only: exactly the named files (+ backup of a differing one); unknown path exits 2 untouched; personal warns", () => {
   const t = mktmp("pawprint-t12-");
-  const bad = spawnSetup(["--target", t, "--only", "extensions/btw.ts", "nope/x.ts"]);
+  const bad = spawnSetup(["--target", t, "--only", "cloak.json", "nope/x.ts"]);
   assert.equal(bad.status, 2);
   assert.match(bad.stderr, /nope\/x\.ts/);
   assert.deepEqual([...manifest(t).keys()], [], "unknown path: nothing copied");
   // an empty arg is not a path: raw, it once selected the target dir itself and cp -a'd it into its own backup
   writeFileSync(join(t, "auth.json"), "SENTINEL");
-  const empty = spawnSetup(["--target", t, "--only", "extensions/btw.ts", ""]);
+  const empty = spawnSetup(["--target", t, "--only", "cloak.json", ""]);
   assert.equal(empty.status, 2);
   assert.match(empty.stderr, /not in manifest\.json files\[\]: ""/);
   assert.deepEqual([...manifest(t).keys()], ["auth.json"], "empty path: nothing copied, nothing backed up");
   rmSync(join(t, "auth.json"));
 
-  mkdirSync(join(t, "extensions"), { recursive: true });
-  writeFileSync(join(t, "extensions", "btw.ts"), "// mine\n");
-  const dry = runSetup(["--dry-run", "--target", t, "--only", "extensions/btw.ts", "extensions/pr-footer.ts"]);
+  mkdirSync(join(t, "bin"), { recursive: true });
+  writeFileSync(join(t, "bin", "agent-costs"), "// mine\n");
+  const dry = runSetup(["--dry-run", "--target", t, "--only", "bin/agent-costs", "cloak.json"]);
   assert.equal((dry.match(/^DRY: cp -a /gm) ?? []).length, 3, "plan: one backup + two copies");
-  assert.deepEqual([...manifest(t).keys()], ["extensions/btw.ts"], "dry-run wrote nothing");
+  assert.deepEqual([...manifest(t).keys()], ["bin/agent-costs"], "dry-run wrote nothing");
 
-  const r = spawnSetup(["--target", t, "--only", "extensions/btw.ts", "extensions/pr-footer.ts"]);
+  const r = spawnSetup(["--target", t, "--only", "bin/agent-costs", "cloak.json"]);
   assert.equal(r.status, 0, r.stderr);
   const got = [...manifest(t).keys()].sort();
-  const bak = got.find((f) => f.startsWith("extensions/btw.ts.bak-pawprint-"));
+  const bak = got.find((f) => f.startsWith("bin/agent-costs.bak-pawprint-"));
   assert.ok(bak, "differing file was backed up");
-  assert.deepEqual(got, ["extensions/btw.ts", bak!, "extensions/pr-footer.ts"].sort(), "exactly the two files + the backup");
+  assert.deepEqual(got, ["bin/agent-costs", bak!, "cloak.json"].sort(), "exactly the two files + the backup");
   assert.equal(readFileSync(join(t, bak!), "utf8"), "// mine\n");
-  assert.equal(readFileSync(join(t, "extensions", "btw.ts"), "utf8"), readFileSync(join(PRINT, "extensions", "btw.ts"), "utf8"));
+  assert.equal(readFileSync(join(t, "bin", "agent-costs"), "utf8"), readFileSync(join(PRINT, "bin", "agent-costs"), "utf8"));
   assert.equal(r.stderr, "", "non-personal files: no warning");
   assert.ok(!r.stdout.includes("Manual steps remain") && r.stdout.includes("machine machinery: SKIPPED"));
 
@@ -448,7 +447,7 @@ test("13. no selector: bare setup.sh refuses (exit 2, pointer on stderr, target 
     for (const line of ["one person's pi config print", "--list", "--only <path>", "--all"])
       assert.ok(r.stderr.includes(line), `pointer mentions ${line}`);
   }
-  const both = spawnSetup(["--target", t, "--all", "--only", "extensions/btw.ts"]);
+  const both = spawnSetup(["--target", t, "--all", "--only", "cloak.json"]);
   assert.equal(both.status, 2);
   assert.match(both.stderr, /exclusive/);
   assert.deepEqual(manifestDiff(before, manifest(t)), [], "nothing written by any refused run");

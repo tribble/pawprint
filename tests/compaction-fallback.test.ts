@@ -4,7 +4,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { makePi, makeCtx } from "./harness.mjs";
-import compactionFallback from "../agent/extensions/compaction-fallback.ts";
+import compactionFallback from "../extensions/compaction-fallback.ts";
 
 const CURRENT = { provider: "anthropic", id: "claude-x" };
 const ev = (extra: object = {}) => ({ aborted: false, errorMessage: "refused", reason: "threshold", ...extra });

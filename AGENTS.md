@@ -1,8 +1,10 @@
 # pawprint — for the pi agent that just `cd`'d in
 
-This is not a project. It is a *print* of one person's (tribble's) pi config:
-`agent/` mirrors the layout of a `~/.pi/agent` directory; `manifest.json`
-lists exactly which files ship and what each is for. Your user's live config
+This is not a project. It is a *print* of one person's (tribble's) pi config.
+The repo root is a pi package (`extensions/`, `skills/`, `prompts/`, `themes/`;
+`pi install git:github.com/tribble/pawprint`, then `pi config` to pick).
+`agent/` mirrors the layout of a `~/.pi/agent` directory and holds the config
+files; `manifest.json` lists exactly which of those ship and what each is for. Your user's live config
 is their own `~/.pi/agent`; nothing here touches it unless you run `setup.sh`.
 
 ## Look, then pick

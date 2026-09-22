@@ -11,7 +11,7 @@
 // `env` option is silently dropped and the child inherits pi's environment, so
 // the coordinator must be handed over via argv, not PR_REVIEW_COORDINATOR.
 //
-// Load-safety: this file is installed globally (~/.pi/agent/extensions/) and
+// Load-safety: this file ships in the pawprint package (global) and
 // loads in every pi session. The factory below has no top-level side effects
 // and does no I/O outside of execute().
 //

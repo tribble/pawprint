@@ -11,7 +11,7 @@ import { makePi, makeCtx, eventually } from "./harness.mjs";
 let seq = 0;
 async function freshExtension(agentDir: string) {
   setAgentDir(agentDir); // captured at module load (STATE/LOCK paths)
-  const mod = await import(`../agent/extensions/auto-update.ts?case=${seq++}`);
+  const mod = await import(`../extensions/auto-update.ts?case=${seq++}`);
   return mod.default;
 }
 

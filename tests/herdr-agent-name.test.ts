@@ -5,7 +5,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { makePi, makeCtx } from "./harness.mjs";
-import herdrAgentName, { slug } from "../agent/extensions/herdr-agent-name.ts";
+import herdrAgentName, { slug } from "../extensions/herdr-agent-name.ts";
 
 const AGENT = ["herdr", "agent", "rename", "wH:p1", "my-session"];
 const TAB = ["herdr", "tab", "rename", "wH:t1", "my-session"];
