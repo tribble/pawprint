@@ -12,7 +12,7 @@ import { makePi, makeCtx, eventually } from "./harness.mjs";
 let seq = 0;
 async function freshExtension() {
   // module reads process.env at load — query-bust the cache per test
-  const mod = await import(`../agent/extensions/herdr-agent-state.ts?case=${seq++}`);
+  const mod = await import(`../extensions/herdr-agent-state.ts?case=${seq++}`);
   return mod.default;
 }
 

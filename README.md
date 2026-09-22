@@ -1,9 +1,12 @@
 # pawprint
 
-The curated print of my pi agent config. `agent/` mirrors `~/.pi/agent`-relative
-paths and holds exactly the reviewed-safe files; on my machine `~/.pi` **is a
-sparse worktree of this repo** (cone: `agent/`), so the live config is the
-checkout itself. The default-deny `.gitignore` is what keeps `auth.json`, OAuth
+The curated print of my pi agent config, in two halves. The repo root is a
+**pi package** (`package.json` → `pi` manifest): `extensions/`, `skills/`,
+`prompts/`, `themes/` — code pi loads from a package, installed with
+`pi install git:github.com/tribble/pawprint` (floating `main`;
+`pi update --extensions` pulls). `agent/` mirrors `~/.pi/agent`-relative paths and holds exactly the
+reviewed-safe *config* files; on my machine `~/.pi` **is a sparse worktree of
+this repo** (cone: `agent/`), so the live config is the checkout itself. The default-deny `.gitignore` is what keeps `auth.json`, OAuth
 state, sessions and package clones out: nothing under `agent/` is tracked
 unless its directory is allowlisted. **`manifest.json` is the adopters'
 catalog**: its `files` list (agent-dir-relative) must equal the tracked
@@ -17,7 +20,12 @@ adaptivity for a single-owner print.
 
 ## Adopt a piece
 
-The print is one person's config, but pieces of it stand alone. The catalog
+The package half: `pi install git:github.com/tribble/pawprint`, then
+`pi config` to disable the extensions you don't want (or list the ones you do
+under the package entry in `settings.json`). Each extension's header comment
+says what it does and what it needs (`herdr`, `pr-watch`, …).
+
+The config half is one person's choices, but pieces of it stand alone. The catalog
 is `manifest.json`'s `about` map — one entry per shipped file: what it does,
 what it needs, and `personal: true` where it encodes my own choices (models,
 gateway, rules) rather than something to copy blind. A bare `./setup.sh`
@@ -26,8 +34,8 @@ a visitor cannot imprint the whole thing by accident.
 
 ```sh
 ./setup.sh --list                              # catalog — table on a TTY, JSON [{path, does, needs, personal}] when piped
-./setup.sh --dry-run --only extensions/btw.ts  # plan only
-./setup.sh --only extensions/btw.ts            # copy just that (same backup rules; no machinery)
+./setup.sh --dry-run --only cloak.json         # plan only
+./setup.sh --only cloak.json                   # copy just that (same backup rules; no machinery)
 ```
 
 A pi agent that `cd`s into a checkout gets the same instructions from the
@@ -93,8 +101,8 @@ touches nothing if a future pi version changes the patched lines.
 
 ## Developing
 
-The repo has a dev side that never reaches `~/.pi` (`tests/`, `scripts/` are
-outside the sparse cone).
+The repo has a dev side that never reaches `~/.pi` (`tests/`, `scripts/` and
+the package dirs are outside the sparse cone; root files come along, unused).
 
 ```sh
 npm test            # extension behavior suites + the encoded imprint matrix
@@ -114,10 +122,20 @@ creates the equivalent in the agent dir).
 ## Changing config
 
 `~/.pi` is the `main` checkout; never author on it. Branch in a dev worktree,
-edit `agent/<path>`, `npm test`, commit, then deploy by merging:
-`git -C ~/.pi merge --ff-only <branch> && git -C ~/.pi push`. Something pi or
-an MCP adapter wrote into the live config shows up in `git -C ~/.pi status`;
-keep it with `git -C ~/.pi add -p agent/<file> && commit && push`. Never in
+edit, `npm test`, commit, then deploy by merging:
+`git -C ~/.pi merge --ff-only <branch> && git -C ~/.pi push`. That is the whole
+deploy for `agent/<path>` (config). For package content (`extensions/`,
+`skills/`, `prompts/`, `themes/`) the merge only publishes; the live copy is
+pi's clone under `~/.pi/agent/git/github.com/tribble/pawprint`, refreshed by
+`pi update --extensions` (bare `pi update` is pi itself only; `/update` or
+`auto-update.ts`, ~daily, does both) and picked up on `/reload`. First cutover
+only: merge and push *before* the first `pi update --extensions`, or the clone
+is of a `main` that has no package yet and loads nothing.
+Something pi or an MCP adapter wrote into the live config shows up in
+`git -C ~/.pi status`; keep it with
+`git -C ~/.pi add -p agent/<file> && commit && push` — `validate.sh` names the
+one routine case (pi stamping `lastChangelogVersion` after an upgrade) as
+`live:` with that command instead of `DRIFT`. Never in
 `~/.pi`: `add -f`, `add -A`, `clean`, `stash -u`, branch switches — the
 untracked files there are the credentials and sessions. A branch that starts
 tracking a path already present live (an ignored file) overwrites it on merge —

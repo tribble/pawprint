@@ -7,7 +7,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { execFileSync, spawnSync } from "node:child_process";
-import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, copyFileSync, rmSync } from "node:fs";
+import { chmodSync, mkdtempSync, mkdirSync, writeFileSync, readFileSync, copyFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { REPO, fixtureRepo, git, setupAll } from "./fixture.ts";
@@ -46,12 +46,59 @@ test("modified, deleted and new file under agent/ → DRIFT names exactly those;
   const { repo, live } = liveFixture();
   writeFileSync(join(live, "agent", "settings.json"), readFileSync(join(live, "agent", "settings.json")) + "\n");
   rmSync(join(live, "agent", "mise.toml"));
-  writeFileSync(join(live, "agent", "extensions", "new.ts"), "export {}\n");
+  writeFileSync(join(live, "agent", "agents", "new.md"), "new\n");
   writeFileSync(join(live, "agent", "auth.json"), "SENTINEL");
   mkdirSync(join(live, "agent", "sessions")); writeFileSync(join(live, "agent", "sessions", "s.jsonl"), "{}");
   const r = validate(repo, live);
   assert.equal(r.status, 1);
-  assert.deepEqual(liveLines(r.stdout).sort(), ["DRIFT:         agent/extensions/new.ts", "DRIFT:         agent/mise.toml", "DRIFT:         agent/settings.json"]);
+  assert.deepEqual(liveLines(r.stdout).sort(), ["DRIFT:         agent/agents/new.md", "DRIFT:         agent/mise.toml", "DRIFT:         agent/settings.json"]);
+});
+
+test("pi's lastChangelogVersion stamp alone → `live:` names the keep command with the new version, exit 0; any other change → DRIFT", () => {
+  const { repo, live } = liveFixture();
+  const settings = join(live, "agent", "settings.json");
+  const stamp = (v: string) => writeFileSync(settings, readFileSync(settings, "utf8").replace(/"lastChangelogVersion": "[^"]*"/, `"lastChangelogVersion": "${v}"`));
+  stamp("0.88.0");
+  let r = validate(repo, live);
+  assert.equal(r.status, 0, r.stderr + r.stdout);
+  assert.deepEqual(liveLines(r.stdout), [
+    "live:          pi wrote agent/settings.json (lastChangelogVersion) — keep: git -C " + live + " add -p agent/settings.json && git -C " + live + " commit -m 'pi 0.88.0 stamp' && git -C " + live + " push",
+  ]);
+  assert.ok(r.stdout.includes("VALID: live config is the checkout"));
+  // the stamp plus any other settings change is ordinary drift
+  writeFileSync(settings, readFileSync(settings, "utf8").replace('"quietStartup": true', '"quietStartup": false'));
+  r = validate(repo, live);
+  assert.equal(r.status, 1);
+  assert.deepEqual(liveLines(r.stdout), ["DRIFT:         agent/settings.json"]);
+  // the stamp plus another modified file: both DRIFT
+  stamp("0.88.0"); writeFileSync(settings, readFileSync(settings, "utf8").replace('"quietStartup": false', '"quietStartup": true'));
+  writeFileSync(join(live, "agent", "mise.toml"), "\n", { flag: "a" });
+  r = validate(repo, live);
+  assert.equal(r.status, 1);
+  assert.deepEqual(liveLines(r.stdout).sort(), ["DRIFT:         agent/mise.toml", "DRIFT:         agent/settings.json"]);
+  git(live, "checkout", "--", "agent/mise.toml");
+  // a property smuggled onto the stamp line is not a stamp
+  writeFileSync(settings, readFileSync(settings, "utf8").replace(/"lastChangelogVersion": "0.88.0",/, '"lastChangelogVersion": "0.88.0", "enableSkillCommands": false,'));
+  r = validate(repo, live);
+  assert.equal(r.status, 1);
+  assert.deepEqual(liveLines(r.stdout), ["DRIFT:         agent/settings.json"]);
+  // the stamp plus a mode change is not a stamp — whatever git's color or fileMode config says
+  for (const cfg of [[], ["color.ui=always"], ["core.fileMode=false"]]) {
+    git(live, "checkout", "--", "agent/settings.json"); stamp("0.88.0"); chmodSync(settings, 0o755);
+    const env = { ...ENV_OK, GIT_CONFIG_COUNT: String(cfg.length), ...Object.fromEntries(cfg.flatMap((kv, i) => { const [k, v] = kv.split("="); return [[`GIT_CONFIG_KEY_${i}`, k], [`GIT_CONFIG_VALUE_${i}`, v]]; })) };
+    r = validate(repo, live, env);
+    assert.equal(r.status, 1, cfg.join());
+    assert.deepEqual(liveLines(r.stdout), ["DRIFT:         agent/settings.json"], cfg.join());
+    chmodSync(settings, 0o644);
+  }
+  // two stamp lines already committed: ambiguous, never a stamp
+  git(live, "checkout", "--", "agent/settings.json");
+  writeFileSync(settings, readFileSync(settings, "utf8").replace(/(\n  "lastChangelogVersion": "[^"]*",)/, "$1$1"));
+  git(live, "commit", "-q", "--no-verify", "-am", "dup"); git(live, "push", "-q");
+  writeFileSync(settings, readFileSync(settings, "utf8").replace(/"lastChangelogVersion": "[^"]*"/, '"lastChangelogVersion": "0.89.0"'));
+  r = validate(repo, live);
+  assert.equal(r.status, 1);
+  assert.deepEqual(liveLines(r.stdout), ["DRIFT:         agent/settings.json"]);
 });
 
 test("unpushed commit, unlocked worktree, wrong branch → each named, exit 1", () => {

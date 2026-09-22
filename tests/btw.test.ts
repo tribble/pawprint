@@ -9,7 +9,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { setAgentDir } from "./stubs/pi-coding-agent.mjs";
 import { makePi, makeCtx } from "./harness.mjs";
-import btw from "../agent/extensions/btw.ts";
+import btw from "../extensions/btw.ts";
 
 const msg = (role: string, text: string) => ({ type: "message", message: { role, content: [{ type: "text", text }] } });
 const ok = { stopReason: "stop", content: [{ type: "thinking", thinking: "hmm" }, { type: "text", text: "the answer" }] };

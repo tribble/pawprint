@@ -25,9 +25,26 @@ else
   [ "$branch" = main ] || { echo "live BRANCH:   $branch (want main)"; live_ok=0; }
   [ -e "$("${git[@]}" rev-parse --path-format=absolute --git-dir)/locked" ] ||
     { echo "live UNLOCKED: git -C $root worktree lock --reason 'live pi config' $root"; live_ok=0; }
-  while IFS= read -r line; do
-    echo "DRIFT:         ${line:3}"; live_ok=0
-  done < <("${git[@]}" status --porcelain)
+  # pi stamps lastChangelogVersion into settings.json on every upgrade: when that
+  # value is the only change in the whole worktree (same bytes once the version is
+  # masked, same mode), name the keep command instead of DRIFT.
+  status=$("${git[@]}" status --porcelain)
+  stamp=""
+  mask='s/^\( *"lastChangelogVersion": *"\)[^"]*"/\1X"/'
+  if [ "$status" = " M agent/settings.json" ] &&
+     [ "$(grep -c '^ *"lastChangelogVersion":' "$root/agent/settings.json")" = 1 ] &&
+     ! "${git[@]}" -c core.fileMode=true diff --no-color agent/settings.json | grep -q '^old mode' &&
+     cmp -s <("${git[@]}" show HEAD:agent/settings.json | sed "$mask") <(sed "$mask" "$root/agent/settings.json"); then
+    stamp=$(sed -n 's/^ *"lastChangelogVersion": *"\([^"]*\)".*/\1/p' "$root/agent/settings.json")
+  fi
+  if [ -n "$stamp" ]; then
+    echo "live:          pi wrote agent/settings.json (lastChangelogVersion) — keep: git -C $root add -p agent/settings.json && git -C $root commit -m 'pi $stamp stamp' && git -C $root push"
+  else
+    while IFS= read -r line; do
+      [ -n "$line" ] || continue
+      echo "DRIFT:         ${line:3}"; live_ok=0
+    done <<<"$status"
+  fi
   if "${git[@]}" rev-parse -q --verify origin/main >/dev/null; then
     ahead=$("${git[@]}" rev-list --count origin/main..HEAD); behind=$("${git[@]}" rev-list --count HEAD..origin/main)
     [ "$ahead" = 0 ] || { echo "live UNPUSHED: $ahead commit(s) — git -C $root push"; live_ok=0; }
@@ -35,7 +52,7 @@ else
   else
     echo "live NO ORIGIN: origin/main unknown"; live_ok=0
   fi
-  [ "$live_ok" = 1 ] && echo "live:          clean ($branch $sha == origin/main)" || fail=1
+  if [ "$live_ok" != 1 ]; then fail=1; elif [ -z "$stamp" ]; then echo "live:          clean ($branch $sha == origin/main)"; fi
 fi
 
 # manifest.json files[] is the adopters' catalog: exactly the tracked agent/ files

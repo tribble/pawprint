@@ -28,6 +28,7 @@
     "cloudflare-ai-gateway/accounts/fireworks/models/minimax-m3"
   ],
   "packages": [
+    "git:github.com/tribble/pawprint",
     {
       "source": "git:github.com/fitchmultz/pi-fitch-kit@3e04ba54d498171abaa9e89a588b6dd9faa1ff68",
       "extensions": [

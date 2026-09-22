@@ -23,5 +23,5 @@
       ]
     }
   },
-  "include": ["tests/**/*.ts", "agent/extensions/*.ts"]
+  "include": ["tests/**/*.ts", "extensions/*.ts"]
 }

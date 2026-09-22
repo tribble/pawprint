@@ -8,8 +8,10 @@ import { basename, join } from "node:path";
 
 export const REPO = join(import.meta.dirname, "..");
 
+// maintenance.auto=false: git ≥ 2.54 detaches `maintenance run --auto` after a
+// commit, which packs the loose objects while `clone --bare` is still copying them.
 export function git(dir: string, ...args: string[]): string {
-  return execFileSync("git", ["-C", dir, "-c", "user.name=t", "-c", "user.email=t@t", ...args], { encoding: "utf8" }).trim();
+  return execFileSync("git", ["-C", dir, "-c", "user.name=t", "-c", "user.email=t@t", "-c", "maintenance.auto=false", ...args], { encoding: "utf8" }).trim();
 }
 
 export function fixtureRepo(): string {
