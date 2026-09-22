@@ -7,7 +7,7 @@
     "agents/scout-kimi.md",
     "agents/worker-kimi.md",
     "ghostty/config.ghostty",
-    "mcp.json",
+    "fitch-mcp-adapter/mcp.json",
     "mise.toml",
     "models.json",
     "presets.json",
@@ -47,7 +47,7 @@
       "needs": ["ghostty"],
       "personal": true
     },
-    "mcp.json": {
+    "fitch-mcp-adapter/mcp.json": {
       "does": "tribble's MCP servers for pi-mcp-adapter (Slack, GitHub, Notion, Linear, …)",
       "needs": ["pi-mcp-adapter", "gh"],
       "personal": true

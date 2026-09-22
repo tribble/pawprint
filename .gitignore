@@ -31,7 +31,8 @@
 !agent/
 !agent/AGENTS.md
 !agent/cloak.json
-!agent/mcp.json
+!agent/fitch-mcp-adapter/
+!agent/fitch-mcp-adapter/mcp.json
 !agent/mise.toml
 !agent/models.json
 !agent/presets.json

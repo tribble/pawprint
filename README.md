@@ -143,7 +143,7 @@ adopt such a file from `~/.pi` (`add` + commit) instead of from a branch.
 
 Two structural layers keep secrets out — the default-deny `.gitignore`
 (nothing under `agent/` is tracked unless its directory is allowlisted; never
-`agent/**`) and secrets-by-reference in the config itself (`mcp.json` holds
+`agent/**`) and secrets-by-reference in the config itself (`fitch-mcp-adapter/mcp.json` holds
 `"!gh auth token"`, a command, never a token) — plus one content scan:
 `.githooks/pre-commit` runs `gitleaks` on every staged diff, in `~/.pi` too
 (`setup.sh` sets `core.hooksPath`, repo-wide; a missing scanner fails the
