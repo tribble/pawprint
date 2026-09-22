@@ -82,8 +82,20 @@ test("pi's lastChangelogVersion stamp alone → `live:` names the keep command w
   r = validate(repo, live);
   assert.equal(r.status, 1);
   assert.deepEqual(liveLines(r.stdout), ["DRIFT:         agent/settings.json"]);
-  // the stamp plus a mode change is not a stamp
-  git(live, "checkout", "--", "agent/settings.json"); stamp("0.88.0"); chmodSync(settings, 0o755);
+  // the stamp plus a mode change is not a stamp — whatever git's color or fileMode config says
+  for (const cfg of [[], ["color.ui=always"], ["core.fileMode=false"]]) {
+    git(live, "checkout", "--", "agent/settings.json"); stamp("0.88.0"); chmodSync(settings, 0o755);
+    const env = { ...ENV_OK, GIT_CONFIG_COUNT: String(cfg.length), ...Object.fromEntries(cfg.flatMap((kv, i) => { const [k, v] = kv.split("="); return [[`GIT_CONFIG_KEY_${i}`, k], [`GIT_CONFIG_VALUE_${i}`, v]]; })) };
+    r = validate(repo, live, env);
+    assert.equal(r.status, 1, cfg.join());
+    assert.deepEqual(liveLines(r.stdout), ["DRIFT:         agent/settings.json"], cfg.join());
+    chmodSync(settings, 0o644);
+  }
+  // two stamp lines already committed: ambiguous, never a stamp
+  git(live, "checkout", "--", "agent/settings.json");
+  writeFileSync(settings, readFileSync(settings, "utf8").replace(/(\n  "lastChangelogVersion": "[^"]*",)/, "$1$1"));
+  git(live, "commit", "-q", "--no-verify", "-am", "dup"); git(live, "push", "-q");
+  writeFileSync(settings, readFileSync(settings, "utf8").replace(/"lastChangelogVersion": "[^"]*"/, '"lastChangelogVersion": "0.89.0"'));
   r = validate(repo, live);
   assert.equal(r.status, 1);
   assert.deepEqual(liveLines(r.stdout), ["DRIFT:         agent/settings.json"]);

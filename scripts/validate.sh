@@ -32,9 +32,10 @@ else
   stamp=""
   mask='s/^\( *"lastChangelogVersion": *"\)[^"]*"/\1X"/'
   if [ "$status" = " M agent/settings.json" ] &&
-     ! "${git[@]}" diff agent/settings.json | grep -q '^old mode' &&
+     [ "$(grep -c '^ *"lastChangelogVersion":' "$root/agent/settings.json")" = 1 ] &&
+     ! "${git[@]}" -c core.fileMode=true diff --no-color agent/settings.json | grep -q '^old mode' &&
      cmp -s <("${git[@]}" show HEAD:agent/settings.json | sed "$mask") <(sed "$mask" "$root/agent/settings.json"); then
-    stamp=$(sed -n 's/^ *"lastChangelogVersion": *"\([^"]*\)".*/\1/p' "$root/agent/settings.json" | head -1)
+    stamp=$(sed -n 's/^ *"lastChangelogVersion": *"\([^"]*\)".*/\1/p' "$root/agent/settings.json")
   fi
   if [ -n "$stamp" ]; then
     echo "live:          pi wrote agent/settings.json (lastChangelogVersion) — keep: git -C $root add -p agent/settings.json && git -C $root commit -m 'pi $stamp stamp' && git -C $root push"
