@@ -26,14 +26,15 @@ else
   [ -e "$("${git[@]}" rev-parse --path-format=absolute --git-dir)/locked" ] ||
     { echo "live UNLOCKED: git -C $root worktree lock --reason 'live pi config' $root"; live_ok=0; }
   # pi stamps lastChangelogVersion into settings.json on every upgrade: when that
-  # is the only change in the whole worktree, name the keep command instead of DRIFT.
+  # value is the only change in the whole worktree (same bytes once the version is
+  # masked, same mode), name the keep command instead of DRIFT.
   status=$("${git[@]}" status --porcelain)
   stamp=""
-  if [ "$status" = " M agent/settings.json" ]; then
-    changed=$("${git[@]}" diff -U0 agent/settings.json | grep '^[-+][^-+]')
-    if [ -n "$changed" ] && ! printf '%s\n' "$changed" | grep -qv '"lastChangelogVersion"'; then
-      stamp=$(printf '%s\n' "$changed" | sed -n 's/^+.*"lastChangelogVersion": *"\([^"]*\)".*/\1/p' | head -1)
-    fi
+  mask='s/^\( *"lastChangelogVersion": *"\)[^"]*"/\1X"/'
+  if [ "$status" = " M agent/settings.json" ] &&
+     ! "${git[@]}" diff agent/settings.json | grep -q '^old mode' &&
+     cmp -s <("${git[@]}" show HEAD:agent/settings.json | sed "$mask") <(sed "$mask" "$root/agent/settings.json"); then
+    stamp=$(sed -n 's/^ *"lastChangelogVersion": *"\([^"]*\)".*/\1/p' "$root/agent/settings.json" | head -1)
   fi
   if [ -n "$stamp" ]; then
     echo "live:          pi wrote agent/settings.json (lastChangelogVersion) — keep: git -C $root add -p agent/settings.json && git -C $root commit -m 'pi $stamp stamp' && git -C $root push"

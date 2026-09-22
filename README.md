@@ -3,8 +3,8 @@
 The curated print of my pi agent config, in two halves. The repo root is a
 **pi package** (`package.json` → `pi` manifest): `extensions/`, `skills/`,
 `prompts/`, `themes/` — code pi loads from a package, installed with
-`pi install git:github.com/tribble/pawprint` (floating `main`; `pi update`
-pulls). `agent/` mirrors `~/.pi/agent`-relative paths and holds exactly the
+`pi install git:github.com/tribble/pawprint` (floating `main`;
+`pi update --extensions` pulls). `agent/` mirrors `~/.pi/agent`-relative paths and holds exactly the
 reviewed-safe *config* files; on my machine `~/.pi` **is a sparse worktree of
 this repo** (cone: `agent/`), so the live config is the checkout itself. The default-deny `.gitignore` is what keeps `auth.json`, OAuth
 state, sessions and package clones out: nothing under `agent/` is tracked
@@ -127,7 +127,10 @@ edit, `npm test`, commit, then deploy by merging:
 deploy for `agent/<path>` (config). For package content (`extensions/`,
 `skills/`, `prompts/`, `themes/`) the merge only publishes; the live copy is
 pi's clone under `~/.pi/agent/git/github.com/tribble/pawprint`, refreshed by
-`pi update` (or `auto-update.ts`, ~daily) and picked up on `/reload`.
+`pi update --extensions` (bare `pi update` is pi itself only; `/update` or
+`auto-update.ts`, ~daily, does both) and picked up on `/reload`. First cutover
+only: merge and push *before* the first `pi update --extensions`, or the clone
+is of a `main` that has no package yet and loads nothing.
 Something pi or an MCP adapter wrote into the live config shows up in
 `git -C ~/.pi status`; keep it with
 `git -C ~/.pi add -p agent/<file> && commit && push` — `validate.sh` names the

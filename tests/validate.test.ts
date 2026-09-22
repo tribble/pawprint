@@ -7,7 +7,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { execFileSync, spawnSync } from "node:child_process";
-import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, copyFileSync, rmSync } from "node:fs";
+import { chmodSync, mkdtempSync, mkdirSync, writeFileSync, readFileSync, copyFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { REPO, fixtureRepo, git, setupAll } from "./fixture.ts";
@@ -76,6 +76,17 @@ test("pi's lastChangelogVersion stamp alone → `live:` names the keep command w
   r = validate(repo, live);
   assert.equal(r.status, 1);
   assert.deepEqual(liveLines(r.stdout).sort(), ["DRIFT:         agent/mise.toml", "DRIFT:         agent/settings.json"]);
+  git(live, "checkout", "--", "agent/mise.toml");
+  // a property smuggled onto the stamp line is not a stamp
+  writeFileSync(settings, readFileSync(settings, "utf8").replace(/"lastChangelogVersion": "0.88.0",/, '"lastChangelogVersion": "0.88.0", "enableSkillCommands": false,'));
+  r = validate(repo, live);
+  assert.equal(r.status, 1);
+  assert.deepEqual(liveLines(r.stdout), ["DRIFT:         agent/settings.json"]);
+  // the stamp plus a mode change is not a stamp
+  git(live, "checkout", "--", "agent/settings.json"); stamp("0.88.0"); chmodSync(settings, 0o755);
+  r = validate(repo, live);
+  assert.equal(r.status, 1);
+  assert.deepEqual(liveLines(r.stdout), ["DRIFT:         agent/settings.json"]);
 });
 
 test("unpushed commit, unlocked worktree, wrong branch → each named, exit 1", () => {
