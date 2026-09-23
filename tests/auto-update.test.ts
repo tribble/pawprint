@@ -4,7 +4,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { execFile } from "node:child_process";
-import { mkdtempSync, writeFileSync, readFileSync, existsSync, mkdirSync } from "node:fs";
+import { mkdtempSync, writeFileSync, readFileSync, existsSync, mkdirSync, renameSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { setAgentDir } from "./stubs/pi-coding-agent.mjs";
@@ -46,13 +46,14 @@ test("fresh state: runs both updates, writes state, releases lock", async () => 
   const ok = await eventually(() => state(dir).lastRun);
   assert.ok(ok, "state file written");
   assert.deepEqual(
-    pi.execCalls,
+    pi.execCalls.filter((c: string[]) => c[0] === "pi"),
     [
       ["pi", "update", "--self"],
       ["pi", "update", "--extensions", "--no-approve"],
     ],
     "both update commands ran",
   );
+  await eventually(() => !existsSync(join(dir, ".auto-update.json.lock")));
   assert.ok(!existsSync(join(dir, ".auto-update.json.lock")), "lock released");
   const st = JSON.parse(readFileSync(join(dir, ".auto-update.json"), "utf8"));
   assert.ok(Date.parse(st.lastRun), "lastRun is a real timestamp");
@@ -65,7 +66,7 @@ test("TTL: recent lastRun skips all work", async () => {
   ext(pi);
   await pi.emit("session_start", {}, makeCtx());
   await new Promise((r) => setTimeout(r, 100));
-  assert.equal(pi.execCalls.length, 0);
+  assert.equal(pi.execCalls.filter((c: string[]) => c[0] === "pi").length, 0);
 });
 
 test("lock present: another session owns the update, return early", async () => {
@@ -145,7 +146,7 @@ test("weekly reminder: due when lastPackagesReview is absent or > 7 days old, ex
     const ctx = makeCtx();
     await pi.emit("session_start", {}, ctx);
     assert.deepEqual(ctx.notes, [{ msg: "auto-update: weekly package review due — /packages", level: "info" }]);
-    assert.equal(pi.execCalls.length, 0, "reminder is independent of the daily update");
+    assert.equal(pi.execCalls.filter((c: string[]) => c[0] === "pi").length, 0, "reminder is independent of the daily update");
   }
 });
 
@@ -277,6 +278,100 @@ function configRepo(settings: unknown) {
   git(root, "push", "-q", "-u", "origin", "main");
   return { root, agentDir, origin };
 }
+
+// ------------------------------------------------------------- stamp ---
+
+const stampWrite = (agentDir: string, v: string) => {
+  const f = join(agentDir, "settings.json");
+  writeFileSync(f, readFileSync(f, "utf8").replace(/"lastChangelogVersion": "[^"]*"/, `"lastChangelogVersion": "${v}"`));
+};
+const settled = (agentDir: string) => eventually(() => !existsSync(join(agentDir, ".auto-update.json.lock")));
+async function startSession(agentDir: string, execImpl = realExec({ pi: () => "" })) {
+  const ext = await freshExtension(agentDir);
+  const pi = makePi({ execImpl });
+  ext(pi);
+  const ctx = makeCtx();
+  await pi.emit("session_start", {}, ctx);
+  await settled(agentDir);
+  return { pi, ctx };
+}
+
+test("stamp: pi's lastChangelogVersion write alone → committed 'pi <ver> stamp' and pushed on session_start, silently", async () => {
+  const { root, agentDir, origin } = configRepo({ lastChangelogVersion: "0.87.0", theme: "x" });
+  stampWrite(agentDir, "0.88.0");
+  const { ctx } = await startSession(agentDir);
+  assert.equal(git(root, "status", "--porcelain"), "", "committed");
+  assert.equal(git(root, "log", "-1", "--format=%s"), "pi 0.88.0 stamp");
+  assert.equal(git(origin, "rev-parse", "main"), git(root, "rev-parse", "HEAD"), "pushed");
+  assert.deepEqual(ctx.notes, [], "silent");
+});
+
+test("stamp: anything else dirty (stamp + another change) → untouched", async () => {
+  const { root, agentDir } = configRepo({ lastChangelogVersion: "0.87.0", theme: "x" });
+  const head = git(root, "rev-parse", "HEAD");
+  const f = join(agentDir, "settings.json");
+  writeFileSync(f, readFileSync(f, "utf8").replace('"theme": "x"', '"theme": "y"'));
+  stampWrite(agentDir, "0.88.0");
+  const { pi } = await startSession(agentDir);
+  assert.equal(git(root, "rev-parse", "HEAD"), head);
+  assert.equal(git(root, "status", "--porcelain"), "M agent/settings.json"); // fixture git() trims
+  assert.ok(!pi.execCalls.some((c: string[]) => c.includes("commit")), "no commit attempted");
+});
+
+test("stamp: agent dir not in a git repo → nothing happens, no error", async () => {
+  const dir = setup();
+  writeFileSync(join(dir, "settings.json"), JSON.stringify({ lastChangelogVersion: "0.88.0" }, null, 2));
+  const { pi } = await startSession(dir);
+  assert.ok(!pi.execCalls.some((c: string[]) => c.includes("commit")));
+});
+
+test("stamp: a save landing mid-check → not committed, still dirty, next start retries", async () => {
+  const { root, agentDir, origin } = configRepo({ lastChangelogVersion: "0.87.0", theme: "x" });
+  stampWrite(agentDir, "0.88.0");
+  const f = join(agentDir, "settings.json");
+  const head = git(root, "rev-parse", "HEAD");
+  const theirs = readFileSync(f, "utf8").replace('"theme": "x"', '"theme": "saved-during-check"');
+  await startSession(agentDir, async (cmd: string, args: string[]) => {
+    if (cmd === "git" && args.includes("show")) writeFileSync(f, theirs); // another pane saves
+    return realExec({ pi: () => "" })(cmd, args);
+  });
+  assert.equal(git(root, "rev-parse", "HEAD"), head, "nothing committed");
+  assert.equal(readFileSync(f, "utf8"), theirs, "their save intact");
+  assert.equal(git(root, "status", "--porcelain"), "M agent/settings.json");
+  assert.equal(git(origin, "rev-parse", "main"), head);
+});
+
+test("stamp: a failed push is retried next start; unpushed non-stamp commits are never pushed", async () => {
+  const { root, agentDir, origin } = configRepo({ lastChangelogVersion: "0.87.0" });
+  stampWrite(agentDir, "0.88.0");
+  renameSync(origin, origin + ".away"); // offline
+  await startSession(agentDir);
+  assert.equal(git(root, "log", "-1", "--format=%s"), "pi 0.88.0 stamp");
+  assert.equal(git(root, "status", "--porcelain"), "");
+  renameSync(origin + ".away", origin); // back online, fresh session
+  await startSession(agentDir);
+  assert.equal(git(origin, "rev-parse", "main"), git(root, "rev-parse", "HEAD"), "pushed on retry");
+
+  // the owner's own unpushed commit on top: not ours to push
+  writeFileSync(join(agentDir, "settings.json"), JSON.stringify({ lastChangelogVersion: "0.88.0", theme: "mine" }, null, 2) + "\n");
+  git(root, "commit", "-q", "--no-verify", "-am", "theme");
+  const { pi } = await startSession(agentDir);
+  assert.equal(git(root, "rev-list", "--count", "origin/main..HEAD"), "1", "left unpushed");
+  assert.ok(!pi.execCalls.some((c: string[]) => c.includes("push")));
+});
+
+test("stamp: pi.exec throwing mid-check (reload invalidated the API) is contained — lock released, no unhandled rejection", async () => {
+  const { agentDir } = configRepo({ lastChangelogVersion: "0.87.0" });
+  stampWrite(agentDir, "0.88.0");
+  const rejections: unknown[] = [];
+  const onRej = (e: unknown) => rejections.push(e);
+  process.on("unhandledRejection", onRej);
+  await startSession(agentDir, async (cmd: string, args: string[]) => { if (args.includes("show")) throw new Error("extension API invalidated"); return realExec()(cmd, args); });
+  assert.ok(!existsSync(join(agentDir, ".auto-update.json.lock")), "lock released");
+  await new Promise((r) => setTimeout(r, 50));
+  process.off("unhandledRejection", onRej);
+  assert.deepEqual(rejections, []);
+});
 
 test("/packages bump --all: rewrites every pin that is behind (string + object form), pi update, one commit, pushed", async () => {
   const { root, agentDir, origin } = configRepo({ packages: [] });

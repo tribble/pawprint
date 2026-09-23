@@ -5,6 +5,13 @@
 // A pi self-update always applies on next launch (core code can't hot-swap).
 // Several sessions starting together (herdr): a mkdir lock means only one runs it.
 //
+// pi stamps `lastChangelogVersion` into settings.json on every upgrade. When that is the
+// only change in the config repo (validate.sh's check: one such key, same bytes once the
+// version is masked, same mode), session_start commits it as `pi <ver> stamp` and pushes —
+// silently. Anything else dirty, or any failure (offline, a save landing mid-check, a
+// rejected push): no-op, the next start retries; a stamp that committed but did not push
+// is pushed then.
+//
 // Third-party packages in settings.json are PINNED (`@<sha>` / `@<version>`), so the
 // daily `pi update --extensions` moves nothing but the floating pawprint clone. Moving
 // a pin is a decision, so it is weekly and manual: session_start nags
@@ -82,6 +89,33 @@ function summary({ piUpdated, extChanged }: UpdateResult): string {
   if (extChanged) parts.push("packages updated — /reload to apply");
   if (piUpdated) parts.push("pi updated — takes effect next launch");
   return parts.join("; ");
+}
+
+const STAMP = /^( *"lastChangelogVersion": *")([^"]*)"/gm;
+
+async function commitStamp(pi: ExtensionAPI, agentDir: string) {
+  const root = dirname(agentDir);
+  const file = join(agentDir, "settings.json");
+  const rel = relative(root, file);
+  const git = (...args: string[]) => sh(pi, "git", ["-C", root, ...args], 30_000);
+  const status = await git("status", "--porcelain");
+  if (!status.ok) return;
+  if (status.out === ` M ${rel}`) {
+    let now: string;
+    try { now = readFileSync(file, "utf8"); } catch { return; }
+    const stamps = [...now.matchAll(STAMP)];
+    if (stamps.length !== 1) return;
+    const mode = await git("-c", "core.fileMode=true", "diff", "--no-color", "--", rel);
+    if (!mode.ok || /^old mode/m.test(mode.out)) return;
+    const head = await pi.exec("git", ["-C", root, "show", `HEAD:${rel}`], { timeout: 30_000 }); // raw bytes: sh() trims
+    const mask = (s: string) => s.replace(STAMP, '$1X"');
+    if (head.code !== 0 || head.killed || mask(head.stdout) !== mask(now)) return;
+    // ponytail: a save landing between this re-read and the commit rides along; git has no CAS for a pathspec commit
+    if (readFileSync(file, "utf8") !== now) return;
+    if (!(await git("commit", "-q", "-m", `pi ${stamps[0][2]} stamp`, "--", rel)).ok) return;
+  } else if (status.out !== "") return;
+  const unpushed = await git("log", "--format=%s", "@{u}..HEAD");
+  if (unpushed.ok && unpushed.out && unpushed.out.split("\n").every((s) => /^pi \S+ stamp$/.test(s))) await git("push", "-q");
 }
 
 // ------------------------------------------------------------ /packages ---
@@ -288,9 +322,9 @@ export default function autoUpdate(pi: ExtensionAPI) {
   pi.on("session_start", (_event, ctx) => {
     const st = readState();
     if (ctx.hasUI && stale(st.lastPackagesReview, REVIEW_MS)) ctx.ui.notify("auto-update: weekly package review due — /packages", "info");
-    if (!stale(st.lastRun, TTL_MS)) return;
+    const due = stale(st.lastRun, TTL_MS);
 
-    // Multiple panes launch together (herdr) — only one session updates.
+    // Multiple panes launch together (herdr) — only one session stamps/updates.
     try {
       mkdirSync(LOCK);
     } catch {
@@ -299,6 +333,8 @@ export default function autoUpdate(pi: ExtensionAPI) {
 
     void (async () => {
       try {
+        try { await commitStamp(pi, agentDir); } catch { /* reload mid-check invalidates pi.exec; next start retries */ }
+        if (!due) return;
         const result = await runUpdates(pi);
         writeState({ lastRun: new Date().toISOString() });
         const note = summary(result);
