@@ -119,7 +119,7 @@
       "childRuns": "inherit"
     }
   },
-  "lastChangelogVersion": "0.87.0",
+  "lastChangelogVersion": "0.87.1",
   "theme": "calm-tribble",
   "defaultProjectTrust": "ask"
 }
