@@ -1,46 +1,46 @@
 ---
 name: shape
-description: "Use before delegating or starting any build with a user-visible surface (CLI output, message, UI text, PR behaviour, data shape): show the user the result as it would appear, get a go, then build the smallest usable slice. Do not use for reviews, recon, mechanical edits, or work with no user-visible surface — mark those `Mock: skipped: <reason>`."
+description: "Use before delegating or starting any build: pick the checkpoint — the cheapest artifact the user can judge in ~30 seconds that would catch a wrong build — and stop there until they have. Sometimes a mock, sometimes examples, sometimes the built result itself. Not for reviews, recon, or mechanical edits."
 ---
 
 # Shape
 
-The user approves the **thing they will see**, never a plan. A plan reads like control and isn't: you can't tell from "add overlay + sidebar + CLI flag" whether the result is right. A mock takes 30 seconds to judge.
+A build is waterfall in miniature: requirements guessed, long build, judgment at the end.
+Shape moves the judgment to the **cheapest point that would catch a wrong build**. That
+point is not always a mock — pick it:
 
-## Output (one screen, this order, nothing else)
+| the build is…                       | checkpoint                                           | brief carries                             |
+|-------------------------------------|------------------------------------------------------|-------------------------------------------|
+| long or hard to undo, visual        | the picture: exact output as it would appear         | `Approved mock:`                          |
+| long or hard to undo, behavioural   | 2–3 examples `given <real input> → <exact output>`   | `Approved mock:`                          |
+| long or hard to undo, a contract    | signature / schema diff, before → after              | `Approved mock:`                          |
+| quick and reversible                | **the result itself** — build it, review it in place | `Mock: skipped: result is the checkpoint` |
+| no user-visible surface             | none — the reviewer loop is the check                | `Mock: skipped: <reason>`                 |
+
+If producing the preview would *be* the work (breaking a doc into tasks, drafting the doc),
+the result is the cheaper checkpoint: delegate, don't preview. Never do the task to preview it.
+
+## When a preview is the checkpoint
 
 ```
 ## Shape: <the user's ask, verbatim>
 
-Questions:                       ← 0–5. About what they'd DO with the result, never implementation.
-1. …                               Omit the section when the mock itself is the question.
+Questions:            ← 0–5, about what they'd DO with the result, never implementation.
+1. …                    Omit when the preview is the question.
 
-Mock — what will be true when done, in the densest form the surface allows:
-  visual (UI/CLI/message)  → the picture: exact output as it would appear
-  behaviour                → 2–3 examples: given <real input> → <exact output>; these become the tests
-  contract (API/schema)    → the signature or schema diff, before → after
-  none of these            → Mock: skipped: <reason> — don't fake density
-<built from the user's REAL data where possible (this session, this repo, this ticket), not lorem ipsum>
+Mock:                 ← the densest form the surface allows (table above), from REAL data:
+<…>                     this session, this repo, this ticket. Prose is not a mock.
 
 First slice: <one sentence — the smallest thing usable tomorrow>
-Later, only if the slice earns it: <one line, or omit>
 
 go / "that minus X" / no
 ```
 
-Then **stop**. No agent spawned, no file edited, until the user answers.
+Then **stop** — nothing spawned, nothing edited, until the user answers. "That minus X" →
+show the corrected preview in ≤5 lines and proceed; don't re-ask.
 
-## Rules
+## Always
 
-- Mock from real data. Run the query, read the session, fetch the ticket — the mock is the first test of whether the thing is buildable.
-- One slice per brief. "Sidebar + overlay + CLI + tokens" is four shapes, not one.
-- Corrections re-shape: "that minus X" → show the corrected mock in ≤5 lines, then proceed. Don't re-ask.
-- The approved mock goes into the brief verbatim under `Approved mock:` and is the acceptance criterion — the implementer builds to it and the reviewer judges against it.
-- Skipping is allowed and must be visible: `Mock: skipped: <reason>` in the brief. Valid reasons: no user-visible surface (refactor, dep bump, CI fix), or the user already said what it should look like.
-
-## Anti-patterns
-
-- Asking implementation questions ("where should the flag live?"). Decide; the mock exposes wrong decisions.
-- A mock that is a description of the mock ("a list of artifacts with timestamps"). Show the list.
-- Prose standing in for density ("the endpoint will return the user's teams"). Text carries none of a picture's information; an example or a signature diff does. If neither exists, skip — the questions and the slice carry that task.
-- Shaping the whole feature, then building the whole feature. Shape the slice.
+- One slice per brief. "Sidebar + overlay + CLI + tokens" is four shapes.
+- The checkpoint goes into the brief verbatim; it is the acceptance criterion for implementer and reviewer.
+- The skip reason is visible in the brief. It is wrong if the result comes back needing a rewrite.
