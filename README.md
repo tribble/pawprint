@@ -123,7 +123,10 @@ machinery creates it).
 
 ## Changing config
 
-`~/.pi` is the `main` checkout; never author on it. Branch in a dev worktree,
+`~/.pi` is the `main` checkout; never author on it. Start every change in its
+own worktree (`git -C ~/work/pawprint worktree add ~/work/pawprint-<branch> -b <branch> origin/main`;
+the base checkout is never edited or checked out on a branch; after merge
+`git -C ~/work/pawprint worktree remove ~/work/pawprint-<branch> && git branch -d <branch>`),
 edit, `npm test`, commit, then deploy by merging:
 `git -C ~/.pi merge --ff-only <branch> && git -C ~/.pi push && pi update --extension git:github.com/tribble/pawprint`. That is the whole
 deploy for `agent/<path>` (config). For package content (`extensions/`,
