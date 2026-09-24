@@ -1,7 +1,7 @@
 // auto-update.ts — daily background self-update: pi itself + all packages.
-// Every session_start also refreshes the floating package this file runs from
-// (pi's startup banner nags while that clone lags origin): silent unless the
-// clone moved, then "pawprint updated — /reload to apply".
+// Every session_start also refreshes the floating pawprint clone (pi's startup
+// banner nags while it lags origin): silent unless the clone moved, then
+// "pawprint updated — /reload to apply".
 // session_start: updates silently, notifies only. Reload on event-context is
 // deliberately not exposed by pi ("safe only in user-initiated commands"), so
 // applying extension updates is one `/reload` — or `/update` to do it all now.
@@ -27,9 +27,8 @@
 // (dirname of the agent dir, tribble's ~/.pi worktree). A dirty worktree aborts first.
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { getAgentDir } from "@earendil-works/pi-coding-agent";
-import { mkdirSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { dirname, join, relative } from "node:path";
-import { fileURLToPath } from "node:url";
 
 const STATE = join(getAgentDir(), ".auto-update.json");
 const LOCK = STATE + ".lock";
@@ -95,31 +94,26 @@ function summary({ piUpdated, extChanged }: UpdateResult): string {
   return parts.join("; ");
 }
 
-// This package's own clone: the repo this file runs from when pi loads the package
-// (<agentDir>/git/<host>/<owner>/<repo>/extensions/auto-update.ts). Its settings
-// entry is the floating git package (no @ref) whose clone dir is that repo root.
-// realpath both sides: node resolves symlinks in import.meta.url (/var → /private/var).
-const SELF_REPO = realpathSync(dirname(dirname(fileURLToPath(import.meta.url))));
-const real = (p: string) => { try { return realpathSync(p); } catch { return p; } };
+// This package IS pawprint — the source is literal, never discovered.
+const SELF_SOURCE = "git:github.com/tribble/pawprint";
 
-// Every session start: `pi update --extension <own floating source>` so the clone never
-// lags origin (pi's async banner check compares them). Silent on any failure; pi prints
-// "Updating <source>" for git packages whether or not anything changed, so only a HEAD
-// move counts as an update. Runs under the same mkdir lock as the daily update.
+// Every session start: `pi update --extension git:github.com/tribble/pawprint` so the
+// clone never lags origin (pi's async banner check compares them). Silent on any failure;
+// pi prints "Updating <source>" for git packages whether or not anything changed, so only
+// a HEAD move counts as an update. Runs under the same mkdir lock as the daily update.
 async function refreshSelf(pi: ExtensionAPI, ctx: ExtensionContext, agentDir: string) {
   try {
-    const self = parsePackages(readSettings(agentDir).settings, agentDir).find((p) => p.kind === "git" && !p.ref && p.dir && real(p.dir) === SELF_REPO);
-    if (!self) return;
+    const dir = join(agentDir, "git", "github.com", "tribble", "pawprint");
     const head = async () => {
-      const r = await sh(pi, "git", ["-C", self.dir!, "rev-parse", "HEAD"], 30_000);
+      const r = await sh(pi, "git", ["-C", dir, "rev-parse", "HEAD"], 30_000);
       return r.ok ? r.out : "";
     };
     const before = await head();
-    const upd = await sh(pi, "pi", ["update", "--extension", self.source, "--no-approve"], 120_000);
+    const upd = await sh(pi, "pi", ["update", "--extension", SELF_SOURCE, "--no-approve"], 120_000);
     const after = await head();
     // pi can move HEAD and then fail installing: only a fully successful run notifies.
-    if (upd.ok && before && after && before !== after && ctx.hasUI) ctx.ui.notify(`${self.name.split("/").pop()} updated — /reload to apply`, "info");
-  } catch { /* no settings.json, offline, reload mid-exec — next start retries */ }
+    if (upd.ok && before && after && before !== after && ctx.hasUI) ctx.ui.notify("pawprint updated — /reload to apply", "info");
+  } catch { /* offline, reload mid-exec — next start retries */ }
 }
 
 const STAMP = /^( *"lastChangelogVersion": *")([^"]*)"/gm;
