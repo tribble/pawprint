@@ -10,17 +10,15 @@
     "checkJs": false,
     "allowImportingTsExtensions": true,
     "types": ["node"],
-    "typeRoots": ["./.pi-types/pi-coding-agent/node_modules/@types"],
+    "typeRoots": ["./.pi-types/@types"],
     "paths": {
-      "@earendil-works/pi-coding-agent": [
-        "./.pi-types/pi-coding-agent/dist/index.d.ts"
+      "@earendil-works/pi-ai/*": [
+        "./.pi-types/@earendil-works/pi-ai/dist/*.d.ts"
       ],
-      "@earendil-works/pi-ai": [
-        "./.pi-types/pi-coding-agent/node_modules/@earendil-works/pi-ai/dist/index.d.ts"
+      "@earendil-works/*": [
+        "./.pi-types/@earendil-works/*/dist/index.d.ts"
       ],
-      "@earendil-works/pi-tui": [
-        "./.pi-types/pi-coding-agent/node_modules/@earendil-works/pi-tui/dist/index.d.ts"
-      ]
+      "typebox": ["./.pi-types/typebox/build/index.d.mts"]
     }
   },
   "include": ["tests/**/*.ts", "extensions/*.ts"]

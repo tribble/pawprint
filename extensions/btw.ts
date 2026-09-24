@@ -9,7 +9,7 @@
 // Optional ~/.pi/agent/configs/btw.json: {"model": "provider/model-id"} (id may contain slashes).
 import type { ExtensionAPI, ExtensionCommandContext } from "@earendil-works/pi-coding-agent";
 import { convertToLlm, getAgentDir, serializeConversation, sessionEntryToContextMessages } from "@earendil-works/pi-coding-agent";
-import type { Message, Model } from "@earendil-works/pi-ai";
+import { normalizeContext, type Message, type Model } from "@earendil-works/pi-ai";
 import { Text } from "@earendil-works/pi-tui";
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
@@ -82,7 +82,7 @@ export default function btw(pi: ExtensionAPI) {
         if (!provider) throw new Error(`no provider ${model.provider}`);
         // env carries the gateway's account/gateway ids for baseUrl substitution; baseUrl is auth's own override.
         const r = await provider
-          .streamSimple(auth.baseUrl ? { ...model, baseUrl: auth.baseUrl } : model, { systemPrompt: SYSTEM_PROMPT, messages }, { apiKey: auth.apiKey, headers: auth.headers, env: auth.env, reasoning: "low" })
+          .streamSimple(auth.baseUrl ? { ...model, baseUrl: auth.baseUrl } : model, normalizeContext({ systemPrompt: SYSTEM_PROMPT, messages }), { apiKey: auth.apiKey, headers: auth.headers, env: auth.env, reasoning: "low" })
           .result();
         if (r.stopReason === "error") throw new Error(r.errorMessage ?? "request failed");
         const a = r.content.flatMap((c) => (c.type === "text" ? [c.text] : [])).join("").trim();

@@ -218,9 +218,10 @@ fi
 command -v pi >/dev/null 2>&1 || npm install -g @earendil-works/pi-coding-agent
 
 # toolchain (typecheck): pinned via mise.toml at the repo root; tsconfig resolves
-# pi's types through the .pi-types symlink next to it (the live global install).
+# pi's types through .pi-types → the mise-installed pi's package store (also has
+# @types/node). `npm run types` refreshes the symlink in any checkout.
 command -v mise >/dev/null 2>&1 && { mise trust -q mise.toml 2>/dev/null; mise install; }
-ln -sfn "$(npm root -g)/@earendil-works" .pi-types
+command -v mise >/dev/null 2>&1 && pi_dir="$(mise where npm:@earendil-works/pi-coding-agent)" && ln -sfn "$pi_dir/node_modules/.mise/node_modules" .pi-types
 command -v agent-browser >/dev/null 2>&1 || npm install -g agent-browser
 agent-browser install >/dev/null 2>&1 || true   # browser runtime
 

@@ -22,7 +22,8 @@
     "typebox": { "optional": true }
   },
   "scripts": {
-    "test": "node --import ./tests/register.mjs --test tests/*.test.ts",
-    "typecheck": "npx -y typescript@5.9.3 tsc -p tsconfig.json"
+    "test": "npm run typecheck && node --import ./tests/register.mjs --test tests/*.test.ts",
+    "typecheck": "tsc -p tsconfig.json",
+    "types": "pi_dir=\"$(mise where npm:@earendil-works/pi-coding-agent)\" && ln -sfn \"$pi_dir/node_modules/.mise/node_modules\" .pi-types"
   }
 }

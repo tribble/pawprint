@@ -81,9 +81,11 @@ test("context: transcript from buildContextEntries (compaction summary leads, ra
   await run("what did I ask first?");
   assert.equal(calls.length, 1);
   const { req } = calls[0];
-  assert.ok(req.systemPrompt.length > 0);
-  assert.deepEqual(req.messages.map((m: any) => m.role), ["user", "assistant", "user", "assistant", "user"]);
-  const lead = req.messages[0].content[0].text as string;
+  // pi's TranscriptContext carries the prompt as a leading system message (normalizeContext)
+  assert.equal(req.messages[0].role, "system");
+  assert.ok((req.messages[0].content as string).includes("side channel"), "persona prompt leads");
+  assert.deepEqual(req.messages.map((m: any) => m.role), ["system", "user", "assistant", "user", "assistant", "user"]);
+  const lead = req.messages[1].content[0].text as string;
   assert.ok(lead.startsWith("<conversation>\n"), "conversation block leads");
   const summaryAt = lead.indexOf("SUMMARY-OF-OLD-STUFF");
   const helloAt = lead.indexOf("hello there");
@@ -92,7 +94,7 @@ test("context: transcript from buildContextEntries (compaction summary leads, ra
   assert.ok(!lead.includes("ANCIENT-MESSAGE"), "raw history behind the compaction cut is not context");
   assert.ok(!lead.includes('"x":1') && !lead.includes("side a"), "custom entries never enter the transcript");
   assert.ok(lead.endsWith("</conversation>\n\nfirst side q"), "earliest btw question follows the block");
-  assert.deepEqual(req.messages.slice(1).map((m: any) => m.content[0].text), ["first side a", "second side q", "second side a", "what did I ask first?"]);
+  assert.deepEqual(req.messages.slice(2).map((m: any) => m.content[0].text), ["first side a", "second side q", "second side a", "what did I ask first?"]);
 });
 
 test("one question at a time: an overlapping /btw is refused without a stream; /tree away mid-request drops the answer", async () => {
