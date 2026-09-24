@@ -125,7 +125,7 @@ machinery creates it).
 
 `~/.pi` is the `main` checkout; never author on it. Branch in a dev worktree,
 edit, `npm test`, commit, then deploy by merging:
-`git -C ~/.pi merge --ff-only <branch> && git -C ~/.pi push`. That is the whole
+`git -C ~/.pi merge --ff-only <branch> && git -C ~/.pi push && pi update --extension git:github.com/tribble/pawprint`. That is the whole
 deploy for `agent/<path>` (config). For package content (`extensions/`,
 `skills/`, `prompts/`, `themes/`) the merge only publishes; the live copy is
 pi's clone under `~/.pi/agent/git/github.com/tribble/pawprint`, refreshed by

@@ -1,4 +1,7 @@
 // auto-update.ts — daily background self-update: pi itself + all packages.
+// Every session_start also refreshes the floating package this file runs from
+// (pi's startup banner nags while that clone lags origin): silent unless the
+// clone moved, then "pawprint updated — /reload to apply".
 // session_start: updates silently, notifies only. Reload on event-context is
 // deliberately not exposed by pi ("safe only in user-initiated commands"), so
 // applying extension updates is one `/reload` — or `/update` to do it all now.
@@ -24,8 +27,9 @@
 // (dirname of the agent dir, tribble's ~/.pi worktree). A dirty worktree aborts first.
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { getAgentDir } from "@earendil-works/pi-coding-agent";
-import { mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { dirname, join, relative } from "node:path";
+import { fileURLToPath } from "node:url";
 
 const STATE = join(getAgentDir(), ".auto-update.json");
 const LOCK = STATE + ".lock";
@@ -89,6 +93,28 @@ function summary({ piUpdated, extChanged }: UpdateResult): string {
   if (extChanged) parts.push("packages updated — /reload to apply");
   if (piUpdated) parts.push("pi updated — takes effect next launch");
   return parts.join("; ");
+}
+
+// This package's own clone: the repo this file runs from when pi loads the package
+// (<agentDir>/git/<host>/<owner>/<repo>/extensions/auto-update.ts). Its settings
+// entry is the floating git package (no @ref) whose clone dir is that repo root.
+// realpath both sides: node resolves symlinks in import.meta.url (/var → /private/var).
+const SELF_REPO = realpathSync(dirname(dirname(fileURLToPath(import.meta.url))));
+const real = (p: string) => { try { return realpathSync(p); } catch { return p; } };
+
+// Every session start: `pi update --extension <own floating source>` so the clone never
+// lags origin (pi's async banner check compares them). Silent on any failure; pi prints
+// "Updating <source>" for git packages whether or not anything changed, so only a HEAD
+// move counts as an update. Runs under the same mkdir lock as the daily update.
+async function refreshSelf(pi: ExtensionAPI, ctx: ExtensionContext, agentDir: string) {
+  try {
+    const self = parsePackages(readSettings(agentDir).settings, agentDir).find((p) => p.kind === "git" && !p.ref && p.dir && real(p.dir) === SELF_REPO);
+    if (!self) return;
+    const head = async () => (await sh(pi, "git", ["-C", self.dir!, "rev-parse", "HEAD"], 30_000)).out;
+    const before = await head();
+    await sh(pi, "pi", ["update", "--extension", self.source, "--no-approve"], 120_000);
+    if (before && before !== (await head()) && ctx.hasUI) ctx.ui.notify(`${self.name.split("/").pop()} updated — /reload to apply`, "info");
+  } catch { /* no settings.json, offline, reload mid-exec — next start retries */ }
 }
 
 const STAMP = /^( *"lastChangelogVersion": *")([^"]*)"/gm;
@@ -334,6 +360,7 @@ export default function autoUpdate(pi: ExtensionAPI) {
     void (async () => {
       try {
         try { await commitStamp(pi, agentDir); } catch { /* reload mid-check invalidates pi.exec; next start retries */ }
+        await refreshSelf(pi, ctx, agentDir);
         if (!due) return;
         const result = await runUpdates(pi);
         writeState({ lastRun: new Date().toISOString() });

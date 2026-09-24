@@ -4,9 +4,10 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { execFile } from "node:child_process";
-import { mkdtempSync, writeFileSync, readFileSync, existsSync, mkdirSync, renameSync } from "node:fs";
+import { mkdtempSync, writeFileSync, readFileSync, copyFileSync, existsSync, mkdirSync, renameSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { pathToFileURL } from "node:url";
 import { setAgentDir } from "./stubs/pi-coding-agent.mjs";
 import { makePi, makeCtx, eventually } from "./harness.mjs";
 import { git } from "./fixture.ts";
@@ -16,6 +17,17 @@ let seq = 0;
 async function freshExtension(agentDir: string) {
   setAgentDir(agentDir); // captured at module load (STATE/LOCK paths)
   const mod = await import(`../extensions/auto-update.ts?case=${seq++}`);
+  return mod.default;
+}
+
+// The extension as pi loads it: from the package clone, so import.meta.url resolves
+// its own floating settings.json package. A copy, because a fixture agentDir can
+// never be the real repo this file lives in.
+async function freshInstalledExtension(agentDir: string, cloneDir: string) {
+  setAgentDir(agentDir);
+  mkdirSync(join(cloneDir, "extensions"), { recursive: true });
+  copyFileSync(join(import.meta.dirname, "../extensions/auto-update.ts"), join(cloneDir, "extensions", "auto-update.ts"));
+  const mod = await import(`${pathToFileURL(join(cloneDir, "extensions", "auto-update.ts"))}?case=${seq++}`);
   return mod.default;
 }
 
@@ -638,4 +650,75 @@ test("/packages bump: an npm bump is installed into <agentDir>/npm and verified 
   assert.match(ctx2.notes[0].msg, /npm install @s\/p@0\.1\.4 left 0\.1\.3 installed — pins restored, clones reconciled/);
   assert.equal(readFileSync(join(a2, "settings.json"), "utf8"), text);
   assert.equal(git(r2, "log", "-1", "--format=%s"), "base");
+});
+
+// -------------------------------------- per-start refresh of the own clone ---
+
+// What pi's `update --extension` does to a floating git clone: fetch + hard reset.
+const piRefresh = (clone: string) => async (cmd: string, args: string[]) => {
+  if (cmd === "pi" && args.includes("--extension")) {
+    git(clone, "fetch", "-q", "origin");
+    git(clone, "reset", "-q", "--hard", "origin/main");
+    return { code: 0, stdout: "", stderr: "" };
+  }
+  return realExec()(cmd, args);
+};
+
+test("refresh: every session_start updates the floating own clone, TTL-independent; a moved clone notifies exactly", async () => {
+  const lastRun = now();
+  const dir = setup(lastRun); // daily NOT due — the refresh must run anyway
+  const { dir: clone, shas } = pinnedClone(dir, "example.com", "o/pawprint");
+  writeFileSync(join(dir, "settings.json"), JSON.stringify({
+    packages: [`git:example.com/o/kit@${shas[0]}`, "git:example.com/o/pawprint", "git:example.com/o/stray"],
+  }));
+  const ext = await freshInstalledExtension(dir, clone);
+  const pi = makePi({ execImpl: piRefresh(clone) });
+  ext(pi);
+  const ctx = makeCtx();
+  await pi.emit("session_start", {}, ctx);
+  assert.ok(await eventually(() => ctx.notes.length > 0), "moved clone notifies");
+  assert.deepEqual(ctx.notes, [{ msg: "pawprint updated — /reload to apply", level: "info" }]);
+  assert.deepEqual(
+    pi.execCalls.filter((c: string[]) => c[0] === "pi"),
+    [["pi", "update", "--extension", "git:example.com/o/pawprint", "--no-approve"]],
+    "only the floating own package; no pinned, no stray, no daily run (fresh lastRun)",
+  );
+  assert.equal(git(clone, "rev-parse", "HEAD"), shas[2], "clone moved to upstream HEAD");
+  assert.equal(state(dir).lastRun, lastRun, "lastRun untouched by the refresh");
+});
+
+test("refresh: an already-current clone stays silent but is still attempted", async () => {
+  const dir = setup(now());
+  const { dir: clone, shas } = pinnedClone(dir, "example.com", "o/pawprint");
+  git(clone, "checkout", "-q", shas[2]); // current
+  writeFileSync(join(dir, "settings.json"), JSON.stringify({ packages: ["git:example.com/o/pawprint"] }));
+  const ext = await freshInstalledExtension(dir, clone);
+  const pi = makePi({ execImpl: piRefresh(clone) });
+  ext(pi);
+  const ctx = makeCtx();
+  await pi.emit("session_start", {}, ctx);
+  await settled(dir);
+  assert.deepEqual(ctx.notes, []);
+  assert.deepEqual(
+    pi.execCalls.filter((c: string[]) => c[0] === "pi"),
+    [["pi", "update", "--extension", "git:example.com/o/pawprint", "--no-approve"]],
+  );
+});
+
+test("refresh: failure is silent — no throw, no notify, lock released", async () => {
+  const dir = setup(now());
+  const { dir: clone, shas } = pinnedClone(dir, "example.com", "o/pawprint");
+  writeFileSync(join(dir, "settings.json"), JSON.stringify({ packages: ["git:example.com/o/pawprint"] }));
+  const ext = await freshInstalledExtension(dir, clone);
+  const pi = makePi({
+    execImpl: async (cmd: string, args: string[]) =>
+      cmd === "pi" ? { code: 1, stdout: "", stderr: "offline" } : realExec()(cmd, args),
+  });
+  ext(pi);
+  const ctx = makeCtx();
+  await pi.emit("session_start", {}, ctx);
+  await settled(dir);
+  assert.deepEqual(ctx.notes, []);
+  assert.equal(git(clone, "rev-parse", "HEAD"), shas[0], "clone unmoved");
+  assert.ok(!existsSync(join(dir, ".auto-update.json.lock")), "lock released");
 });
