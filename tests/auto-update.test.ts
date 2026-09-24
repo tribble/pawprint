@@ -371,7 +371,7 @@ test("stamp: pi.exec throwing mid-check (reload invalidated the API) is containe
   const rejections: unknown[] = [];
   const onRej = (e: unknown) => rejections.push(e);
   process.on("unhandledRejection", onRej);
-  await startSession(agentDir, async (cmd: string, args: string[]) => { if (args.includes("show")) throw new Error("extension API invalidated"); return realExec()(cmd, args); });
+  await startSession(agentDir, async (cmd: string, args: string[]) => { if (args.includes("show")) throw new Error("extension API invalidated"); return realExec({ pi: () => "" })(cmd, args); });
   assert.ok(!existsSync(join(agentDir, ".auto-update.json.lock")), "lock released");
   await new Promise((r) => setTimeout(r, 50));
   process.off("unhandledRejection", onRej);
