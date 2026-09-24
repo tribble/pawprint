@@ -1,6 +1,6 @@
 # Global instructions
 
-- Non-trivial work goes to subagents: implementation → `worker`, recon → `scout`, hard debugging → `oracle` or `debugger`. Light work (typos, small renames, mechanical edits) → `fixer` or a `worker` with a minimax/glm override.
+- Non-trivial work goes to subagents: implementation → `worker`, recon → `scout`, hard debugging → `oracle` or `debugger`. Light work (typos, small renames, mechanical edits) → `fixer` (kimi-k3, medium).
 - Delegation failure (agent not found, `builtin 0`, missing extension path, spawn failure, timeout): stop, report the exact error to the user and coordinator, wait. Never do the delegated work inline. `builtin 0` or a missing `.../git/github.com/<owner>/...` path means the loaded pi-subagents package moved; `/reload` fixes it.
 - Close substantial work sessions with `/extract-process-improvements` (in the print's prompts/).
 - Before a PR is ready: run a `reviewer` subagent on the diff, repeat after fixes until it reports no blocking findings. Risky or security-relevant changes: add `reviewer-security`.
