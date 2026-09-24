@@ -705,6 +705,36 @@ test("refresh: an already-current clone stays silent but is still attempted", as
   );
 });
 
+test("refresh: a pi update that fails after moving HEAD stays silent — no notify, no throw, lock released", async () => {
+  const dir = setup(now());
+  const { dir: clone, shas } = pinnedClone(dir, "example.com", "o/pawprint");
+  writeFileSync(join(dir, "settings.json"), JSON.stringify({ packages: ["git:example.com/o/pawprint"] }));
+  const ext = await freshInstalledExtension(dir, clone);
+  const pi = makePi({
+    execImpl: async (cmd: string, args: string[]) => {
+      if (cmd === "pi" && args.includes("--extension")) {
+        git(clone, "fetch", "-q", "origin");
+        git(clone, "reset", "-q", "--hard", "origin/main");
+        return { code: 1, stdout: "", stderr: "install failed" };
+      }
+      return realExec()(cmd, args);
+    },
+  });
+  ext(pi);
+  const ctx = makeCtx();
+  const rejections: unknown[] = [];
+  const onRej = (e: unknown) => rejections.push(e);
+  process.on("unhandledRejection", onRej);
+  await pi.emit("session_start", {}, ctx);
+  await settled(dir);
+  assert.equal(git(clone, "rev-parse", "HEAD"), shas[2], "HEAD did move");
+  assert.deepEqual(ctx.notes, [], "a failed update never notifies");
+  assert.ok(!existsSync(join(dir, ".auto-update.json.lock")), "lock released");
+  await new Promise((r) => setTimeout(r, 50));
+  process.off("unhandledRejection", onRej);
+  assert.deepEqual(rejections, []);
+});
+
 test("refresh: failure is silent — no throw, no notify, lock released", async () => {
   const dir = setup(now());
   const { dir: clone, shas } = pinnedClone(dir, "example.com", "o/pawprint");

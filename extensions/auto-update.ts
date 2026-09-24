@@ -110,10 +110,15 @@ async function refreshSelf(pi: ExtensionAPI, ctx: ExtensionContext, agentDir: st
   try {
     const self = parsePackages(readSettings(agentDir).settings, agentDir).find((p) => p.kind === "git" && !p.ref && p.dir && real(p.dir) === SELF_REPO);
     if (!self) return;
-    const head = async () => (await sh(pi, "git", ["-C", self.dir!, "rev-parse", "HEAD"], 30_000)).out;
+    const head = async () => {
+      const r = await sh(pi, "git", ["-C", self.dir!, "rev-parse", "HEAD"], 30_000);
+      return r.ok ? r.out : "";
+    };
     const before = await head();
-    await sh(pi, "pi", ["update", "--extension", self.source, "--no-approve"], 120_000);
-    if (before && before !== (await head()) && ctx.hasUI) ctx.ui.notify(`${self.name.split("/").pop()} updated — /reload to apply`, "info");
+    const upd = await sh(pi, "pi", ["update", "--extension", self.source, "--no-approve"], 120_000);
+    const after = await head();
+    // pi can move HEAD and then fail installing: only a fully successful run notifies.
+    if (upd.ok && before && after && before !== after && ctx.hasUI) ctx.ui.notify(`${self.name.split("/").pop()} updated — /reload to apply`, "info");
   } catch { /* no settings.json, offline, reload mid-exec — next start retries */ }
 }
 
