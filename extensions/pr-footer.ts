@@ -35,7 +35,7 @@ export default function prFooter(pi: ExtensionAPI) {
     const refresh = async () => {
       const n = await needsReviewCount();
       if (!live) return; // shutdown raced the read (reload/new/resume/fork)
-      ctx.ui.setStatus("prs", n > 0 ? `⚑ ${n} need${n === 1 ? "s" : ""} review` : undefined);
+      ctx.ui.setStatus("prs", n > 0 ? `⚑ ${n} need${n === 1 ? "s" : ""} review · !!pr-review` : undefined);
     };
     await refresh();
     if (!live) return;

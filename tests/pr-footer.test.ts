@@ -34,13 +34,13 @@ async function start(content: string | undefined, hasUI = true) {
 
 test("non-draft review requests → count shown; drafts excluded", async () => {
   const { pi, ctx, status } = await start(state([pr(), pr(), pr(true)]));
-  assert.equal(status(), "⚑ 2 need review");
+  assert.equal(status(), "⚑ 2 need review · !!pr-review");
   await pi.emit("session_shutdown", { reason: "quit" }, ctx);
 });
 
 test("one request → singular", async () => {
   const { pi, ctx, status } = await start(state([pr()]));
-  assert.equal(status(), "⚑ 1 needs review");
+  assert.equal(status(), "⚑ 1 needs review · !!pr-review");
   await pi.emit("session_shutdown", { reason: "quit" }, ctx);
 });
 
@@ -118,7 +118,7 @@ test("re-reads every 5 minutes; shutdown clears the interval", async () => {
     assert.equal(ms, 5 * 60_000);
     writeState(state([pr(), pr(), pr()]));
     await fn(); // one interval tick, run to completion
-    assert.equal(status(), "⚑ 3 need review");
+    assert.equal(status(), "⚑ 3 need review · !!pr-review");
     await pi.emit("session_shutdown", { reason: "quit" }, ctx);
     assert.ok(timers.cleared.includes(handle), "interval handle cleared on shutdown");
   } finally {
