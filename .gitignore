@@ -33,6 +33,8 @@
 !themes/**
 !tests/
 !tests/**
+!docs/
+!docs/**
 !agent/
 !agent/AGENTS.md
 !agent/cloak.json
