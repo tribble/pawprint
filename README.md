@@ -27,12 +27,25 @@ The package half: `pi install git:github.com/tribble/pawprint`, then
 under the package entry in `settings.json`). Each extension's header comment
 says what it does and what it needs (`herdr`, `pr-watch`, …).
 
-The config half is one person's choices, but pieces of it stand alone. The catalog
-is `manifest.json`'s `about` map — one entry per shipped file: what it does,
-what it needs, and `personal: true` where it encodes my own choices (models,
-gateway, rules) rather than something to copy blind. A bare `./setup.sh`
-(no `--all`, no `--only`) refuses to run and prints these three commands, so
-a visitor cannot imprint the whole thing by accident.
+The config half is one person's choices, but pieces of it stand alone. The
+catalog is `manifest.json`'s `about` map — one entry per shipped file:
+
+- `does` — what the file does.
+- `needs` — what it needs: installed tools (`herdr`, `pr-watch`, `pi-subagents`,
+  the Cloudflare gateway) or another catalog path. A file with no `needs`
+  stands alone.
+- `personal: true` — my own choices (models, gateway, rules, repo paths), not
+  something to copy blind. Read the file and adapt it to your setup first;
+  `--only` warns on stderr for each such file and copies it anyway.
+
+How a piece works is in the header comment of the file itself
+(`agent/<path>`); read that before installing it. `agent/AGENTS.md` is the
+owner's own rules, not yours: read it for ideas, but don't edit it.
+
+Cloning this repo does not change your live config in `~/.pi/agent`.
+A bare `./setup.sh` (no `--all`, no `--only`) refuses to run and prints these
+three commands, so a visitor cannot imprint the whole thing by accident. Plan
+with `--dry-run` before copying:
 
 ```sh
 ./setup.sh --list                              # catalog — table on a TTY, JSON [{path, does, needs, personal}] when piped
@@ -40,8 +53,16 @@ a visitor cannot imprint the whole thing by accident.
 ./setup.sh --only cloak.json                   # copy just that (same backup rules; no machinery)
 ```
 
-A pi agent that `cd`s into a checkout gets the same instructions from the
-root `AGENTS.md`.
+An existing target file that differs is backed up next to itself as
+`<path>.bak-pawprint-<timestamp>` before being overwritten. Nothing is deleted. `--target DIR` (or `$PAWPRINT_TARGET`)
+copies somewhere other than `~/.pi/agent`.
+
+`npm test` and `scripts/validate.sh` are my tooling — not needed to adopt
+anything. Questions or a broken piece
+→ open an issue on the repo.
+
+Working in this repo itself, not adopting? The root `AGENTS.md` is the
+contributor side.
 
 ## Fresh machine (mine)
 
@@ -107,8 +128,8 @@ The repo has a dev side that never reaches `~/.pi` (`tests/`, `scripts/` and
 the package dirs are outside the sparse cone; root files come along, unused).
 
 ```sh
-npm test            # extension behavior suites + the encoded imprint matrix
-npm run typecheck   # pinned typescript@5.9.3 over tests + extensions
+npm run types       # create/refresh the local .pi-types symlink to the mise-installed Pi types
+npm test            # mise-pinned tsc, then the node suites (extension behavior + imprint matrix)
 ```
 
 Zero dependencies: Node 24 runs the `.ts` natively; an ESM loader hook
@@ -116,10 +137,7 @@ Zero dependencies: Node 24 runs the `.ts` natively; an ESM loader hook
 `tests/stubs/`, and `tests/harness.mjs` fakes the ExtensionAPI/ctx. The
 imprint matrix (`tests/imprint.test.ts`) drives `setup.sh` against throwaway
 fixture repos and mktemp targets only — never this checkout's git, never
-`~/.pi` — and is the regression net for script changes. The full 210k-file replica imprint stays
-a manual pre-ship gate. `npm run typecheck` needs the `.pi-types` symlink
-(`ln -s "$(npm root -g)/@earendil-works" .pi-types`; `setup.sh --all`'s
-machinery creates it).
+`~/.pi` — and is the regression net for script changes.
 
 ## Changing config
 
