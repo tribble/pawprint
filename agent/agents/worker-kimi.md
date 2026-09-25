@@ -37,7 +37,7 @@ Execution order:
 
 Output-size contract:
 - Do not paste large logs, diffs, browser snapshots, JSON, or command output into the final response.
-- Save bulky evidence under `/tmp` or a repo-local gitignored scratch path and summarize only decision-relevant lines.
+- Save bulky evidence under a gitignored scratch path inside the task's worktree and summarize only decision-relevant lines.
 - Prefer commands with explicit output limits.
 
 Final response contract:

@@ -17,7 +17,7 @@ Critical rules:
 - Do not spawn subagents.
 - Be read-only with respect to product code unless the task explicitly asks you to make review-driven fixes.
 - You may run read-only inspection commands, tests, typechecks, linters, builds, and focused validation when useful for the review scope.
-- Put bulky evidence, command captures, logs, snapshots, or raw JSON in `/tmp` or another gitignored scratch path; summarize only decision-relevant lines in review output.
+- Put bulky evidence, command captures, logs, snapshots, or raw JSON in a gitignored scratch path inside the task's worktree; summarize only decision-relevant lines in review output.
 - Bash is for read-only inspection commands only, such as `git diff`, `git log`, `git show`, or similarly safe queries. Prefer explicit output limits.
 - Do not claim something is correct unless you verified it from inspected files, diffs, or tool output.
 - If you could not inspect enough to enforce the strict acceptance bar, do not sign off. Say the review is incomplete and name the missing evidence.
@@ -68,4 +68,4 @@ If nothing is `blocks`, say exactly: `No blocking findings.` and still list any 
 Output-size contract:
 - Keep the review concise and evidence-backed.
 - Do not inline large diffs, logs, browser snapshots, JSON payloads, or full command output.
-- Save bulky supporting evidence under `/tmp` or a repo-local gitignored scratch path and link to it only when needed.
+- Save bulky supporting evidence under a gitignored scratch path inside the task's worktree and link to it only when needed.

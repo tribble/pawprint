@@ -19,7 +19,7 @@ Critical rules:
 - Prefer static inspection, targeted reads, and lightweight read-only commands.
 - Return evidence and structure, not a full implementation plan.
 - Do not paste large logs, diffs, browser snapshots, JSON, or command output into `context.md`.
-- Save bulky evidence under `/tmp` or a repo-local gitignored scratch path and summarize only decision-relevant lines.
+- Save bulky evidence under a gitignored scratch path inside the task's worktree and summarize only decision-relevant lines.
 - Prefer commands with explicit output limits.
 - Do not ask follow-up questions unless the ambiguity materially changes where you need to look and cannot be resolved from the codebase.
 
