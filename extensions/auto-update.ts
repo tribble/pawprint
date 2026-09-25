@@ -1,4 +1,7 @@
 // auto-update.ts — daily background self-update: pi itself + all packages.
+// Every session_start also refreshes the floating pawprint clone (pi's startup
+// banner nags while it lags origin): silent unless the clone moved, then
+// "pawprint updated — /reload to apply".
 // session_start: updates silently, notifies only. Reload on event-context is
 // deliberately not exposed by pi ("safe only in user-initiated commands"), so
 // applying extension updates is one `/reload` — or `/update` to do it all now.
@@ -89,6 +92,28 @@ function summary({ piUpdated, extChanged }: UpdateResult): string {
   if (extChanged) parts.push("packages updated — /reload to apply");
   if (piUpdated) parts.push("pi updated — takes effect next launch");
   return parts.join("; ");
+}
+
+// This package IS pawprint — the source is literal, never discovered.
+const SELF_SOURCE = "git:github.com/tribble/pawprint";
+
+// Every session start: `pi update --extension git:github.com/tribble/pawprint` so the
+// clone never lags origin (pi's async banner check compares them). Silent on any failure;
+// pi prints "Updating <source>" for git packages whether or not anything changed, so only
+// a HEAD move counts as an update. Runs under the same mkdir lock as the daily update.
+async function refreshSelf(pi: ExtensionAPI, ctx: ExtensionContext, agentDir: string) {
+  try {
+    const dir = join(agentDir, "git", "github.com", "tribble", "pawprint");
+    const head = async () => {
+      const r = await sh(pi, "git", ["-C", dir, "rev-parse", "HEAD"], 30_000);
+      return r.ok ? r.out : "";
+    };
+    const before = await head();
+    const upd = await sh(pi, "pi", ["update", "--extension", SELF_SOURCE, "--no-approve"], 120_000);
+    const after = await head();
+    // pi can move HEAD and then fail installing: only a fully successful run notifies.
+    if (upd.ok && before && after && before !== after && ctx.hasUI) ctx.ui.notify("pawprint updated — /reload to apply", "info");
+  } catch { /* offline, reload mid-exec — next start retries */ }
 }
 
 const STAMP = /^( *"lastChangelogVersion": *")([^"]*)"/gm;
@@ -334,6 +359,7 @@ export default function autoUpdate(pi: ExtensionAPI) {
     void (async () => {
       try {
         try { await commitStamp(pi, agentDir); } catch { /* reload mid-check invalidates pi.exec; next start retries */ }
+        await refreshSelf(pi, ctx, agentDir);
         if (!due) return;
         const result = await runUpdates(pi);
         writeState({ lastRun: new Date().toISOString() });
