@@ -99,7 +99,7 @@ function spyTimers() {
 
 // Records setStatus calls made after `dead` is flipped — in pi those would hit
 // an invalidated context and throw.
-function guardCtx(ctx: any) {
+function guardCtx(ctx: { ui: { setStatus: (k: string, v: string | undefined) => void } }) {
   const real = ctx.ui.setStatus.bind(ctx.ui);
   const g = { dead: false, callsAfterShutdown: 0 };
   ctx.ui.setStatus = (k: string, v: string | undefined) => {

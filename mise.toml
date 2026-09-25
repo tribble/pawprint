@@ -3,3 +3,4 @@
 [tools]
 node = "24"
 "npm:typescript" = "7.0.2"
+"npm:@biomejs/biome" = "2.5.14"

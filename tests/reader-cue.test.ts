@@ -10,14 +10,17 @@ import readerCue, { CUE } from "../extensions/reader-cue.ts";
 const user = (content: unknown) => ({ role: "user", content, timestamp: 1 });
 const text = (t: string) => ({ type: "text", text: t });
 
+// Transcript messages as the hook sees them: role + content plus arbitrary per-role extras.
+type CueMsg = { role: string; content: unknown; [key: string]: unknown };
+
 function boot() {
   const pi = makePi();
   readerCue(pi);
   const ctx = makeCtx();
-  const run = async (messages: unknown[]) => {
-    let out: any;
+  const run = async (messages: CueMsg[]) => {
+    let out: { messages: CueMsg[] } | undefined;
     for (const h of pi.onHandlers.get("context_with_system") ?? []) out = await h({ type: "context_with_system", messages }, ctx);
-    return out.messages as any[];
+    return out!.messages;
   };
   return { pi, ctx, run };
 }
@@ -41,9 +44,9 @@ test("every user message gets the cue; system/assistant/toolResult/custom untouc
     { role: "toolResult", content: [text("tool out")] },
     { role: "custom", customType: "intercom", content: "steer" },
   ];
-  const input: any[] = [head, first, others[0], blocks, delta, others[1], imageOnly, others[2]];
-  const out: any[] = await run(input);
-  assert.deepEqual(out.map((m: any) => m.role), input.map((m: any) => m.role), "roles and positions unchanged");
+  const input: CueMsg[] = [head, first, others[0], blocks, delta, others[1], imageOnly, others[2]];
+  const out = await run(input);
+  assert.deepEqual(out.map((m) => m.role), input.map((m) => m.role), "roles and positions unchanged");
   assert.ok(out[0] === head && out[4] === delta, "system messages are the same objects, in place");
   out.splice(4, 1); out.shift(); // drop the system messages: indices below are for the remaining six
 
@@ -68,5 +71,5 @@ test("/reader-cue off passes messages through; on re-enables; bad arg → usage"
   await pi.commands["reader-cue"].handler("on", ctx);
   assert.equal((await run(msgs))[0].content, `q\n\n${CUE}`);
   await pi.commands["reader-cue"].handler("maybe", ctx);
-  assert.deepEqual(ctx.notes.map((n: any) => n.msg), ["reader-cue: off", "reader-cue: on", "usage: /reader-cue on|off"]);
+  assert.deepEqual(ctx.notes.map((n: { msg: string; level: string }) => n.msg), ["reader-cue: off", "reader-cue: on", "usage: /reader-cue on|off"]);
 });

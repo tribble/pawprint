@@ -129,7 +129,7 @@ the package dirs are outside the sparse cone; root files come along, unused).
 
 ```sh
 npm run types       # create/refresh the local .pi-types symlink to the mise-installed Pi types
-npm test            # mise-pinned tsc, then the node suites (extension behavior + imprint matrix)
+npm test            # biome lint (no `any`; per-line opt-outs need a reason), mise-pinned tsc, then the node suites (extension behavior + imprint matrix)
 ```
 
 Zero dependencies: Node 24 runs the `.ts` natively; an ESM loader hook

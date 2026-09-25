@@ -4,7 +4,8 @@
 //   /ws [repo|dir] <purpose> new focused workspace: dir from identifier or the model's read of the purpose; name from purpose; repo ids from `configs/ws.json`
 // Delegated pane agents are first-class: they join intercom under their herdr name,
 // and you talk to them by focusing their pane (herdr agent focus <name>).
-import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
+import type { ExtensionAPI, ExtensionCommandContext } from "@earendil-works/pi-coding-agent";
+import { normalizeContext } from "@earendil-works/pi-ai";
 import { createHash } from "node:crypto";
 import { existsSync, readFileSync, statSync } from "node:fs";
 import { resolve } from "node:path";
@@ -50,7 +51,7 @@ interface WsPlan { name: string; dir: string }
 
 // Directory from an explicit identifier (path or configured repo id as first word) or, failing that,
 // the session model's read of the purpose. Name is model-derived either way unless already a slug.
-async function planWorkspace(pi: ExtensionAPI, ctx: any, args: string): Promise<WsPlan> {
+async function planWorkspace(pi: ExtensionAPI, ctx: ExtensionCommandContext, args: string): Promise<WsPlan> {
   const [first = "", ...restWords] = args.split(/\s+/).filter(Boolean);
   let dir: string | undefined;
   let hint = args;
@@ -65,27 +66,35 @@ async function planWorkspace(pi: ExtensionAPI, ctx: any, args: string): Promise<
   if (!source) {
     const users = ctx.sessionManager
       .getBranch()
-      .filter((e: any) => e.type === "message" && e.message?.role === "user")
-      .slice(-3)
-      .map((e: any) => (typeof e.message.content === "string" ? e.message.content : e.message.content.filter((c: any) => c.type === "text").map((c: any) => c.text).join("\n")));
+      .flatMap((e) => {
+        if (e.type !== "message" || e.message.role !== "user") return [];
+        const c = e.message.content;
+        return [typeof c === "string" ? c : c.flatMap((b) => (b.type === "text" ? [b.text] : [])).join("\n")];
+      })
+      .slice(-3);
     source = users.join("\n---\n").slice(-4000);
   }
   if (!source.trim()) throw new Error("nothing to plan from — /ws [repo|dir] <purpose>");
   const repoIds = Object.keys(repos);
   if (!dir && repoIds.length === 0) throw new Error(`no repos configured — add {"repos": {"<id>": "<path>"}} to ${wsConfigPath()} or /ws <dir> <purpose>`);
   const model = ctx.model;
+  if (!model) throw new Error("no model selected");
   const auth = await ctx.modelRegistry.getApiKeyAndHeaders(model);
   if (!auth.ok) throw new Error(auth.error);
-  const r = await ctx.modelRegistry
-    .getProvider(model.provider)
+  const provider = ctx.modelRegistry.getProvider(model.provider);
+  if (!provider) throw new Error(`no provider ${model.provider}`);
+  // normalizeContext folds the planning persona into a leading system message — a raw
+  // { systemPrompt } field is not a TranscriptContext and the provider drops it silently.
+  // stream, not streamSimple: its reasoning option would newly enable thinking here.
+  const r = await provider
     .stream(
       model,
-      { systemPrompt: PLAN_RULE(repoIds), messages: [{ role: "user", content: [{ type: "text", text: source }], timestamp: Date.now() }] },
-      { apiKey: auth.apiKey, headers: auth.headers, env: auth.env, reasoning: "low" }
+      normalizeContext({ systemPrompt: PLAN_RULE(repoIds), messages: [{ role: "user", content: [{ type: "text", text: source }], timestamp: Date.now() }] }),
+      { apiKey: auth.apiKey, headers: auth.headers, env: auth.env }
     )
     .result();
   if (r.stopReason === "error") throw new Error(r.errorMessage ?? "planning call failed");
-  const text = r.content.filter((c: any) => c.type === "text").map((c: any) => c.text).join("");
+  const text = r.content.flatMap((c) => (c.type === "text" ? [c.text] : [])).join("");
   const json = text.match(/\{[\s\S]*\}/)?.[0];
   if (!json) throw new Error(`model returned no plan: ${JSON.stringify(text)}`);
   const plan = JSON.parse(json) as { name?: string; repo?: string | null };

@@ -122,7 +122,7 @@ test("missing file / directory / non-UTF-8 → error notify naming the path, no 
   writeFileSync(join(dir, "bin.md"), Buffer.from([0xff, 0xfe, 0x00]));
   await run("bin.md");
   assert.deepEqual(
-    ctx.notes.map((n: any) => [n.level, n.msg]),
+    ctx.notes.map((n: { msg: string; level: string }) => [n.level, n.msg]),
     [["error", "md: /nonexistent/x.md: ENOENT"], ["error", `md: ${dir}: EISDIR`], ["error", `md: ${join(dir, "bin.md")}: ERR_ENCODING_INVALID_ENCODED_DATA`]],
   );
   assert.equal(pi.state.entries.length, 0);

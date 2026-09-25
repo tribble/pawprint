@@ -61,7 +61,7 @@ test("/preset applies thinking + filters unknown tools, warns, injects instructi
   assert.equal(pi.state.thinkingLevel, "high");
   assert.deepEqual(pi.state.activeTools, ["read"], "bogus-tool filtered out");
   assert.ok(
-    ctx.notes.some((n: any) => n.level === "warning" && n.msg.includes("Unknown tools: bogus-tool")),
+    ctx.notes.some((n: { msg: string; level: string }) => n.level === "warning" && n.msg.includes("Unknown tools: bogus-tool")),
   );
   const out = await pi.onHandlers.get("before_agent_start")[0]({ systemPrompt: "BASE" }, ctx);
   assert.equal(out.systemPrompt, "BASE\n\nALPHA-INST");
@@ -107,16 +107,16 @@ test("shortcut cycles (none) → alpha → beta → merged → (none), restoring
 
 test("--preset flag applies at session_start; unknown flag value warns", async () => {
   const { pi, ctx } = await boot("beta");
-  assert.ok(ctx.notes.some((n: any) => n.msg === 'Preset "beta" activated'));
+  assert.ok(ctx.notes.some((n: { msg: string; level: string }) => n.msg === 'Preset "beta" activated'));
 
   const { ctx: ctx2 } = await boot("ghost");
-  assert.ok(ctx2.notes.some((n: any) => n.level === "warning" && n.msg.includes('Unknown preset "ghost"')));
+  assert.ok(ctx2.notes.some((n: { msg: string; level: string }) => n.level === "warning" && n.msg.includes('Unknown preset "ghost"')));
 });
 
 test("selector path: /preset with no args builds items incl (none), applies choice", async () => {
   const { pi, ctx } = await boot();
-  let seenItems: any[] = [];
-  ctx.ui.custom = async (build: any) => {
+  let seenItems: unknown[] = [];
+  ctx.ui.custom = async (build: (...args: unknown[]) => { render: unknown }) => {
     const component = build(
       { requestRender() {} },
       { fg: (_c: string, s: string) => s, bold: (s: string) => s },
@@ -128,12 +128,12 @@ test("selector path: /preset with no args builds items incl (none), applies choi
   };
   // capture items via the SelectList stub: rebuild through custom's build fn
   const origCustom = ctx.ui.custom;
-  ctx.ui.custom = async (build: any) => {
+  ctx.ui.custom = async (build: (...args: unknown[]) => { render: unknown }) => {
     const res = await origCustom(build);
     return res;
   };
   await pi.commands.preset.handler("", ctx);
-  assert.ok(ctx.notes.some((n: any) => n.msg === 'Preset "beta" activated'));
+  assert.ok(ctx.notes.some((n: { msg: string; level: string }) => n.msg === 'Preset "beta" activated'));
   const out = await pi.onHandlers.get("before_agent_start")[0]({ systemPrompt: "B" }, ctx);
   assert.equal(out.systemPrompt, "B\n\nBETA-INST");
   void seenItems;

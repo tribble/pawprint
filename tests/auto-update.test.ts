@@ -120,13 +120,13 @@ test("/update: extension change triggers reload; clean run does not", async () =
   const ctx = makeCtx();
   await pi.commands.update.handler("", ctx);
   assert.equal(ctx.reloads, 1, "extChanged → reload");
-  assert.ok(ctx.notes.some((n: any) => n.msg.includes("packages updated")));
+  assert.ok(ctx.notes.some((n: { msg: string; level: string }) => n.msg.includes("packages updated")));
 
   extStdout = "All packages up to date";
   const ctx2 = makeCtx();
   await pi.commands.update.handler("", ctx2);
   assert.equal(ctx2.reloads, 0);
-  assert.ok(ctx2.notes.some((n: any) => n.msg === "Everything up to date."));
+  assert.ok(ctx2.notes.some((n: { msg: string; level: string }) => n.msg === "Everything up to date."));
 });
 
 test("/update: headless ctx returns without doing anything", async () => {
@@ -216,7 +216,7 @@ function realExec(fake: Record<string, (args: string[]) => string> = {}) {
   return async (cmd: string, args: string[]) => {
     if (fake[cmd]) return { code: 0, stdout: fake[cmd](args), stderr: "" };
     return new Promise<{ code: number; stdout: string; stderr: string }>((res) =>
-      execFile(cmd, args, { encoding: "utf8" }, (e, stdout, stderr) => res({ code: e ? Number((e as any).code) || 1 : 0, stdout, stderr })),
+      execFile(cmd, args, { encoding: "utf8" }, (e, stdout, stderr) => res({ code: e ? Number(e.code) || 1 : 0, stdout, stderr })),
     );
   };
 }
@@ -545,7 +545,7 @@ test("timeouts: a killed command is a failure everywhere (pi.exec resolves kille
   ext2(pi2);
   const ctx2 = makeCtx();
   await pi2.commands.packages.handler("bump --all", ctx2);
-  assert.deepEqual(ctx2.notes.map((n: any) => n.level), ["error"]);
+  assert.deepEqual(ctx2.notes.map((n: { msg: string; level: string }) => n.level), ["error"]);
   assert.match(ctx2.notes[0].msg, /pi update --extensions failed: timed out after 300s — pins restored, but clones may still sit at the new ref: pi update --extensions/);
   assert.equal(readFileSync(join(agentDir, "settings.json"), "utf8"), text);
   assert.equal(git(root, "log", "-1", "--format=%s"), "base");
@@ -557,8 +557,8 @@ test("timeouts: a killed command is a failure everywhere (pi.exec resolves kille
   ext3(pi3);
   const ctx3 = makeCtx();
   await pi3.commands.update.handler("", ctx3);
-  assert.ok(ctx3.notes.some((n: any) => n.level === "warning" && /part of the update failed/.test(n.msg)));
-  assert.ok(!ctx3.notes.some((n: any) => /updated/.test(n.msg)), "no success claim");
+  assert.ok(ctx3.notes.some((n: { msg: string; level: string }) => n.level === "warning" && /part of the update failed/.test(n.msg)));
+  assert.ok(!ctx3.notes.some((n: { msg: string }) => /updated/.test(n.msg)), "no success claim");
 });
 
 test("/packages bump: settings.json saved by another pane while `pi update` ran → their bytes stay, nothing committed; unrelated tracked edits never ride along", async () => {
@@ -575,7 +575,7 @@ test("/packages bump: settings.json saved by another pane while `pi update` ran 
   ext(pi);
   const ctx = makeCtx();
   await pi.commands.packages.handler("bump --all", ctx);
-  assert.deepEqual(ctx.notes.map((n: any) => n.level), ["error"]);
+  assert.deepEqual(ctx.notes.map((n: { msg: string; level: string }) => n.level), ["error"]);
   assert.match(ctx.notes[0].msg, /changed while packages installed — installed, nothing committed: git -C .* add -p agent\/settings.json/);
   assert.equal(readFileSync(file, "utf8"), theirs, "the other pane's save is intact");
   assert.equal(git(root, "log", "-1", "--format=%s"), "base");

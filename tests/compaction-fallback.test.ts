@@ -11,9 +11,9 @@ const ev = (extra: object = {}) => ({ aborted: false, errorMessage: "refused", r
 
 function setup(opts: { scoped?: string[]; setModelOk?: boolean } = {}) {
   const pi = makePi();
-  const modelCalls: any[] = [];
+  const modelCalls: { provider: string; id: string }[] = [];
   const origSetModel = pi.setModel.bind(pi);
-  pi.setModel = async (m: any) => {
+  pi.setModel = async (m: { provider: string; id: string }) => {
     modelCalls.push(m);
     if (opts.setModelOk === false) return false;
     return origSetModel(m);
@@ -35,7 +35,7 @@ test("(a) first failure + fallback exists → setModel(fallback), compact retrie
   assert.equal(modelCalls.length, 1);
   assert.equal(modelCalls[0].id, "kimi-k3");
   assert.equal(compacts(), 1, "compaction retried on fallback");
-  const warn = ctx.notes.find((n: any) => n.level === "warning");
+  const warn = ctx.notes.find((n: { msg: string; level: string }) => n.level === "warning");
   assert.ok(warn?.msg.includes("kimi-k3"), "warning mentions the fallback id");
 });
 

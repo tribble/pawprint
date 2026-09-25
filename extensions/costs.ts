@@ -14,12 +14,19 @@ import { Type } from "typebox";
 // [cost $, turns, tokens, reasoning/tokens, cacheRead/tokens] per run
 type Run = [number, number, number, number, number];
 
+// The assistant-message fields of a session.jsonl line that readRun aggregates.
+interface SessionLineMessage {
+  role?: string;
+  model?: string;
+  usage?: { cost?: { total?: number }; totalTokens?: number; reasoning?: number; cacheRead?: number };
+}
+
 // One session.jsonl → its model (last assistant message's) and totals; null when no assistant turn.
 function readRun(file: string): { model: string; run: Run } | null {
   let model = "?", cost = 0, turns = 0, tok = 0, reason = 0, cache = 0;
   for (const line of readFileSync(file, "utf8").split("\n")) {
-    let m: any;
-    try { m = JSON.parse(line).message; } catch { continue; } // partial trailing line
+    let m: SessionLineMessage | undefined;
+    try { m = (JSON.parse(line) as { message?: SessionLineMessage }).message; } catch { continue; } // partial trailing line
     if (m?.role !== "assistant" || !m.usage) continue;
     turns++; cost += m.usage.cost?.total ?? 0; tok += m.usage.totalTokens ?? 0;
     reason += m.usage.reasoning ?? 0; cache += m.usage.cacheRead ?? 0; model = m.model ?? model;

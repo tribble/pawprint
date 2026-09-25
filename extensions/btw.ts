@@ -9,7 +9,7 @@
 // Optional ~/.pi/agent/configs/btw.json: {"model": "provider/model-id"} (id may contain slashes).
 import type { ExtensionAPI, ExtensionCommandContext } from "@earendil-works/pi-coding-agent";
 import { convertToLlm, getAgentDir, serializeConversation, sessionEntryToContextMessages } from "@earendil-works/pi-coding-agent";
-import { normalizeContext, type Message, type Model } from "@earendil-works/pi-ai";
+import { normalizeContext, type Api, type Message, type Model } from "@earendil-works/pi-ai";
 import { Text } from "@earendil-works/pi-tui";
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
@@ -25,7 +25,7 @@ export default function btw(pi: ExtensionAPI) {
   let busy = false; // one question at a time: overlapping calls would share the status line and persist out of order
 
   // configs/btw.json {"model": "provider/id"} → that model; no file → the session model; bad file → session model, warn once.
-  function pickModel(ctx: ExtensionCommandContext): Model<any> | undefined {
+  function pickModel(ctx: ExtensionCommandContext): Model<Api> | undefined {
     const file = join(getAgentDir(), "configs", "btw.json");
     if (!existsSync(file)) return ctx.model;
     let spec = "";

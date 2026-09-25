@@ -198,17 +198,27 @@ test("/ws <prose>: model picks name AND repo from the configured ids only", () =
     const pi = makePi({ execImpl: wsExec([]) });
     herdrFleet(pi);
     const ctx = makeCtx();
+    // pi's Provider.stream ignores a raw `systemPrompt` field — the persona must arrive
+    // normalized (normalizeContext) as the leading system message, or it is silently dropped.
+    // Assertions run after the handler: it catches provider-thrown errors into error notes.
+    let seenReq: { systemPrompt?: string; messages: { role: string; content: string }[] } | undefined;
+    let seenOpts: Record<string, unknown> | undefined;
     ctx.modelRegistry = {
       getApiKeyAndHeaders: async () => ({ ok: true, headers: { h: "1" }, env: { E: "x" } }),
       getProvider: () => ({
-        stream: (_m: unknown, req: any, opts: any) => {
-          assert.ok(req.systemPrompt.includes("workos, pawprint"));
-          assert.deepEqual(opts.env, { E: "x" });
+        stream: (_m: unknown, req: { systemPrompt?: string; messages: { role: string; content: string }[] }, opts: Record<string, unknown>) => {
+          seenReq = req;
+          seenOpts = opts;
           return { result: async () => ({ stopReason: "stop", content: [{ type: "text", text: 'Sure:\n{"name": "Fix Flaky Mac Tests", "repo": "workos"}' }] }) };
         },
       }),
     };
     await pi.commands.ws.handler("the mac tests keep flaking in CI", ctx);
+    assert.equal(seenReq?.systemPrompt, undefined, "raw systemPrompt field is dropped by providers");
+    assert.equal(seenReq?.messages[0].role, "system", "planning persona leads the transcript");
+    assert.ok(seenReq?.messages[0].content.includes("workos, pawprint"));
+    assert.deepEqual(seenOpts?.env, { E: "x" });
+    assert.ok(seenOpts && !("reasoning" in seenOpts), "planning call must not enable reasoning");
     assert.equal(pi.execCalls[1][4], `${process.env.HOME}/work/workos`);
     assert.equal(pi.execCalls[1][6], "fix-flaky-mac-tests");
   }));

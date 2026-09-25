@@ -17,6 +17,7 @@
 !scripts/sync-forks.sh
 !scripts/patch-pi-anthropic-gateway
 !manifest.json
+!biome.json
 !package.json
 !tsconfig.json
 !mise.toml

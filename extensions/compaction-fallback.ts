@@ -6,7 +6,7 @@
 // same model, same deterministic refusal, dead loop. (Scout-verified: core treats
 // refusals as non-retryable on every path; compaction is the only stranding one.)
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
-import type { Model } from "@earendil-works/pi-ai";
+import type { Api, Model } from "@earendil-works/pi-ai";
 
 // Ordered preference by id substring; first match in the session's scoped models wins.
 // Cross-family on purpose: a same-family fallback may trip the same refusal classifier.
@@ -14,7 +14,7 @@ import type { Model } from "@earendil-works/pi-ai";
 const PREFER = ["gpt-5.6-sol", "kimi", "deepseek", "glm", "minimax"];
 
 export default function compactionFallback(pi: ExtensionAPI) {
-  let restoreAfter: Model<any> | null = null; // non-null while a fallback retry is in flight
+  let restoreAfter: Model<Api> | null = null; // non-null while a fallback retry is in flight
 
   pi.on("session_compact_failed", async (event, ctx: ExtensionContext) => {
     if (restoreAfter) {

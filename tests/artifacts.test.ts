@@ -19,11 +19,11 @@ function boot() {
   artifacts(pi);
   const ctx = makeCtx({ cwd: dir });
   // what pi does: appendEntry lands on the branch synchronously as a custom entry
-  ctx.sessionManager.getBranch = () => pi.state.entries.map((e: any) => ({ type: "custom", customType: e.type, data: e.data }));
+  ctx.sessionManager.getBranch = () => pi.state.entries.map((e: { type: string; data: unknown }) => ({ type: "custom", customType: e.type, data: e.data }));
   const tool = async (params: Record<string, string>) => (await pi.tools.artifact.execute("t1", params, undefined, undefined, ctx)).content[0].text;
   // each /artifacts round builds the picker; the next script step drives it (keys) until done() fires
-  const drive = (...steps: ((comp: any) => void)[]) => {
-    ctx.ui.custom = (build: any) =>
+  const drive = (...steps: ((comp: { handleInput: (input: string) => void }) => void)[]) => {
+    ctx.ui.custom = (build: (...args: unknown[]) => { handleInput: (input: string) => void }) =>
       new Promise((done) => {
         const comp = build({ requestRender() {} }, ctx.ui.theme, {}, done);
         steps.shift()!(comp);
@@ -135,7 +135,7 @@ test("d drops the selected item (done entry) and re-opens the list on the same r
   drive(
     (comp) => { comp.handleInput("\x1b[B"); comp.handleInput("\x1b[B"); comp.handleInput("d"); }, // drop c (row 2)
     (comp) => { assert.equal(selectLists.at(-1)!.selectedIndex, 1, "cursor clamped to the new last row"); comp.handleInput("d"); }, // drop b
-    (comp) => { assert.deepEqual(selectLists.at(-1)!.items.map((i: any) => i.value), ["/tmp/a.md"]); comp.handleInput("\x1b"); },
+    (comp) => { assert.deepEqual(selectLists.at(-1)!.items.map((i: { value: string }) => i.value), ["/tmp/a.md"]); comp.handleInput("\x1b"); },
   );
   await list();
   assert.deepEqual(pi.state.entries.slice(3), [

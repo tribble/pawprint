@@ -22,7 +22,7 @@
     "typebox": { "optional": true }
   },
   "scripts": {
-    "test": "npm run typecheck && node --import ./tests/register.mjs --test tests/*.test.ts",
+    "test": "biome lint && tsc -p tsconfig.json && node --import ./tests/register.mjs --test tests/*.test.ts",
     "typecheck": "tsc -p tsconfig.json",
     "types": "pi_dir=\"$(mise where npm:@earendil-works/pi-coding-agent)\" && ln -sfn \"$pi_dir/node_modules/.mise/node_modules\" .pi-types"
   }

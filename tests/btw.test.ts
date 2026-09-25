@@ -27,7 +27,14 @@ function boot(opts: Boot = {}) {
   const pi = makePi();
   btw(pi);
   const ctx = makeCtx();
-  const calls: { model: any; req: any; o: any }[] = [];
+  // Structural fakes for what the extension hands the provider: model, transcript, stream options.
+  type FakeMsg = { role: string; content: string | { type: string; text: string }[] };
+  type FakeCall = {
+    model: { provider: string; id: string; baseUrl?: string };
+    req: { systemPrompt?: string; messages: FakeMsg[] };
+    o: Record<string, unknown>;
+  };
+  const calls: FakeCall[] = [];
   ctx.sessionManager.buildContextEntries = () => opts.entries ?? [];
   ctx.sessionManager.getBranch = () => opts.branch ?? opts.entries ?? [];
   ctx.sessionManager.getLeafId = () => opts.leaf ?? null;
@@ -35,7 +42,7 @@ function boot(opts: Boot = {}) {
     find: opts.find ?? (() => undefined),
     getApiKeyAndHeaders: async () => opts.auth ?? { ok: true, apiKey: "k", headers: { h: "1" }, env: { CF_GATEWAY: "g" } },
     getProvider: () => ({
-      streamSimple: (model: any, req: any, o: any) => {
+      streamSimple: (model: FakeCall["model"], req: FakeCall["req"], o: FakeCall["o"]) => {
         calls.push({ model, req, o });
         return { result: async () => (typeof opts.result === "function" ? opts.result() : opts.result ?? ok) };
       },
@@ -84,8 +91,8 @@ test("context: transcript from buildContextEntries (compaction summary leads, ra
   // pi's TranscriptContext carries the prompt as a leading system message (normalizeContext)
   assert.equal(req.messages[0].role, "system");
   assert.ok((req.messages[0].content as string).includes("side channel"), "persona prompt leads");
-  assert.deepEqual(req.messages.map((m: any) => m.role), ["system", "user", "assistant", "user", "assistant", "user"]);
-  const lead = req.messages[1].content[0].text as string;
+  assert.deepEqual(req.messages.map((m) => m.role), ["system", "user", "assistant", "user", "assistant", "user"]);
+  const lead = (req.messages[1].content as { text: string }[])[0].text;
   assert.ok(lead.startsWith("<conversation>\n"), "conversation block leads");
   const summaryAt = lead.indexOf("SUMMARY-OF-OLD-STUFF");
   const helloAt = lead.indexOf("hello there");
@@ -94,7 +101,7 @@ test("context: transcript from buildContextEntries (compaction summary leads, ra
   assert.ok(!lead.includes("ANCIENT-MESSAGE"), "raw history behind the compaction cut is not context");
   assert.ok(!lead.includes('"x":1') && !lead.includes("side a"), "custom entries never enter the transcript");
   assert.ok(lead.endsWith("</conversation>\n\nfirst side q"), "earliest btw question follows the block");
-  assert.deepEqual(req.messages.slice(2).map((m: any) => m.content[0].text), ["first side a", "second side q", "second side a", "what did I ask first?"]);
+  assert.deepEqual(req.messages.slice(2).map((m) => (m.content as { text: string }[])[0].text), ["first side a", "second side q", "second side a", "what did I ask first?"]);
 });
 
 test("one question at a time: an overlapping /btw is refused without a stream; /tree away mid-request drops the answer", async () => {
@@ -171,7 +178,7 @@ test("config: unresolvable model → ctx.model + one warning across calls; no fi
   await run("q2");
   assert.equal(calls.length, 2);
   assert.ok(calls.every((c) => c.model.id === "claude-test"));
-  assert.equal(ctx.notes.filter((n: any) => n.level === "warning").length, 1);
+  assert.equal(ctx.notes.filter((n: { msg: string; level: string }) => n.level === "warning").length, 1);
   assert.ok(ctx.notes[0].msg.includes("nope/missing") && ctx.notes[0].msg.includes("btw.json"));
 
   agentDirWith("{not json");

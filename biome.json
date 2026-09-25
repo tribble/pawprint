@@ -1,0 +1,9 @@
+{
+  "linter": {
+    "rules": {
+      "preset": "none",
+      "suspicious": { "noExplicitAny": "error" }
+    }
+  },
+  "files": { "includes": ["extensions/**", "tests/**"] }
+}

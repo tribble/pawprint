@@ -71,7 +71,12 @@ function nextReportSeq(): number {
   return reportSeq;
 }
 
-function updateSessionRef(ctx: any): void {
+// Structural, not pi's ExtensionContext: this file is herdr-managed and stays import-free.
+type SessionRefSource = {
+  sessionManager?: { getSessionFile?: () => unknown; getSessionId?: () => unknown };
+};
+
+function updateSessionRef(ctx: SessionRefSource | undefined): void {
   try {
     const file = ctx?.sessionManager?.getSessionFile?.();
     currentAgentSessionPath =

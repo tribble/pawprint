@@ -19,7 +19,7 @@ async function freshExtension() {
 function startServer(t: { after: (fn: () => void) => void }) {
   const dir = mkdtempSync(join(tmpdir(), "pawprint-herdr-"));
   const sock = join(dir, "h.sock");
-  const received: any[] = [];
+  const received: { method: string; params: Record<string, unknown> }[] = [];
   const conns = new Set<net.Socket>();
   const server = net.createServer((c) => {
     conns.add(c);
@@ -109,8 +109,8 @@ test("enabled: tui session reports session + state machine over the socket", asy
     );
 
     const session = srv.received.find((m) => m.method === "pane.report_agent_session");
-    assert.equal(session.params.pane_id, "pane-7");
-    assert.equal(session.params.agent_session_path, "/tmp/sess.jsonl");
+    assert.equal(session?.params.pane_id, "pane-7");
+    assert.equal(session?.params.agent_session_path, "/tmp/sess.jsonl");
   } finally {
     delete process.env.HERDR_ENV;
     delete process.env.HERDR_SOCKET_PATH;
