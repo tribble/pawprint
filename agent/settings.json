@@ -4,7 +4,9 @@
   "defaultThinkingLevel": "high",
   "quietStartup": true,
   "steeringMode": "all",
-  "defaultTools": ["+codemode"],
+  "defaultTools": [
+    "+codemode"
+  ],
   "retry": {
     "enabled": true,
     "maxRetries": 5,
@@ -21,9 +23,9 @@
     "cloudflare-ai-gateway/gpt-6-astra",
     "cloudflare-ai-gateway/gpt-5.6-sol",
     "cloudflare-ai-gateway/claude-fable-5-1",
-    "cloudflare-ai-gateway/claude-opus-5",
-    "cloudflare-ai-gateway/claude-sonnet-5",
+    "cloudflare-ai-gateway/claude-opus-5.5",
     "cloudflare-ai-gateway/accounts/fireworks/models/kimi-k3",
+    "cloudflare-ai-gateway/claude-sonnet-5",
     "cloudflare-ai-gateway/accounts/fireworks/models/glm-5p3",
     "cloudflare-ai-gateway/accounts/fireworks/models/deepseek-v4-pro",
     "cloudflare-ai-gateway/accounts/fireworks/models/qwen3p8-max",
