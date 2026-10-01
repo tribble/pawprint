@@ -201,7 +201,7 @@ fi
 echo "live:          clean ($root on main $("${git[@]}" rev-parse --short HEAD))"
 
 echo
-echo "Manual steps remain: /login cloudflare-ai-gateway (or env) · /mcp-auth per OAuth server · /trust per project — see README."
+echo "Manual steps remain: /login cloudflare-ai-gateway (or env) · pi mcp login <server> per OAuth server · /trust per project — see README."
 
 # --------------------------------------- machine machinery (not the print) -
 # Global, machine-level bootstrap. Skipped by --dry-run / --config-only /

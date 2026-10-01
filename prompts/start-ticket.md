@@ -6,7 +6,7 @@ Start Linear ticket `$1` as a new workstream. You only coordinate: pick repo, br
 
 1. Arguments. Ticket id `$1` must match `[A-Z][A-Z0-9]+-\d+`; otherwise reply exactly `Usage: /start-ticket <LINEAR-ID> [repo]` and stop. Repo override (empty = infer in step 2): `$2`. If non-empty it must be a key of `repos` in `~/.pi/agent/configs/ws.json`; otherwise list the keys and stop.
 
-2. Read the ticket, read-only: `mcp({ tool: "linear_get_issue", args: { id: "$1" } })` (if that tool is missing, `mcp({ search: "linear issue" })` and use the get-issue tool with the identifier). If the fetch fails, report the error and stop. Change nothing in Linear. Use the ticket ONLY to decide three things:
+2. Read the ticket, read-only, with a `codemode` script: discover Linear's get-issue tool — `await describeNamespace("mcp__linear")` lists its tools, or `await searchTools("linear get issue")` — then `return await tools.mcp__linear__<get-issue tool>({ id: "$1" })`. If the fetch fails, report the error and stop. Change nothing in Linear. Use the ticket ONLY to decide three things:
    - repo: the override if non-empty; else the one `ws.json` repo the ticket's team, project, labels and mentioned paths clearly point to. Not confidently exactly one → stop and ask the user to re-run `/start-ticket $1 <repo>`, naming the candidates. Never guess.
    - type: `fix` (bug, vulnerability, incident), `feat` (feature), `spike` (research, investigation), `chore` (anything else). Not obvious from the ticket → ask, don't guess.
    - slug: 2–5 lowercase words from the title, hyphenated, no filler words, no ticket id (it is already in the branch).

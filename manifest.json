@@ -7,6 +7,7 @@
     "agents/scout-kimi.md",
     "agents/worker-kimi.md",
     "fitch-mcp-adapter/mcp.json",
+    "mcp.json",
     "models.json",
     "presets.json",
     "settings.json",
@@ -40,8 +41,13 @@
       "personal": true
     },
     "fitch-mcp-adapter/mcp.json": {
-      "does": "tribble's MCP servers for pi-mcp-adapter (Slack, GitHub, Notion, Linear, …)",
+      "does": "ROLLBACK ONLY: old pi-mcp-adapter server list; native mcp.json is live",
       "needs": ["pi-mcp-adapter", "gh"],
+      "personal": true
+    },
+    "mcp.json": {
+      "does": "tribble's MCP servers for pi's built-in MCP (Slack, GitHub, horizon, alto, …)",
+      "needs": ["gh"],
       "personal": true
     },
     "models.json": {
