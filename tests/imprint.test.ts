@@ -79,7 +79,7 @@ test("1. fresh target: locked sparse worktree on main, every manifest file, stat
   assert.equal(git(repo, "branch", "--show-current"), "", "fixture detached: main is checked out once, in live");
   assert.match(r.stdout, /^detached .* from main/m);
   assert.match(r.stdout, /^live:\s+clean \(.* on main [0-9a-f]+\)$/m);
-  for (const step of ["/login", "/mcp-auth", "/trust"]) assert.ok(r.stdout.includes(step), `closing message mentions ${step}`);
+  for (const step of ["/login", "mcp login", "/trust"]) assert.ok(r.stdout.includes(step), `closing message mentions ${step}`);
   assert.ok(r.stdout.includes("machine machinery: SKIPPED"));
   assert.ok(!existsSync(trace), "no machinery tool was invoked");
   assert.ok(!existsSync(join(live, "agent", "auth.json")));

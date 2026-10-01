@@ -1,0 +1,69 @@
+{
+  "mcpServers": {
+    "slack-workos": {
+      "url": "https://mcp.slack.com/mcp",
+      "exposure": "codemode",
+      "toolExposure": {
+        "slack_send_message": "direct",
+        "slack_add_reaction": "direct",
+        "slack_search_public": "direct",
+        "slack_search_channels": "direct",
+        "slack_search_users": "direct",
+        "slack_read_channel": "direct",
+        "slack_read_thread": "direct",
+        "slack_read_user_profile": "direct",
+        "slack_list_channel_members": "direct",
+        "slack_read_file": "direct",
+        "slack_search_emojis": "direct",
+        "slack_get_reactions": "direct"
+      },
+      "oauth": {
+        "clientId": "1601185624273.8899143856786",
+        "callbackUrl": "http://localhost:3118/callback"
+      }
+    },
+    "github": {
+      "url": "https://api.githubcopilot.com/mcp",
+      "exposure": "codemode",
+      "headers": {
+        "Authorization": "!echo Bearer $(gh auth token)"
+      }
+    },
+    "notion": {
+      "url": "https://mcp.notion.com/mcp",
+      "exposure": "codemode"
+    },
+    "linear": {
+      "url": "https://mcp.linear.app/mcp",
+      "exposure": "codemode"
+    },
+    "granola": {
+      "url": "https://mcp.granola.ai/mcp",
+      "exposure": "codemode"
+    },
+    "cloudflare-docs": {
+      "url": "https://docs.mcp.cloudflare.com/mcp",
+      "exposure": "codemode"
+    },
+    "cloudflare-ai-gateway": {
+      "url": "https://ai-gateway.mcp.cloudflare.com/mcp",
+      "exposure": "codemode"
+    },
+    "cloudflare-observability": {
+      "url": "https://observability.mcp.cloudflare.com/mcp",
+      "exposure": "codemode"
+    },
+    "datadog": {
+      "url": "https://mcp.datadoghq.com/api/unstable/mcp-server/mcp",
+      "exposure": "codemode"
+    },
+    "horizon": {
+      "url": "https://horizon.workos.tools/mcp",
+      "exposure": "codemode"
+    },
+    "alto": {
+      "url": "https://mcp.workos.cloud/mcp",
+      "exposure": "codemode"
+    }
+  }
+}

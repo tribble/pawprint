@@ -1,12 +1,16 @@
 {
   "enabled": true,
   "cloakCharacter": "*",
-  "cloakLength": 24,
+  "cloakLength": 30,
   "tryAllPatterns": true,
   "patterns": [
     {
       "filePattern": ["**/.env", "**/.env.*"],
       "cloakPattern": { "pattern": "^([A-Z0-9_]+)=(.+)$", "replace": "$1=" }
+    },
+    {
+      "filePattern": ["~/.pi/agent/mcp-auth.json"],
+      "cloakPattern": { "pattern": "(\"(?:access_token|refresh_token|id_token|client_secret|codeVerifier|registration_access_token)\"\\s*:\\s*\")((?:[^\"\\\\]|\\\\.)+)", "replace": "$1" }
     },
     {
       "filePattern": ["~/.pi/agent/auth.json", "~/.pi/agent/**/auth.json"],

@@ -40,6 +40,7 @@
 !agent/cloak.json
 !agent/fitch-mcp-adapter/
 !agent/fitch-mcp-adapter/mcp.json
+!agent/mcp.json
 !agent/models.json
 !agent/presets.json
 !agent/settings.json

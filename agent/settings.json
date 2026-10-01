@@ -4,6 +4,7 @@
   "defaultThinkingLevel": "high",
   "quietStartup": true,
   "steeringMode": "all",
+  "defaultTools": ["+codemode"],
   "retry": {
     "enabled": true,
     "maxRetries": 5,
@@ -57,8 +58,7 @@
     "git:github.com/fitchmultz/pi-agent-browser-native@76c39860ea84a2818f1a4cb9331b64f4b08eabab",
     "git:github.com/fitchmultz/pi-subagents@84614b38cbbf685c573302f87030f9b93a21a921",
     "npm:@nicknisi/pi-cloak@0.1.2",
-    "npm:@nicknisi/pi-answer@0.2.2",
-    "git:github.com/fitchmultz/pi-mcp-adapter@8fd151e4b63b76b71e9440eebe2a5accff977326"
+    "npm:@nicknisi/pi-answer@0.2.2"
   ],
   "subagents": {
     "agentOverrides": {
