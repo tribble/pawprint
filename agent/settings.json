@@ -34,7 +34,7 @@
   "packages": [
     "git:github.com/tribble/pawprint",
     {
-      "source": "git:github.com/fitchmultz/pi-fitch-kit@3e04ba54d498171abaa9e89a588b6dd9faa1ff68",
+      "source": "git:github.com/fitchmultz/pi-fitch-kit@3833caf68b83cc9606d2bc8329bca9d09933dafb",
       "extensions": [
         "extensions/anthropic-image-guard.ts",
         "extensions/session-name.ts"
@@ -46,21 +46,21 @@
         "themes/calm.json"
       ]
     },
-    "git:github.com/fitchmultz/pi-apply-edits@1caaa9f81d0b69c09db649c2d2656c1aa8aa17f9",
-    "git:github.com/fitchmultz/pi-todo-list@4687ffae34864db98b93eae93990682c78f632bb",
-    "git:github.com/fitchmultz/pi-change-working-dir@72e580c9ba5185e7e6f0fb3a84838ded767c83fb",
-    "git:github.com/fitchmultz/pi-ctx-info@92c841c0f7114085bd3558e67e0c27dc3ffd92b2",
-    "git:github.com/fitchmultz/pi-tool-duration@7f77d2b80f9a3acbb1236b4f867cb7a7c9bb19f1",
-    "git:github.com/fitchmultz/pi-edit-session-in-place@48d612a5722f995881b45955bb5d94c2e2e5083f",
-    "git:github.com/fitchmultz/pi-stash@a8cfbcc3752e2b0cd2ce2411874fce31e659e82b",
-    "git:github.com/fitchmultz/pi-copy-message@12e337c621649378c4aa33c815f5bd5117598a27",
-    "git:github.com/fitchmultz/pi-calculator@7bc5c07ee704dab601d56a28756b49851a05708f",
-    "git:github.com/fitchmultz/pi-agent-skills@56b583f3bde8e3aa87ffbbfdaac1606f6341fddf",
-    "git:github.com/DietrichGebert/ponytail@e3ba2aa6f1e6f0bc4d69eb09c9f0d0a93af56156",
-    "git:github.com/fitchmultz/pi-agent-browser-native@76c39860ea84a2818f1a4cb9331b64f4b08eabab",
-    "git:github.com/fitchmultz/pi-subagents@84614b38cbbf685c573302f87030f9b93a21a921",
+    "git:github.com/fitchmultz/pi-apply-edits@0a503758ec5de45131546aadf596e6fe56b09670",
+    "git:github.com/fitchmultz/pi-todo-list@71db74de6729b326716ba5e2039703cc73f2fede",
+    "git:github.com/fitchmultz/pi-change-working-dir@29d0c27564ef02bdc10605f6fa044b953a9bba45",
+    "git:github.com/fitchmultz/pi-ctx-info@f26406cfb0e5fc67e09a89e55f7ae6008bf6bcfa",
+    "git:github.com/fitchmultz/pi-tool-duration@d1d2dfaaba88820d608155f4a0b94cdc77612c99",
+    "git:github.com/fitchmultz/pi-edit-session-in-place@1f1bbba9c9e28bf3b13080626f740ed08c7b14c9",
+    "git:github.com/fitchmultz/pi-stash@a2c37d4e995e9e61f8428c8c06fde3f8009f98e6",
+    "git:github.com/fitchmultz/pi-copy-message@b6e8a4ca1ad6658bcc552b4ec004326c3ca6cf7c",
+    "git:github.com/fitchmultz/pi-calculator@dd71bb78bbf678d3188b8d2f003c933b8043cd8e",
+    "git:github.com/fitchmultz/pi-agent-skills@0ad450c5d94212e7b8aaa3c14907e02a6c4387ae",
+    "git:github.com/DietrichGebert/ponytail@6c97ffa48710714672214915ad092e3fc6e85516",
+    "git:github.com/fitchmultz/pi-agent-browser-native@708dd8ce7ae23971578ad74a418cb4c4319cf2b3",
+    "git:github.com/fitchmultz/pi-subagents@22bf049c5f8c167708215c8a34402c03eff84b33",
     "npm:@nicknisi/pi-cloak@0.1.2",
-    "npm:@nicknisi/pi-answer@0.2.2"
+    "npm:@nicknisi/pi-answer@0.2.3"
   ],
   "subagents": {
     "agentOverrides": {
