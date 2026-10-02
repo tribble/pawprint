@@ -25,9 +25,14 @@
 // never `pi install`, which rewrites object-form entries), run
 // `pi update --extensions` to reconcile the clone, and commit + push the config repo
 // (dirname of the agent dir, tribble's ~/.pi worktree). A dirty worktree aborts first.
+//
+// One-off watch: Pi's bundled cloudflare-ai-gateway catalog spells Opus 5.5
+// `claude-opus-5.5`, which the gateway 404s; agent/models.json carries a local
+// `claude-opus-5-5` entry. Once Pi ships the dashed id, session_start says the
+// workaround can go.
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { getAgentDir } from "@earendil-works/pi-coding-agent";
-import { mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { dirname, join, relative } from "node:path";
 
 const STATE = join(getAgentDir(), ".auto-update.json");
@@ -144,6 +149,28 @@ async function commitStamp(pi: ExtensionAPI, agentDir: string) {
 }
 
 // ------------------------------------------------------------ /packages ---
+
+// ponytail: one-off watch — delete this with the local claude-opus-5-5 entry in
+// agent/models.json once Pi's bundled catalog ships the dashed id (the notice says
+// so). The composed registry can't see through the models.json override, so this
+// reads pi-ai's bundled catalog file from the running install: argv[1] is the
+// cli.js node executes (shims exec it directly, bins are symlinks — realpath),
+// and pi-ai sits under some ancestor's node_modules. Any failure — no argv[1],
+// package gone, malformed JSON — is silent: never break startup.
+function piShippedOpus55(): boolean {
+  try {
+    let dir = realpathSync(process.argv[1]);
+    for (let prev = ""; dir !== prev; prev = dir, dir = dirname(dir)) {
+      const catalog = join(dir, "node_modules", "@earendil-works", "pi-ai", "dist", "providers", "data", "cloudflare-ai-gateway.json");
+      if (!existsSync(catalog)) continue;
+      const data: unknown = JSON.parse(readFileSync(catalog, "utf8"));
+      return Object.values(data as Record<string, unknown>).some((api) =>
+        Object.values(api as Record<string, { id?: unknown }>).some((m) => m.id === "claude-opus-5-5"),
+      );
+    }
+  } catch { /* silent */ }
+  return false;
+}
 
 export interface Pkg {
   index: number; // position in settings.packages
@@ -345,6 +372,8 @@ async function bumpPackages(pi: ExtensionAPI, ctx: ExtensionContext, agentDir: s
 export default function autoUpdate(pi: ExtensionAPI) {
   const agentDir = dirname(STATE);
   pi.on("session_start", (_event, ctx) => {
+    if (ctx.hasUI && piShippedOpus55())
+      ctx.ui.notify("Pi now ships the correct Opus 5.5 gateway ID — delete the local claude-opus-5-5 entry from agent/models.json (and this check)", "info");
     const st = readState();
     if (ctx.hasUI && stale(st.lastPackagesReview, REVIEW_MS)) ctx.ui.notify("auto-update: weekly package review due — /packages", "info");
     const due = stale(st.lastRun, TTL_MS);

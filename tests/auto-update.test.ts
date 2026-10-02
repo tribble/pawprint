@@ -1,12 +1,13 @@
 // auto-update.ts: daily TTL gate, single-flight lock, notify-only on
 // session_start, /update reloads when extensions changed; weekly pin-review
-// reminder; /packages lists pins vs upstream and `bump` moves them + commits.
+// reminder; /packages lists pins vs upstream and `bump` moves them + commits;
+// one-off Opus 5.5 watch notifies once Pi's bundled catalog ships the dashed id.
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { execFile } from "node:child_process";
 import { mkdtempSync, writeFileSync, readFileSync, existsSync, mkdirSync, renameSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { setAgentDir } from "./stubs/pi-coding-agent.mjs";
 import { makePi, makeCtx, eventually } from "./harness.mjs";
 import { git } from "./fixture.ts";
@@ -738,4 +739,48 @@ test("refresh: failure is silent — no throw, no notify, lock released", async 
   assert.deepEqual(ctx.notes, []);
   assert.equal(git(clone, "rev-parse", "HEAD"), shas[0], "clone unmoved");
   assert.ok(!existsSync(join(dir, ".auto-update.json.lock")), "lock released");
+});
+
+// -------------------------------------------------- opus 5.5 watch ---
+// The watch reads the bundled catalog of the RUNNING install, found by walking
+// up from argv[1] (the cli.js the shim execs). A fake install tree exercises
+// the real path end to end — no production seam.
+const OPUS_NOTICE =
+  "Pi now ships the correct Opus 5.5 gateway ID — delete the local claude-opus-5-5 entry from agent/models.json (and this check)";
+const FIXED_CATALOG = JSON.stringify({ "anthropic-messages": { "chat:claude-opus-5-5": { id: "claude-opus-5-5" } } });
+const DOTTED_CATALOG = JSON.stringify({ "anthropic-messages": { "chat:claude-opus-5.5": { id: "claude-opus-5.5" } } });
+
+/** A fake pi install: <root>/bin/cli.js plus pi-ai's catalog (unless undefined). Returns cli.js. */
+function fakePiInstall(catalog: string | undefined): string {
+  const root = mkdtempSync(join(tmpdir(), "pawprint-opuswatch-"));
+  const dataDir = join(root, "node_modules", "@earendil-works", "pi-ai", "dist", "providers", "data");
+  mkdirSync(dataDir, { recursive: true });
+  if (catalog !== undefined) writeFileSync(join(dataDir, "cloudflare-ai-gateway.json"), catalog);
+  const cli = join(root, "bin", "cli.js");
+  mkdirSync(dirname(cli));
+  writeFileSync(cli, "// fake pi entry\n");
+  return cli;
+}
+
+test("opus 5.5 watch: notice iff the running install's bundled catalog ships the dashed id; malformed/missing/headless silent", async () => {
+  const argv1 = process.argv[1];
+  const start = async (catalog: string | undefined, hasUI = true) => {
+    process.argv[1] = fakePiInstall(catalog);
+    const ext = await freshExtension(setup(now())); // daily not due, review fresh: no other notes
+    const pi = makePi();
+    ext(pi);
+    const ctx = makeCtx();
+    ctx.hasUI = hasUI;
+    await pi.emit("session_start", {}, ctx);
+    return ctx.notes;
+  };
+  try {
+    assert.deepEqual(await start(FIXED_CATALOG), [{ msg: OPUS_NOTICE, level: "info" }]);
+    assert.deepEqual(await start(DOTTED_CATALOG), [], "today's dotted catalog stays silent");
+    assert.deepEqual(await start("{ malformed"), [], "unparseable catalog stays silent");
+    assert.deepEqual(await start(undefined), [], "missing catalog stays silent");
+    assert.deepEqual(await start(FIXED_CATALOG, false), [], "noninteractive stays silent");
+  } finally {
+    process.argv[1] = argv1;
+  }
 });
