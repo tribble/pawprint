@@ -1,0 +1,7 @@
+{
+  "enabled": true,
+  "model": "cloudflare-ai-gateway/claude-fable-5-1",
+  "effort": "medium",
+  "timeoutMs": 30000,
+  "contextChars": 12000
+}

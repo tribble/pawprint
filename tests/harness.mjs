@@ -59,6 +59,14 @@ export function makePi(overrides = {}) {
     registerEntryRenderer(type, fn) {
       this.entryRenderers[type] = fn;
     },
+    providers: {},
+    registerProvider(name, cfg) {
+      this.providers[name] = cfg;
+    },
+    markdownTransformers: [],
+    registerMarkdownTransformer(fn) {
+      this.markdownTransformers.push(fn);
+    },
     registerFlag(name, def) {
       this.flags[`__def:${name}`] = def;
     },
@@ -112,13 +120,23 @@ export function makeCtx(overrides = {}) {
     async reload() {
       this.reloads += 1;
     },
+    signal: overrides.signal,
     modelRegistry: {
-      find: (provider, id) => ({ provider, id }),
+      find: overrides.find ?? ((provider, id) => ({ provider, id })),
+      streamSimple:
+        overrides.streamSimple ??
+        (() => {
+          throw new Error("streamSimple: no test stub");
+        }),
     },
     sessionManager: {
       getEntries: () => overrides.entries ?? [],
       getSessionFile: () => overrides.sessionFile,
       getSessionId: () => overrides.sessionId,
+      getBranch: () => overrides.branch ?? [],
+      buildContextEntries: () => overrides.contextEntries ?? [],
+      buildSessionProjection: () => overrides.projection ?? { entries: [], messages: [], thinkingLevel: "medium", model: null },
+      getLeafId: () => overrides.leafId ?? null,
     },
     ui: {
       notify(msg, level) {
@@ -128,7 +146,7 @@ export function makeCtx(overrides = {}) {
         if (val === undefined) statuses.delete(key);
         else statuses.set(key, val);
       },
-      theme: { fg: (_c, s) => s, bold: (s) => s },
+      theme: { fg: (_c, s) => s, bg: (_c, s) => s, bold: (s) => s },
       // custom: tests override to drive selector UIs
       custom: overrides.custom ?? (async () => null),
     },

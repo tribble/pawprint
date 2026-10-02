@@ -20,6 +20,20 @@ export class DynamicBorder {
 }
 export const getMarkdownTheme = () => ({});
 
+// Mirror of pi's parseSessionEntries (session-manager.js): JSONL parse, malformed lines skipped.
+export function parseSessionEntries(content) {
+  const entries = [];
+  for (const line of content.trim().split("\n")) {
+    if (!line.trim()) continue;
+    try {
+      entries.push(JSON.parse(line));
+    } catch {
+      // skip malformed lines
+    }
+  }
+  return entries;
+}
+
 // Minimal mirrors of pi's context pipeline (session-manager.ts, messages.ts, compaction/utils.ts):
 // entries → AgentMessages → LLM messages → transcript text. Only the shapes the tests exercise.
 export function sessionEntryToContextMessages(entry) {
@@ -36,8 +50,29 @@ export function convertToLlm(messages) {
     return [m];
   });
 }
+// Mirror of pi's serializeConversation (compaction/utils.js): user/assistant/toolResult only;
+// assistant thinking and tool calls get their own lines; tool results capped at 2000 chars.
 export function serializeConversation(messages) {
-  const text = (c) => (typeof c === "string" ? c : c.filter((b) => b.type === "text").map((b) => b.text).join(""));
-  const label = { user: "[User]", assistant: "[Assistant]", toolResult: "[Tool result]" };
-  return messages.map((m) => `${label[m.role]}: ${text(m.content)}`).join("\n\n");
+  const text = (c) => (typeof c === "string" ? c : (c ?? []).filter((b) => b.type === "text").map((b) => b.text).join(""));
+  const trunc = (t, n) => (t.length <= n ? t : `${t.slice(0, n)}\n\n[... ${t.length - n} more characters truncated]`);
+  const parts = [];
+  for (const m of messages) {
+    if (m.role === "user") {
+      const c = text(m.content);
+      if (c) parts.push(`[User]: ${c}`);
+    } else if (m.role === "assistant") {
+      const blocks = Array.isArray(m.content) ? m.content : [];
+      const thinking = blocks.filter((b) => b.type === "thinking").map((b) => b.thinking);
+      const calls = blocks
+        .filter((b) => b.type === "toolCall")
+        .map((b) => `${b.name}(${Object.entries(b.arguments ?? {}).map(([k, v]) => `${k}=${JSON.stringify(v)}`).join(", ")})`);
+      if (thinking.length) parts.push(`[Assistant thinking]: ${thinking.join("\n")}`);
+      if (blocks.some((b) => b.type === "text")) parts.push(`[Assistant]: ${text(m.content)}`);
+      if (calls.length) parts.push(`[Assistant tool calls]: ${calls.join("; ")}`);
+    } else if (m.role === "toolResult") {
+      const c = text(m.content);
+      if (c) parts.push(`[Tool result]: ${trunc(c, 2000)}`);
+    }
+  }
+  return parts.join("\n\n");
 }

@@ -12,6 +12,7 @@
     "presets.json",
     "settings.json",
     "cloak.json",
+    "configs/editor.json",
     "configs/ws.json"
   ],
   "about": {
@@ -68,6 +69,11 @@
     "cloak.json": {
       "does": "pi-cloak config: masks .env, auth.json and token-shaped strings before the model",
       "needs": ["pi-cloak"]
+    },
+    "configs/editor.json": {
+      "does": "editor defaults: an independent Editor judges each TUI reply once, fail-open",
+      "needs": ["pawprint package (extensions/editor.ts)", "models.json"],
+      "personal": true
     },
     "configs/ws.json": {
       "does": "tribble's repo map for `/ws`: short id → local checkout path (workos, infra)",

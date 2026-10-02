@@ -151,6 +151,7 @@ test("3b. a directory or symlink where a tracked file belongs, or a symlinked pa
   const drift = r.stderr.split("\n").filter((l) => l.startsWith("DRIFT:")).map((l) => l.replace(/ \(in the way: .*\)$/, ""));
   assert.deepEqual(drift.sort(), [
     "DRIFT:         agent/cloak.json",
+    "DRIFT:         agent/configs/editor.json",
     "DRIFT:         agent/configs/ws.json",
     "DRIFT:         agent/settings.json",
   ]);
