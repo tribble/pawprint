@@ -92,21 +92,8 @@ copy-out, gh-dash extension. Prereq: `CLOUDFLARE_ACCOUNT_ID` / `CLOUDFLARE_GATEW
 
 Manual steps after setup: `/login cloudflare-ai-gateway` (or env) ·
 `pi mcp login <server>` per OAuth server in `agent/mcp.json` (native MCP;
-first run needs fresh browser sign-ins — old adapter tokens are not migrated;
+first run needs fresh browser sign-ins;
 tokens land in the ignored `~/.pi/agent/mcp-auth.json`) · `/trust` per project.
-Rollback, one path: in a fresh worktree off `origin/main`, revert the migration
-commit (`git revert <sha>`, adding `-m 1` only if it landed as a merge), then
-deploy as under "Changing config" — ff-only merge into `~/.pi`, push, and
-`pi update --extension git:github.com/tribble/pawprint`, required here because the
-restored `prompts/start-ticket.md` is package content — then `/reload` or restart
-pi. The revert exactly restores the pinned adapter
-(`git:github.com/fitchmultz/pi-mcp-adapter@8fd151e4b63b76b71e9440eebe2a5accff977326`
-in `settings.json`) and the pre-migration `start-ticket.md`; adapter tokens were
-never migrated or deleted. The retained `agent/fitch-mcp-adapter/mcp.json` covers
-the original nine servers; horizon/alto came from this machine's untracked
-`~/.config/mcp/mcp.json` — a fresh laptop must supply those definitions to use
-them with the adapter.
-
 ## Drift repair
 
 ```sh
@@ -177,7 +164,7 @@ purpose. Once a week a session start says `weekly package review due —
 (`pi update --extensions`) and commits + pushes `~/.pi` — then `/reload`.
 Before bumping `pi-subagents`, see the pin note in `agent/AGENTS.md`.
 
-Something pi or an MCP adapter wrote into the live config shows up in
+Something pi/mcp wrote into the live config shows up in
 `git -C ~/.pi status`; keep it with
 `git -C ~/.pi add -p agent/<file> && commit && push` — `validate.sh` names the
 one routine case (pi stamping `lastChangelogVersion` after an upgrade) as
@@ -195,8 +182,7 @@ Two structural layers keep secrets out — the default-deny `.gitignore`
 public values like URLs and client IDs stay literal. `pi mcp add` flags can
 write a literal secret into that file — review the config before committing.
 Native MCP stores OAuth credentials as plaintext in the ignored
-`~/.pi/agent/mcp-auth.json`, mode 0600, where the adapter kept them in the
-macOS keychain. If that file is ever exposed, revoke the grants with each
+`~/.pi/agent/mcp-auth.json`, mode 0600. If that file is ever exposed, revoke the grants with each
 provider; `pi mcp logout <server>` removes the local credentials but is not
 revocation. `agent/cloak.json`
 masks `mcp-auth.json` token values, but only in `read`-tool output — a `bash` read, including

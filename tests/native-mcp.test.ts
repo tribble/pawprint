@@ -1,13 +1,13 @@
-// native-mcp.test.ts — the native MCP migration contract (pi's built-in MCP,
-// replacing pi-mcp-adapter). Durable desired-state checks only: nothing here
+// native-mcp.test.ts — the native MCP contract (pi's built-in MCP).
+// Durable desired-state checks only: nothing here
 // reads git HEAD, so the suite stays green once this branch becomes HEAD.
 // agent/mcp.json: all 11 servers with exact URLs, validated by the REAL
 // installed pi parser (validateMcpServerConfig — no connections, no
 // header-command execution), Slack's clientId + exact callbackUrl and its
-// public direct-tool selection preserved, horizon/alto publishing endpoint +
+// public direct-tool selection, horizon/alto publishing endpoint +
 // codemode exposure only (owner decision: no internal tool inventories in
 // tracked files), GitHub's auth as the documented whole-value command header.
-// settings.json: adapter package gone, codemode additive. agent/mcp-auth.json
+// settings.json: codemode additive. agent/mcp-auth.json
 // stays default-deny ignored; cloak.json masks every persisted native secret
 // field — fake strings only, through the REAL installed pi-cloak.
 import { test } from "node:test";
@@ -45,11 +45,19 @@ const SERVERS: Record<string, string> = {
   alto: "https://mcp.workos.cloud/mcp",
 };
 
-// The rollback config's frozen scope: the adapter's nine servers (horizon/alto
-// lived only in the machine's untracked ~/.config/mcp/mcp.json).
-const LEGACY_SERVERS = [
-  "slack-workos", "github", "notion", "linear", "granola",
-  "cloudflare-docs", "cloudflare-ai-gateway", "cloudflare-observability", "datadog",
+const SLACK_DIRECT_TOOLS = [
+  "slack_send_message",
+  "slack_add_reaction",
+  "slack_search_public",
+  "slack_search_channels",
+  "slack_search_users",
+  "slack_read_channel",
+  "slack_read_thread",
+  "slack_read_user_profile",
+  "slack_list_channel_members",
+  "slack_read_file",
+  "slack_search_emojis",
+  "slack_get_reactions",
 ];
 
 test("agent/mcp.json: exactly the 11 servers with exact URLs, each accepted by the installed native parser", () => {
@@ -68,23 +76,22 @@ test("agent/mcp.json: exactly the 11 servers with exact URLs, each accepted by t
   assert.equal(new Set(namespaces).size, namespaces.length, "namespace clash");
 });
 
-test("no legacy adapter fields anywhere: auth/bearerToken/directTools/redirectUri gone", () => {
+test("no legacy fields anywhere: auth/bearerToken/directTools/redirectUri gone", () => {
   const servers = readJson("mcp.json").mcpServers;
   for (const [name, cfg] of Object.entries(servers)) {
     for (const field of ["auth", "bearerToken", "directTools"]) {
-      assert.ok(!(field in (cfg as object)), `${name}.${field} is adapter-only`);
+      assert.ok(!(field in (cfg as object)), `${name}.${field} is legacy`);
     }
     const oauth = (cfg as { oauth?: Record<string, unknown> }).oauth;
     if (oauth) assert.ok(!("redirectUri" in oauth), `${name}.oauth.redirectUri is now callbackUrl`);
   }
 });
 
-test("slack-workos: clientId and exact callbackUrl; direct tools preserved from the adapter config", () => {
+test("slack-workos: clientId and exact callbackUrl; the direct-tool selection", () => {
   const slack = readJson("mcp.json").mcpServers["slack-workos"];
   assert.equal(slack.oauth.clientId, "1601185624273.8899143856786");
   assert.equal(slack.oauth.callbackUrl, "http://localhost:3118/callback");
-  const legacy = readJson("fitch-mcp-adapter/mcp.json").mcpServers["slack-workos"];
-  assert.deepEqual(Object.keys(slack.toolExposure).sort(), [...legacy.directTools].sort());
+  assert.deepEqual(Object.keys(slack.toolExposure).sort(), [...SLACK_DIRECT_TOOLS].sort());
   assert.ok(Object.values(slack.toolExposure).every((v) => v === "direct"));
 });
 
@@ -101,18 +108,8 @@ test("github: Authorization is the documented whole-value command header (never 
   assert.deepEqual(github.headers, { Authorization: "!echo Bearer $(gh auth token)" });
 });
 
-test("settings.json: adapter package removed, defaultTools additively enables codemode", () => {
-  const now = readJson("settings.json");
-  assert.deepEqual(now.defaultTools, ["+codemode"]);
-  assert.ok(
-    !now.packages.some((p: unknown) => typeof p === "string" && p.includes("pi-mcp-adapter")),
-    "pi-mcp-adapter pin must be gone from packages",
-  );
-});
-
-test("agent/fitch-mcp-adapter/mcp.json retained for rollback: exactly the nine legacy servers", () => {
-  const legacy = readJson("fitch-mcp-adapter/mcp.json").mcpServers;
-  assert.deepEqual(Object.keys(legacy).sort(), [...LEGACY_SERVERS].sort());
+test("settings.json: defaultTools additively enables codemode", () => {
+  assert.deepEqual(readJson("settings.json").defaultTools, ["+codemode"]);
 });
 
 test("gitignore policy: agent/mcp-auth.json stays ignored; agent/mcp.json is trackable", () => {
@@ -128,7 +125,6 @@ test("gitignore policy: agent/mcp-auth.json stays ignored; agent/mcp.json is tra
   };
   assert.equal(run("agent/mcp-auth.json"), true, "native token file must stay default-deny ignored");
   assert.equal(run("agent/mcp.json"), false, "native config must be trackable");
-  assert.equal(run("agent/fitch-mcp-adapter/mcp.json"), false, "rollback config stays tracked");
 });
 
 test("cloak.json: the REAL installed pi-cloak masks fake native OAuth secrets in mcp-auth.json", async () => {

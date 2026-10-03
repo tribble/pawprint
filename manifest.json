@@ -6,7 +6,6 @@
     "agents/reviewer-kimi.md",
     "agents/scout-kimi.md",
     "agents/worker-kimi.md",
-    "fitch-mcp-adapter/mcp.json",
     "mcp.json",
     "models.json",
     "presets.json",
@@ -39,11 +38,6 @@
     "agents/worker-kimi.md": {
       "does": "`worker-kimi` subagent: end-to-end implementer for bounded tasks, on kimi-k3",
       "needs": ["pi-subagents", "cloudflare-ai-gateway", "models.json"],
-      "personal": true
-    },
-    "fitch-mcp-adapter/mcp.json": {
-      "does": "ROLLBACK ONLY: old pi-mcp-adapter server list; native mcp.json is live",
-      "needs": ["pi-mcp-adapter", "gh"],
       "personal": true
     },
     "mcp.json": {
