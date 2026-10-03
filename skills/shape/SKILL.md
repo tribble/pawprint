@@ -1,46 +1,48 @@
 ---
 name: shape
-description: "Use before delegating or starting any build: pick the checkpoint — the cheapest artifact the user can judge in ~30 seconds that would catch a wrong build — and stop there until they have. Sometimes a mock, sometimes examples, sometimes the built result itself. Not for reviews, recon, or mechanical edits."
+description: "Use before delegating or starting any build: settle unclear intent with focused questions, keep mocks for meaningful visual design, and answer technical uncertainty with a small verified slice that reports observed evidence. Not for reviews, recon, or mechanical edits."
 ---
 
 # Shape
 
-A build is waterfall in miniature: requirements guessed, long build, judgment at the end.
-Shape moves the judgment to the **cheapest point that would catch a wrong build**. That
-point is not always a mock — pick it:
+A build fails two different ways — you built the wrong thing, or you built on an untested
+assumption. They need different checks, and neither needs a mandatory label.
 
-| the build is…                       | checkpoint                                           | brief carries                             |
-|-------------------------------------|------------------------------------------------------|-------------------------------------------|
-| long or hard to undo, visual        | the picture: exact output as it would appear         | `Approved mock:`                          |
-| long or hard to undo, behavioural   | 2–3 examples `given <real input> → <exact output>`   | `Approved mock:`                          |
-| long or hard to undo, a contract    | signature / schema diff, before → after              | `Approved mock:`                          |
-| quick and reversible                | **the result itself** — build it, review it in place | `Mock: skipped: result is the checkpoint` |
-| no user-visible surface             | none — the reviewer loop is the check                | `Mock: skipped: <reason>`                 |
+## Wrong thing → ask
 
-If producing the preview would *be* the work (breaking a doc into tasks, drafting the doc),
-the result is the cheaper checkpoint: delegate, don't preview. Never do the task to preview it.
+Material ambiguity about the desired outcome, scope, or a user-owned tradeoff: ask the user
+a concrete question before the dependent build (see the ask-clarifying-questions skill).
+Anything discovery, a technical check, or an already-approved default can answer is not a
+question — don't ask it.
 
-## When a preview is the checkpoint
+## Wrong look → mock
 
-```
-## Shape: <the user's ask, verbatim>
+Mocks are for rendered layout and design: a screen, a diagram, a CLI/TUI presentation. When
+the build is long or hard to undo, show the exact output as it would render and wait for
+approval before building. Quick, reversible visual work skips the preview: build it and
+show the result. Ordinary prose — a report, a message, a doc — is not a mock surface;
+draft the real thing as the delegated result. A JSON blob, a schema diff, a textual
+implementation plan, a task list, or promised future tests is not a mock — never dress one
+up as one.
 
-Questions:            ← 0–5, about what they'd DO with the result, never implementation.
-1. …                    Omit when the preview is the question.
+## Wrong assumption → verified slice
 
-Mock:                 ← the densest form the surface allows (table above), from REAL data:
-<…>                     this session, this repo, this ticket. Prose is not a mock.
+Technical uncertainty: investigate, or implement and verify one small representative slice
+before applying the pattern broadly (migrate one package, then ten). Report observed
+behavior and differences with evidence — never expected-behavior promises. When earlier
+slices already established the same behavior, cite that evidence and check only what is
+different about this batch.
 
-First slice: <one sentence — the smallest thing usable tomorrow>
+Continuation the user already agreed to proceeds on that evidence — no go/adjust/no pause.
+A new tradeoff or scope change goes to the user; so does an external write not already
+covered by existing authorization. Cheap and reversible does not itself authorize an
+external write.
 
-go / "that minus X" / no
-```
+## Delegating
 
-Then **stop** — nothing spawned, nothing edited, until the user answers. "That minus X" →
-show the corrected preview in ≤5 lines and proceed; don't re-ask.
-
-## Always
-
-- One slice per brief. "Sidebar + overlay + CLI + tokens" is four shapes.
-- The checkpoint goes into the brief verbatim; it is the acceptance criterion for implementer and reviewer.
-- The skip reason is visible in the brief. It is wrong if the result comes back needing a rewrite.
+- Every brief carries the user's verbatim `Owner outcome:` ask, unchanged, through every
+  hop; implementers build to it, reviewers judge against it.
+- Delegate real work. If producing a preview would *be* the work (splitting a design doc
+  into Linear tasks, drafting the doc), the delegate does it within the already-authorized
+  scope and surfaces the real result — never do the task to preview it.
+- One slice per brief.
