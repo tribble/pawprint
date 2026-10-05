@@ -78,6 +78,16 @@ test("smoke provider: redraft mapping — single, aligned blocks, failure, empty
   assert.equal(await textOf(call("author", REVISE_SYS, "<draft>\nSMOKE_REVEMPTY: x\n</draft>")), "");
   const long = await textOf(call("author", REVISE_SYS, "<draft>\nSMOKE_REVLONG: x\n</draft>"));
   assert.ok(long.length > 500, `long redraft: ${long.length} chars`);
+  // noop: draft carries a trailing newline; the redraft returns every word, minus that newline —
+  // the field-observed masquerade shape the editor must treat as a delivery no-op.
+  const noopDraft = "SMOKE_NOOP: The answer is 4.\n";
+  assert.equal(await textOf(call("author", "", "noop please")), noopDraft);
+  assert.equal(await textOf(call("editor", EDITOR_SYS, `<draft>\n${JSON.stringify(noopDraft)}\n</draft>`)), "REJECT: could be tighter");
+  assert.equal(await textOf(call("author", REVISE_SYS, `<draft>\n${JSON.stringify(noopDraft)}\n</draft>`)), "SMOKE_NOOP: The answer is 4.");
+  // decorated: benign markdown wrapper on a one-word verdict; contradict: two verdicts in one
+  // decorated line (the parser must fail open on it — the fixture emits the raw shape verbatim).
+  assert.equal(await textOf(call("editor", EDITOR_SYS, "<draft>\nSMOKE_DECORATED: …\n</draft>")), "**APPROVE**");
+  assert.equal(await textOf(call("editor", EDITOR_SYS, "<draft>\nSMOKE_CONTRADICT: …\n</draft>")), "**REJECT: tighten.** **APPROVE**");
 });
 
 test("smoke provider: real stream shape start/text_start/text_delta/text_end/done, abort mid-stream", async () => {

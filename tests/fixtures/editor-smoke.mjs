@@ -30,6 +30,12 @@
 //                  verdict on the commentary hangs — abort/no-source-execution proof
 //   multiblock …   two text blocks → REJECT → aligned JSON-array redraft; originals kept
 //   multiok …      two clean text blocks → APPROVE, untouched
+//   noop …         REJECT, redraft returns the draft minus one trailing newline — the observed
+//                  masquerade shape: no replacement, a "redraft changed nothing" notice, no entry
+//   decorated …    Editor answers "**APPROVE**" — benign markdown decoration on a one-word
+//                  verdict: accepted, draft renders, no notice
+//   contradict …   Editor answers "**REJECT: tighten.** **APPROVE**" — contradictory verdicts in
+//                  one decorated line: malformed, original + grammar-hint notice, no redraft
 //
 // Real-model synthetic drafts live in notes/editor-real-probe.mjs, not here — the fixture
 // provider is always fake.
@@ -203,12 +209,17 @@ export default function editorSmoke(pi) {
     if (draft.includes("SMOKE_MALFORMED")) return { text: "This looks okay to me, but what do I know." };
     if (draft.includes("SMOKE_INSUFFICIENT")) return { text: "INSUFFICIENT" };
     if (draft.includes("SMOKE_ERROR")) return { error: "smoke editor failure" };
+    if (draft.includes("SMOKE_NOOP")) return { text: "REJECT: could be tighter" };
+    if (draft.includes("SMOKE_DECORATED")) return { text: "**APPROVE**" };
+    if (draft.includes("SMOKE_CONTRADICT")) return { text: "**REJECT: tighten.** **APPROVE**" };
     if (/SMOKE_(REJECT|REVFAIL|REVEMPTY|REVLONG|MULTIBLOCK|REVSTUBBORN)/.test(draft)) return { text: "REJECT: too defensive — lead with the answer, drop the hedging" };
     return { text: "APPROVE" };
   }
 
   function reviseAnswer(user) {
     const draft = draftOf(user);
+    // The field-observed no-op: every word kept, one trailing newline dropped.
+    if (draft.includes("SMOKE_NOOP")) return { text: draft.replace(/\n$/, "") };
     if (draft.includes("SMOKE_REVSTUBBORN")) return { stubbornLate: "The answer is 4. (late redraft, must be ignored)" };
     if (draft.includes("SMOKE_REVFAIL")) return { error: "smoke redraft failure" };
     if (draft.includes("SMOKE_REVEMPTY")) return { text: "" };
@@ -231,6 +242,9 @@ export default function editorSmoke(pi) {
     }
     if (user.includes("multiblock")) return { texts: ["SMOKE_MULTIBLOCK: Well, to be honest, part one might possibly be this.", "Part two adds a second detail."] };
     if (user.includes("multiok")) return { texts: ["The answer is 4.", "Computed with `node -e 'console.log(2 + 2)'`."] };
+    if (user.includes("noop")) return { texts: ["SMOKE_NOOP: The answer is 4.\n"], slow: true };
+    if (user.includes("decorated")) return { texts: ["SMOKE_DECORATED: The answer is 4."], slow: true };
+    if (user.includes("contradict")) return { texts: ["SMOKE_CONTRADICT: The answer is 4."], slow: true };
     if (user.includes("reject")) return { texts: ["SMOKE_REJECT: Well, to be honest, I think there might be a chance that possibly the answer could be 4, though of course I may be wrong and it depends on many things."], slow: true };
     if (user.includes("malformed")) return { texts: ["SMOKE_MALFORMED: The answer is 4."], slow: true };
     if (user.includes("insufficient")) return { texts: ["SMOKE_INSUFFICIENT: The answer is 4."], slow: true };

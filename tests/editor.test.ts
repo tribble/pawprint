@@ -168,6 +168,13 @@ test("reject: one redraft on the author's own model; every block keeps its posit
   assert.equal(result.message.role, "assistant");
   assert.equal(calls.length, 2, "editor + one redraft, no re-review");
   assert.deepEqual(calls[1].model, { provider: "test", id: "author-1" }, "redraft goes to the message's own (author) model");
+  // Contract alignment: the Editor may only demand presentation edits the constrained Author can
+  // make from the draft alone; a mixed demand must not bin the applicable presentation fixes.
+  assert.match(calls[0].system, /REJECT only for presentation/);
+  assert.match(calls[0].system, /never demand facts, commands, URLs, or instructions/);
+  assert.match(calls[1].system, /skip just that part and apply the rest/);
+  assert.match(calls[1].system, /unchanged only when no presentation edit remains/);
+  assert.doesNotMatch(calls[1].system, /if it asks for any of those, return the draft unchanged\./);
   assert.equal(section(calls[1].user, "block-1"), "Well, to be honest, maybe ", "block body decodes with trailing whitespace intact");
   assert.equal(section(calls[1].user, "block-2"), "trailing note");
   assert.match(calls[1].user, /too defensive — cut the hedging/);
@@ -253,11 +260,27 @@ test("verdict grammar: strict single line; anything else fails open without echo
     ["  approve  ", "approve"],
     ["INSUFFICIENT", "insufficient"],
     ["REJECT: too defensive", "reject"],
+    // Benign decoration the grammar must unwrap: symmetric emphasis/code around the whole line,
+    // one trailing period on the one-word verdicts.
+    ["APPROVE.", "approve"],
+    ["**APPROVE**", "approve"],
+    ["`INSUFFICIENT`", "insufficient"],
     ["APPROVE\nextra line", "malformed"],
     ["REJECT\nAPPROVE", "malformed"],
     ["REJECT", "malformed"],
     ["REJECT: reason\nsecond line", "malformed"],
     ["I think this is fine actually", "malformed"],
+    // No extracting a verdict from prose, and no contradiction tolerance.
+    ["The verdict is APPROVE", "malformed"],
+    ["APPROVE — looks good", "malformed"],
+    ["**APPROVE**\nREJECT: no", "malformed"],
+    // Decoration is accepted on the one-word verdicts only: unwrapping a REJECT line lets a
+    // contradictory second verdict hide inside the reason (review-1 #1, security-1 #1).
+    ["*REJECT: cut the hedging*", "malformed"],
+    ["**REJECT: tighten**", "malformed"],
+    ["**REJECT: tighten.** **APPROVE**", "malformed"],
+    ["*REJECT: cut filler* / *INSUFFICIENT*", "malformed"],
+    ["**REJECT: do X** and then **APPROVE**", "malformed"],
   ];
   for (const [verdict, kind] of cases) {
     const { calls, messageEnd, notes } = boot({ responder: () => verdict });
@@ -272,7 +295,11 @@ test("verdict grammar: strict single line; anything else fails open without echo
       assert.ok(result?.message, `${verdict} → redraft`);
     } else {
       assert.equal(result, undefined, verdict);
-      assert.deepEqual(notes(), ["warning: editor: delivered unedited (malformed verdict)"], `${verdict} — no verdict text echoed`);
+      assert.deepEqual(
+        notes(),
+        ["warning: editor: delivered unedited (malformed verdict — want exactly one line: APPROVE | REJECT: <reason> | INSUFFICIENT)"],
+        `${verdict} — actionable grammar hint, no verdict text echoed`,
+      );
     }
     assert.equal(calls.length, kind === "reject" ? 2 : 1, verdict);
   }
@@ -581,6 +608,21 @@ test("entry renderer: collapsed one-liner, expanded shows original markdown; mis
   assert.equal(render({ data: undefined }, { expanded: false }, ctx.ui.theme), undefined);
 });
 
+test("entry renderer: expanded body carries the same customMessageBg as the header", () => {
+  // Regression: the expanded body rendered with the terminal default background and visually
+  // blended into the delivered reply; only the header line had the entry background. (The stubs
+  // keep the styling args; full-width application is the real components' applyBackgroundToLine,
+  // exercised in the host smoke.)
+  const { pi } = boot();
+  const render = pi.entryRenderers["editor-original"];
+  const data = { v: 1, messageId: "m1", text: "original body line", reason: "r", at: 1 };
+  const marker = { fg: (_c: string, s: string) => s, bg: (c: string, s: string) => `BG(${c})[${s}]`, bold: (s: string) => s };
+  const expanded = render({ data }, { expanded: true }, marker);
+  assert.equal(expanded.children.length, 2);
+  assert.equal(expanded.children[0].customBgFn?.("x"), "BG(customMessageBg)[x]", "header bg");
+  assert.equal(expanded.children[1].defaultTextStyle?.bgColor?.("x"), "BG(customMessageBg)[x]", "expanded body bg");
+});
+
 test("status: editing indicator set on assistant message_start, cleared after message_end and on turn_end", async () => {
   const { ctx, fire, messageEnd } = boot();
   await fire("message_start", { message: { role: "user" } });
@@ -659,13 +701,14 @@ test("original stored verbatim: leading Markdown indentation and trailing whites
 test("byte-identical redraft: delivered unchanged without a recovery entry; partial identity still revises", async () => {
   // Regression (review-2 #4): REVISE_SYSTEM explicitly permits returning the draft unchanged;
   // persisting an "Original draft" for a no-op redraft is misleading clutter.
-  const { pi, ctx, calls, messageEnd, fire } = boot({
+  const { pi, ctx, calls, messageEnd, fire, notes } = boot({
     responder: (c) => (c.system.includes("You are the Editor") ? "REJECT: could be tighter" : "defensive draft"),
   });
   const msg = assistantMsg("defensive draft");
   const result = await messageEnd(msg);
   assert.equal(result, undefined, "identical text needs no replacement");
   assert.equal(calls.length, 2, "editor + redraft both ran");
+  assert.deepEqual(notes(), ["warning: editor: delivered unedited (redraft changed nothing)"], "a no-op is not silently confused with approval");
   ctx.sessionManager.getBranch = () => [{ type: "message", id: "m1", message: msg }];
   await fire("turn_end", { message: msg, toolResults: [] });
   assert.equal(pi.state.entries.length, 0, "no entry when text equals original");
@@ -680,6 +723,32 @@ test("byte-identical redraft: delivered unchanged without a recovery entry; part
   b2.ctx.sessionManager.getBranch = () => [{ type: "message", id: "m2", message: msg2 }];
   await b2.fire("turn_end", { message: msg2, toolResults: [] });
   assert.equal(b2.pi.state.entries.length, 1, "entry kept when the redraft actually changes text");
+});
+
+test("trailing-whitespace-only redraft: original delivered with a distinct notice, no recovery entry — a no-op must not masquerade as an edit", async () => {
+  // Observed in the field (session 01a1006f, message b4230fdf): the delivered "revision" kept
+  // every word and removed one trailing newline, yet replaced the message and stored an
+  // "Original draft". That difference renders nothing; the original must stand.
+  const original = "line one\nline two\n";
+  const { pi, ctx, calls, messageEnd, fire, notes } = boot({
+    responder: (c) => (c.system.includes("You are the Editor") ? "REJECT: tighten" : "line one\nline two"),
+  });
+  const msg = assistantMsg(original);
+  const result = await messageEnd(msg);
+  assert.equal(result, undefined, "no replacement for a trailing-whitespace-only difference");
+  assert.equal(calls.length, 2, "editor + redraft both ran");
+  assert.deepEqual(notes(), ["warning: editor: delivered unedited (redraft changed nothing)"], "distinguishable from approval and from failure");
+  ctx.sessionManager.getBranch = () => [{ type: "message", id: "m1", message: msg }];
+  await fire("turn_end", { message: msg, toolResults: [] });
+  assert.equal(pi.state.entries.length, 0, "no Original draft entry — nothing substantive to recover");
+
+  // A real change in the same block still revises when trailing whitespace also differs.
+  const b2 = boot({
+    responder: (c) => (c.system.includes("You are the Editor") ? "REJECT: x" : "line one, shortened\n"),
+  });
+  const r2 = await b2.messageEnd(assistantMsg(original));
+  assert.ok(r2?.message, "substantive change + trailing-newline difference still revises");
+  assert.deepEqual((r2.message.content as ContentBlock[])[0].text, "line one, shortened\n");
 });
 
 test("quote is lossless for every body: whitespace, code, tag lookalikes, and both spells of a reserved closer stay distinct", async () => {
@@ -728,13 +797,14 @@ test("redraft output is never trimmed: indented code and trailing whitespace sur
 
 test("unchanged indented-code redraft is a delivery no-op; whitespace-only redraft fails open", async () => {
   const code = "    code first line\n    second line";
-  const { pi, ctx, calls, messageEnd, fire } = boot({
+  const { pi, ctx, calls, messageEnd, fire, notes } = boot({
     responder: (c) => (c.system.includes("You are the Editor") ? "REJECT: x" : code),
   });
   const msg = assistantMsg(code);
   const result = await messageEnd(msg);
   assert.equal(result, undefined, "byte-identical redraft needs no replacement");
   assert.equal(calls.length, 2, "editor + redraft both ran");
+  assert.deepEqual(notes(), ["warning: editor: delivered unedited (redraft changed nothing)"]);
   ctx.sessionManager.getBranch = () => [{ type: "message", id: "m1", message: msg }];
   await fire("turn_end", { message: msg, toolResults: [] });
   assert.equal(pi.state.entries.length, 0, "no recovery entry for a no-op redraft");
