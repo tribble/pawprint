@@ -1,6 +1,7 @@
 // Stub for runtime imports from @earendil-works/pi-tui. Functional no-ops;
 // SelectList records its items (and every instance in `selectLists`) so tests can drive
 // onSelect/onCancel; its handleInput knows only enter (\r), escape (\x1b) and down (\x1b[B).
+// Text/Markdown keep their styling args so renderers' background wiring is assertable.
 export class Container {
   constructor() {
     this.children = [];
@@ -14,13 +15,15 @@ export class Container {
   invalidate() {}
 }
 export class Text {
-  constructor(text) {
+  constructor(text, paddingX, paddingY, customBgFn) {
     this.text = text;
+    this.customBgFn = customBgFn;
   }
 }
 export class Markdown {
-  constructor(text) {
+  constructor(text, paddingX, paddingY, theme, defaultTextStyle) {
     this.text = text;
+    this.defaultTextStyle = defaultTextStyle;
   }
 }
 export const selectLists = [];
