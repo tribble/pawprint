@@ -1,0 +1,48 @@
+[
+  {
+    "id": "grader-fable",
+    "argv": [
+      "pi",
+      "--mode", "text",
+      "--no-tools",
+      "--no-session",
+      "--no-extensions",
+      "--no-skills",
+      "--no-context-files",
+      "--no-prompt-templates",
+      "--no-approve",
+      "--model", "cloudflare-ai-gateway/claude-fable-5-1",
+      "--thinking", "max",
+      "-p",
+      "@{configDir}/grader-prompt.md",
+      "@{prompt}",
+      "@{output}",
+      "@{expectations}",
+      "@{rubric}"
+    ],
+    "env": { "PI_CODING_AGENT_DIR": "{configDir}/../pi-agent" }
+  },
+  {
+    "id": "grader-astra",
+    "argv": [
+      "pi",
+      "--mode", "text",
+      "--no-tools",
+      "--no-session",
+      "--no-extensions",
+      "--no-skills",
+      "--no-context-files",
+      "--no-prompt-templates",
+      "--no-approve",
+      "--model", "cloudflare-ai-gateway/gpt-6-astra",
+      "--thinking", "max",
+      "-p",
+      "@{configDir}/grader-prompt.md",
+      "@{prompt}",
+      "@{output}",
+      "@{expectations}",
+      "@{rubric}"
+    ],
+    "env": { "PI_CODING_AGENT_DIR": "{configDir}/../pi-agent" }
+  }
+]

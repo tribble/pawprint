@@ -1,0 +1,7 @@
+[
+  {
+    "id": "review-grader",
+    "argv": ["pi", "-p", "--no-tools", "--no-extensions", "--no-skills", "--no-prompt-templates", "--no-context-files", "--no-session", "--no-approve", "--thinking", "high", "--model", "cloudflare-ai-gateway/claude-fable-5-1", "@{configDir}/review-grader-prompt.md", "@{prompt}", "@{output}", "@{expectations}", "@{rubric}", "@{diff}"],
+    "env": { "PI_CODING_AGENT_DIR": "{configDir}/../pi-agent" }
+  }
+]

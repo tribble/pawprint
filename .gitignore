@@ -16,6 +16,7 @@
 !scripts/validate.sh
 !scripts/sync-forks.sh
 !scripts/patch-pi-anthropic-gateway
+!scripts/compare.ts
 !manifest.json
 !biome.json
 !package.json
@@ -35,6 +36,8 @@
 !tests/**
 !docs/
 !docs/**
+!examples/
+!examples/**
 !agent/
 !agent/AGENTS.md
 !agent/cloak.json

@@ -1,0 +1,40 @@
+[
+  {
+    "id": "fable",
+    "argv": [
+      "pi",
+      "--mode", "text",
+      "--no-tools",
+      "--no-session",
+      "--no-extensions",
+      "--no-skills",
+      "--no-context-files",
+      "--no-prompt-templates",
+      "--no-approve",
+      "--model", "cloudflare-ai-gateway/claude-fable-5-1",
+      "--thinking", "high",
+      "-p",
+      "@{prompt}"
+    ],
+    "env": { "PI_CODING_AGENT_DIR": "{configDir}/../pi-agent" }
+  },
+  {
+    "id": "astra",
+    "argv": [
+      "pi",
+      "--mode", "text",
+      "--no-tools",
+      "--no-session",
+      "--no-extensions",
+      "--no-skills",
+      "--no-context-files",
+      "--no-prompt-templates",
+      "--no-approve",
+      "--model", "cloudflare-ai-gateway/gpt-6-astra",
+      "--thinking", "high",
+      "-p",
+      "@{prompt}"
+    ],
+    "env": { "PI_CODING_AGENT_DIR": "{configDir}/../pi-agent" }
+  }
+]
