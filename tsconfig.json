@@ -21,5 +21,5 @@
       "typebox": ["./.pi-types/typebox/build/index.d.mts"]
     }
   },
-  "include": ["tests/**/*.ts", "extensions/*.ts"]
+  "include": ["tests/**/*.ts", "extensions/*.ts", "scripts/compare.ts"]
 }

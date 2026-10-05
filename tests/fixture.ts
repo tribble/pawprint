@@ -18,7 +18,9 @@ export function fixtureRepo(): string {
   const dir = mkdtempSync(join(tmpdir(), "pawprint-fx-"));
   const repo = join(dir, "repo");
   // .git of a linked worktree is a pointer FILE into the real repo; never copy it.
-  cpSync(REPO, repo, { recursive: true, filter: (src) => ![".git", ".pi-types", "node_modules"].includes(basename(src)) });
+  // .cmp-scratch: in-worktree test scratch (compare.test.ts). It appears and
+  // vanishes while a parallel test file's copy is walking the repo — never copy it.
+  cpSync(REPO, repo, { recursive: true, filter: (src) => ![".git", ".pi-types", "node_modules", ".cmp-scratch"].includes(basename(src)) });
   git(repo, "init", "-q", "-b", "main");
   git(repo, "add", "-A");   // the copied default-deny .gitignore decides what is tracked
   git(repo, "commit", "-q", "--no-verify", "-m", "fixture");

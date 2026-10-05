@@ -1,0 +1,90 @@
+[
+  {
+    "id": "F1-nest",
+    "promptFile": "../../docs/writing-density/F1-nest.md",
+    "expectations": "Answers all three questions: (1) the ~700-module saving is conditional on making the barrel lazy (or deep imports) — with the eager barrel nothing is saved; (2) Nest resolves from the DI module graph at startup, not from which files were loaded, so the extra ~700 loaded files are never instantiated; (3) refocuses on the api package's own real instantiations (456 files, 395 via AuthModule; EnvironmentCreatorModule 133, DirectoryOrchestratorModule 120). Numbers must match the context (1,383 domain files; 1,722 evaluated; ~1,000 instantiated).",
+    "rubric": {
+      "answer-first": 2,
+      "writer-protection": 2,
+      "required-facts": 2,
+      "readability": 2
+    }
+  },
+  {
+    "id": "F2-wblocked",
+    "promptFile": "../../docs/writing-density/F2-wblocked.md",
+    "expectations": "Admits the name was invented as shorthand for `herdr agent wait --until blocked` (strictly blocked). States what actually shipped: `herdr agent wait` with the default attention set (idle, done, or blocked). Gives the one-line fix (add --until blocked inside the function body) or a removal path. No defensiveness; no options menu for a one-line fix.",
+    "rubric": {
+      "answer-first": 2,
+      "writer-protection": 2,
+      "required-facts": 2,
+      "readability": 2
+    }
+  },
+  {
+    "id": "F3-logs",
+    "promptFile": "../../docs/writing-density/F3-logs.md",
+    "expectations": "Answers the question first: yes, every job log is already in GitHub Actions; Datadog adds cross-job search and the rate-limit metric with its monitor. Then more what/how, less why: keep-filter results (34 jobs, 214,741 lines in, 84 kept), worked per-job examples (1,154→3; 969→8; 17,951→5), what is dropped on purpose, index/retention/quota, exclusion filters in order. Does not re-derive the rejected why.",
+    "rubric": {
+      "answer-first": 2,
+      "writer-protection": 2,
+      "required-facts": 2,
+      "readability": 2
+    }
+  },
+  {
+    "id": "F4-benefits",
+    "promptFile": "../../docs/writing-density/F4-benefits.md",
+    "expectations": "Outputs bullets only. States the measured saving (2,037 → 1,161 files evaluated; ~880 loaded only because the barrel listed them) and that it applies to every pod, worker and job runner. No bundler/warm-cache caveats and no remaining-cycles caveat (forwardRef) — those protect the writer, not the reader.",
+    "rubric": {
+      "answer-first": 2,
+      "writer-protection": 2,
+      "required-facts": 2,
+      "readability": 2
+    }
+  },
+  {
+    "id": "F5-entrypoint",
+    "promptFile": "../../docs/writing-density/F5-entrypoint.md",
+    "expectations": "Replacement bullet(s) only, no numeric heuristics. Rule intact: a directory is an entry point iff it has an index.ts; put one where a consumer of anything inside would want everything inside. Mechanics correct: './*': './lib/*/index.js'; Node's * spans /, so any depth resolves; bare file paths never resolve; granularity decided by where index.ts files exist; changing a split = add or delete an index.ts; ~310 to create, 7 exist; export * is fine.",
+    "rubric": {
+      "answer-first": 2,
+      "writer-protection": 2,
+      "required-facts": 2,
+      "readability": 2
+    }
+  },
+  {
+    "id": "F6-status",
+    "promptFile": "../../docs/writing-density/F6-status.md",
+    "expectations": "Answers the distance first: ~2–3 working days out, gated on today's Linux results. State per PR: #71696 done (131 cache hits, Bazel step 118s→29s warm, ready to undraft), #71520 merged, #71771 local proof done (174/174 and 325/325 hermetic, 2.3× local cost) and pushed to Linux CI for three runs plus a SIGSEGV probe. One open action after Linux: half a day for the PR-speed model run.",
+    "rubric": {
+      "answer-first": 2,
+      "writer-protection": 2,
+      "required-facts": 2,
+      "readability": 2
+    }
+  },
+  {
+    "id": "C1-recovery",
+    "promptFile": "../../docs/writing-density/C1-recovery.md",
+    "expectations": "Full recovery steps per failure mode: ff-only refusal means main moved (fetch, inspect origin/main, rebase or restart — no partial state); merge ok but push failed leaves ~/.pi ahead of origin (validate.sh reports UNPUSHED; push again or reset --keep origin/main); running sessions keep the old AGENTS.md until /reload. Never suggests add -f, add -A, clean, or stash -u in ~/.pi. Does not assume the branch is one commit.",
+    "rubric": {
+      "answer-first": 2,
+      "writer-protection": 2,
+      "required-facts": 2,
+      "readability": 2
+    }
+  },
+  {
+    "id": "C2-warning",
+    "promptFile": "../../docs/writing-density/C2-warning.md",
+    "expectations": "Warns before any command: uninstalling a package from under a running node breaks that process's later lazy imports (e.g. /reload) — 19 live sessions across two node trees are at risk. States what keeps running (current turns) vs what breaks (later lazy imports), and the mitigation (/reload each live pane before the uninstall, or restart panes after). Then gives the commands.",
+    "rubric": {
+      "answer-first": 2,
+      "writer-protection": 2,
+      "required-facts": 2,
+      "readability": 2
+    }
+  }
+]

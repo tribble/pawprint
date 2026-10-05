@@ -1,0 +1,19 @@
+{
+  "argv": [
+    "pi",
+    "--mode", "text",
+    "--no-tools",
+    "--no-session",
+    "--no-extensions",
+    "--no-skills",
+    "--no-context-files",
+    "--no-prompt-templates",
+    "--no-approve",
+    "--model", "cloudflare-ai-gateway/claude-fable-5-1",
+    "--thinking", "high",
+    "-p",
+    "Summarize these model-comparison results for the repo owner in under 250 words. Answer first: which candidate is better on this corpus. Call out weaknesses visible in grader notes. The grader was not shown candidate identities (honor-system blinding); the tables are the ground truth, the notes are impressions.",
+    "@{tables}"
+  ],
+  "env": { "PI_CODING_AGENT_DIR": "{configDir}/../pi-agent" }
+}

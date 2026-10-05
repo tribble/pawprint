@@ -1,0 +1,12 @@
+[
+  {
+    "id": "greptile-default",
+    "argv": ["greptile", "review", "-b", "{base}", "--json"],
+    "cwd": "{repo}"
+  },
+  {
+    "id": "greptile-apex",
+    "argv": ["greptile", "review", "-b", "{base}", "--json", "--apex"],
+    "cwd": "{repo}"
+  }
+]
