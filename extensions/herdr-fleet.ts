@@ -15,7 +15,13 @@ import { resolve } from "node:path";
 // Same one line as in pr-review.ts on purpose: not worth a shared module.
 const intercomId = (sessionId: string) => `pi-${createHash("sha256").update(sessionId).digest("hex").slice(0, 32)}`;
 
+// The herdr skill forbids inspect/control from outside Herdr; every command's execs route through herdr().
+function assertHerdr() {
+  if (process.env.HERDR_ENV !== "1") throw new Error("not running inside Herdr (HERDR_ENV is not 1)");
+}
+
 async function herdr(pi: ExtensionAPI, args: string[]): Promise<unknown> {
+  assertHerdr();
   const r = await pi.exec("herdr", args);
   if (r.code !== 0) {
     throw new Error(`herdr ${args.join(" ")} failed: ${(r.stderr || r.stdout).trim()}`);
@@ -49,6 +55,9 @@ repo: which of these repositories the work belongs to, or null if you cannot tel
 
 interface WsPlan { name: string; dir: string }
 
+// herdr --skill: agent names must match [a-z][a-z0-9_-]{0,31} and be unique among live agents.
+const LEGAL_NAME = /^[a-z][a-z0-9_-]{0,31}$/;
+
 // Directory from an explicit identifier (path or configured repo id as first word) or, failing that,
 // the session model's read of the purpose. Name is model-derived either way unless already a slug.
 async function planWorkspace(pi: ExtensionAPI, ctx: ExtensionCommandContext, args: string): Promise<WsPlan> {
@@ -60,7 +69,12 @@ async function planWorkspace(pi: ExtensionAPI, ctx: ExtensionCommandContext, arg
   if (first && existsSync(explicit) && statSync(explicit).isDirectory()) dir = resolve(explicit);
   else if (first && repos[first]) dir = repos[first];
   if (dir) hint = restWords.join(" ");
-  if (dir && /^[a-z0-9][a-z0-9-]{1,40}$/.test(hint)) return { name: hint, dir }; // slug + dir: no model call
+  if (dir && LEGAL_NAME.test(hint)) return { name: hint, dir }; // slug + dir: no model call
+  // A single-token hint beside an explicit dir/repo is a requested name, not a purpose: never
+  // silently replace an illegal one with a model-invented one. Multi-word hints stay purposes.
+  if (dir && hint && !hint.includes(" ")) {
+    throw new Error(`illegal agent name "${hint}" — must match [a-z][a-z0-9_-]{0,31} (start with a letter, ≤32 chars); give a multi-word purpose to have the model choose`);
+  }
 
   let source = hint;
   if (!source) {
@@ -98,7 +112,12 @@ async function planWorkspace(pi: ExtensionAPI, ctx: ExtensionCommandContext, arg
   const json = text.match(/\{[\s\S]*\}/)?.[0];
   if (!json) throw new Error(`model returned no plan: ${JSON.stringify(text)}`);
   const plan = JSON.parse(json) as { name?: string; repo?: string | null };
-  const name = String(plan.name ?? "").toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 40);
+  const name = String(plan.name ?? "")
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .replace(/^[^a-z]+/, "") // herdr names start with a letter
+    .slice(0, 32);
   if (!name) throw new Error(`model returned no usable name: ${json}`);
   if (!dir) {
     if (!plan.repo || !repos[plan.repo]) throw new Error(`can't tell which repo — /ws <repo> ${hint}`);
@@ -131,12 +150,36 @@ function myWorkspace(agents: FleetAgent[]): string | undefined {
   return pane ? agents.find((a) => a.pane_id === pane)?.workspace_id : undefined;
 }
 
-// herdr agent names are unique per server and double as intercom addresses: suffix on collision.
+// herdr agent names are unique per server and double as intercom addresses: suffix on collision,
+// truncating the base so the suffixed name still fits the 32-char limit.
 function uniqueName(name: string, agents: FleetAgent[]): string {
   const taken = new Set(agents.map((a) => a.name));
   let label = name;
-  for (let i = 2; taken.has(label); i++) label = `${name}-${i}`;
+  for (let i = 2; taken.has(label); i++) label = `${name.slice(0, 31 - String(i).length)}-${i}`;
   return label;
+}
+
+// The name herdr is asked to create: collision-suffixed, then re-validated at the creation
+// boundary — an illegal name must never reach tab/workspace create whatever the upstream path.
+function finalName(base: string, agents: FleetAgent[]): string {
+  const name = uniqueName(base, agents);
+  if (!LEGAL_NAME.test(name)) throw new Error(`illegal agent name "${name}" — must match [a-z][a-z0-9_-]{0,31}`);
+  return name;
+}
+
+// A failed agent start/prompt can leave a live child (agent_not_ready keeps the name; a stalled
+// prompt may still have been delivered). A listed name can be claimed by someone else before our
+// start, so inspection targets the returned pane ID, not the name. No auto-retry, no closing.
+async function agentOp(pi: ExtensionAPI, args: string[], name: string, paneId: string): Promise<unknown> {
+  try {
+    return await herdr(pi, args);
+  } catch (e) {
+    throw new Error(
+      `${e instanceof Error ? e.message : String(e)} — ${name} (pane ${paneId}) may be live: ` +
+        `inspect with \`herdr agent get ${paneId}\` and \`herdr agent read ${paneId} --source recent-unwrapped --lines 120\`; ` +
+        "a timeout or stall is not proof of non-delivery — do not resubmit blindly"
+    );
+  }
 }
 
 // Every delegated task must carry the owner's verbatim ask so intent survives every hop
@@ -187,6 +230,10 @@ export default function herdrFleet(pi: ExtensionAPI) {
         ctx.ui.notify("Usage: /delegate <name> <task>", "error");
         return;
       }
+      if (!LEGAL_NAME.test(wanted)) {
+        ctx.ui.notify(`delegate: illegal agent name "${wanted}" — must match [a-z][a-z0-9_-]{0,31} (start with a letter, ≤32 chars)`, "error");
+        return;
+      }
       if (!OWNER_OUTCOME.test(task)) {
         ctx.ui.notify(
           "delegate: task must contain an `Owner outcome:` block quoting the user's ask verbatim (copied, not paraphrased). Re-issue it whenever the user corrects or narrows.",
@@ -198,7 +245,7 @@ export default function herdrFleet(pi: ExtensionAPI) {
         const agents = await agentList(pi);
         const ws = myWorkspace(agents);
         if (!ws) throw new Error("/delegate needs to run inside a herdr pane");
-        const name = uniqueName(wanted, agents);
+        const name = finalName(wanted, agents);
         ctx.ui.notify(`Spawning ${name}…`, "info");
         const me = intercomId(ctx.sessionManager.getSessionId());
         // A tab in MY workspace (grouped sidebar nests it under me); env lets the child know its coordinator's ID.
@@ -206,9 +253,9 @@ export default function herdrFleet(pi: ExtensionAPI) {
         const paneId = findPaneId(tab);
         if (!paneId) throw new Error("tab created but no pane_id in response");
         // --name makes session name = herdr name = intercom address (same contract as `ws create`).
-        await herdr(pi, ["agent", "start", name, "--kind", "pi", "--pane", paneId, "--timeout", "60000", "--", "--name", name, "--thinking", "max"]);
+        await agentOp(pi, ["agent", "start", name, "--kind", "pi", "--pane", paneId, "--timeout", "60000", "--", "--name", name, "--thinking", "max"], name, paneId);
         // --wait --until working = text+Enter landed and the child started; bare --wait would block until its whole turn ends.
-        await herdr(pi, ["agent", "prompt", name, `${task}\n\n${CONTRACT(me, name)}`, "--wait", "--until", "working", "--timeout", "10000"]);
+        await agentOp(pi, ["agent", "prompt", name, `${task}\n\n${CONTRACT(me, name)}`, "--wait", "--until", "working", "--timeout", "10000"], name, paneId);
         ctx.ui.notify(
           `🐑 ${name} delegated — \`herdr agent focus ${name}\` to watch; it can reach this session via intercom.`,
           "info"
@@ -224,12 +271,13 @@ export default function herdrFleet(pi: ExtensionAPI) {
       "New focused herdr workspace running pi: /ws [repo|dir] <purpose> — directory from the identifier or inferred from the purpose (repos listed in configs/ws.json); name from the purpose (or this session's recent context)",
     handler: async (args, ctx) => {
       try {
+        assertHerdr(); // before planWorkspace can spend a model call
         const plan = await planWorkspace(pi, ctx, args.trim());
-        const name = uniqueName(plan.name, await agentList(pi));
+        const name = finalName(plan.name, await agentList(pi));
         const ws = await herdr(pi, ["workspace", "create", "--cwd", plan.dir, "--label", name]);
         const paneId = findPaneId(ws);
         if (!paneId) throw new Error("workspace created but no pane_id in response");
-        await herdr(pi, ["agent", "start", name, "--kind", "pi", "--pane", paneId, "--timeout", "60000", "--", "--name", name]);
+        await agentOp(pi, ["agent", "start", name, "--kind", "pi", "--pane", paneId, "--timeout", "60000", "--", "--name", name], name, paneId);
         ctx.ui.notify(`🐑 ${name} — pi ready in ${plan.dir.replace(process.env.HOME ?? "", "~")} (focused).`, "info");
       } catch (e) {
         ctx.ui.notify(`ws: ${e instanceof Error ? e.message : String(e)}`, "error");

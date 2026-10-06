@@ -14,8 +14,10 @@ const agentsReply = (agents: unknown) => ({
   stderr: "",
 });
 
-// The extension identifies "me" by HERDR_PANE_ID; pin it so tests are the same inside and outside herdr.
+// The extension identifies "me" by HERDR_PANE_ID and refuses herdr calls unless HERDR_ENV=1;
+// pin both so tests are the same inside and outside herdr.
 process.env.HERDR_PANE_ID = "wH:p1";
+process.env.HERDR_ENV = "1";
 const ME = { name: "coordinator-test", agent_status: "idle", cwd: "/tmp/me", pane_id: "wH:p1", workspace_id: "wH" };
 // Children are addressed to my intercom ID (pi-<sha256(session id)[0:32]>), never my name, which can change.
 // sha256("fleet-sess").hex[0:32], precomputed so the test does not share the implementation's formula.
@@ -119,14 +121,15 @@ test("/delegate: own pane not in agent list (not inside herdr) → error, nothin
   assert.deepEqual(ctx.notes.at(-1), { msg: "delegate: /delegate needs to run inside a herdr pane", level: "error" });
 });
 
-test("/delegate: name taken by a live agent → suffixed name for label, agent and --name", async () => {
-  const pi = makePi({ execImpl: delegateExec([ME, { name: "scout", pane_id: "w2:p1", workspace_id: "w2" }, { name: "scout-2", pane_id: "wH:p3", workspace_id: "wH" }]) });
+test("/delegate: names taken by live agents → next free suffix for label, agent and --name (multi-digit suffix)", async () => {
+  const taken = ["scout", ...Array.from({ length: 9 }, (_, i) => `scout-${i + 2}`)]; // scout … scout-10
+  const pi = makePi({ execImpl: delegateExec([ME, ...taken.map((name, i) => ({ name, pane_id: `w2:p${i + 1}`, workspace_id: "w2" }))]) });
   herdrFleet(pi);
   await pi.commands.delegate.handler("scout Owner outcome: go", fleetCtx());
-  assert.equal(pi.execCalls[1][8], "scout-3"); // --label
-  assert.equal(pi.execCalls[2][3], "scout-3"); // agent start <name>
-  assert.equal(pi.execCalls[2][12], "scout-3"); // -- --name <name>
-  assert.equal(pi.execCalls[3][3], "scout-3"); // agent prompt <name>
+  assert.equal(pi.execCalls[1][8], "scout-11"); // --label
+  assert.equal(pi.execCalls[2][3], "scout-11"); // agent start <name>
+  assert.equal(pi.execCalls[2][12], "scout-11"); // -- --name <name>
+  assert.equal(pi.execCalls[3][3], "scout-11"); // agent prompt <name>
 });
 
 test("/delegate: tab without pane_id → error notify", async () => {
@@ -230,4 +233,190 @@ test("/ws with no config and no dir → error naming the config file; no scan of
     assert.equal(ctx.notes[0].level, "error");
     assert.ok(ctx.notes[0].msg.includes("configs/ws.json"));
     assert.equal(pi.execCalls.length, 0);
+  }));
+
+// --- herdr --skill alignment: HERDR_ENV guard, legal names, failure recovery ---
+
+// The herdr skill forbids inspect/control from outside Herdr (HERDR_ENV=1).
+function withHerdrEnv(value: string | undefined, fn: () => Promise<void>) {
+  const prev = process.env.HERDR_ENV;
+  if (value === undefined) delete process.env.HERDR_ENV;
+  else process.env.HERDR_ENV = value;
+  return fn().finally(() => {
+    if (prev === undefined) delete process.env.HERDR_ENV;
+    else process.env.HERDR_ENV = prev;
+  });
+}
+
+// Anything but exactly "1" is outside Herdr: unset, empty, or another value.
+const OUTSIDE_HERDR: (string | undefined)[] = [undefined, "", "0", "true"];
+
+test("outside Herdr (unset/empty/non-1): /fleet and /delegate are refused before any herdr call", async () => {
+  for (const bad of OUTSIDE_HERDR) {
+    await withHerdrEnv(bad, async () => {
+      const pi = makePi({ execImpl: delegateExec([ME]) });
+      herdrFleet(pi);
+      const ctx = fleetCtx();
+      await pi.commands.fleet.handler("", ctx);
+      assert.equal(ctx.notes.at(-1).level, "error", String(bad));
+      assert.ok(ctx.notes.at(-1).msg.includes("HERDR_ENV"), ctx.notes.at(-1).msg);
+      await pi.commands.delegate.handler("scout Owner outcome: go", ctx);
+      assert.equal(ctx.notes.at(-1).level, "error", String(bad));
+      assert.ok(ctx.notes.at(-1).msg.includes("HERDR_ENV"), ctx.notes.at(-1).msg);
+      assert.equal(pi.execCalls.length, 0, String(bad));
+    });
+  }
+});
+
+test("outside Herdr (unset/empty/non-1): /ws is refused before the planning model call", async () => {
+  for (const bad of OUTSIDE_HERDR) {
+    await withHerdrEnv(bad, () =>
+      withWsConfig({ workos: "~/work/workos" }, async () => {
+        const pi = makePi({ execImpl: wsExec([]) });
+        herdrFleet(pi);
+        const ctx = makeCtx();
+        let modelCalled = false;
+        ctx.modelRegistry = {
+          getApiKeyAndHeaders: async () => {
+            modelCalled = true;
+            return { ok: true };
+          },
+          getProvider: () => ({
+            stream: () => ({ result: async () => ({ stopReason: "stop", content: [{ type: "text", text: '{"name":"fix-flaky-tests","repo":null}' }] }) }),
+          }),
+        };
+        // multi-word purpose: without the early /ws guard this reaches the model before any herdr call
+        await pi.commands.ws.handler("workos fix the flaky tests", ctx);
+        assert.equal(ctx.notes[0].level, "error", String(bad));
+        assert.ok(ctx.notes[0].msg.includes("HERDR_ENV"), ctx.notes[0].msg);
+        assert.equal(modelCalled, false, "no tokens spent outside Herdr");
+        assert.equal(pi.execCalls.length, 0, String(bad));
+      }),
+    );
+  }
+});
+
+// herdr --skill: agent names must match [a-z][a-z0-9_-]{0,31} and be unique among live agents.
+test("/delegate: illegal agent names are refused before anything is spawned", async () => {
+  const pi = makePi({ execImpl: delegateExec([ME]) });
+  herdrFleet(pi);
+  for (const bad of ["1scout", "Scout", "-x", "a".repeat(33)]) {
+    const ctx = fleetCtx();
+    await pi.commands.delegate.handler(`${bad} Owner outcome: go`, ctx);
+    assert.equal(ctx.notes.at(-1).level, "error", bad);
+    assert.ok(ctx.notes.at(-1).msg.includes("[a-z][a-z0-9_-]"), ctx.notes.at(-1).msg);
+  }
+  assert.equal(pi.execCalls.length, 0);
+});
+
+test("/delegate: 32-char and underscored names are legal; a 32-char collision keeps the suffixed name within 32", async () => {
+  const taken32 = `a${"b".repeat(31)}`;
+  const pi = makePi({ execImpl: delegateExec([ME, { name: taken32, pane_id: "w2:p9", workspace_id: "w2" }]) });
+  herdrFleet(pi);
+  await pi.commands.delegate.handler("my_agent Owner outcome: go", fleetCtx());
+  assert.equal(pi.execCalls[2][3], "my_agent");
+  const pi2 = makePi({ execImpl: delegateExec([ME, { name: taken32, pane_id: "w2:p9", workspace_id: "w2" }]) });
+  herdrFleet(pi2);
+  await pi2.commands.delegate.handler(`${taken32} Owner outcome: go`, fleetCtx());
+  const used = pi2.execCalls[2][3];
+  assert.notEqual(used, taken32);
+  assert.equal(used.length, 32, used);
+  assert.match(used, /^[a-z][a-z0-9_-]{0,31}$/);
+  assert.equal(pi2.execCalls[3][3], used, "prompt targets the suffixed name");
+});
+
+test("/ws with explicit dir: legal single-token names used directly; illegal ones rejected before planning; multi-word purposes still generate legal names", () =>
+  withWsConfig({ workos: "~/work/workos" }, async () => {
+    const slug32 = `a${"b".repeat(31)}`;
+    const pi = makePi({ execImpl: wsExec([]) });
+    herdrFleet(pi);
+    const ctx = makeCtx();
+    let modelCalls = 0;
+    ctx.modelRegistry = {
+      getApiKeyAndHeaders: async () => {
+        modelCalls += 1;
+        return { ok: true };
+      },
+      getProvider: () => ({
+        stream: () => ({
+          result: async () => ({ stopReason: "stop", content: [{ type: "text", text: '{"name":"3D Printing Fix For The Flaky CI Suite","repo":null}' }] }),
+        }),
+      }),
+    };
+    await pi.commands.ws.handler(`workos ${slug32}`, ctx);
+    assert.equal(modelCalls, 0, "a legal 32-char slug needs no model call");
+    assert.equal(pi.execCalls[2][3], slug32);
+    await pi.commands.ws.handler("workos my_agent", ctx);
+    assert.equal(modelCalls, 0, "an underscored single-token name is legal");
+    assert.equal(pi.execCalls[5][3], "my_agent");
+    for (const bad of ["3d-printing-fix", "a".repeat(33), "FixFlaky"]) {
+      const before = pi.execCalls.length;
+      await pi.commands.ws.handler(`workos ${bad}`, ctx);
+      const note = ctx.notes.at(-1);
+      assert.equal(note.level, "error", bad);
+      assert.ok(note.msg.includes("[a-z][a-z0-9_-]"), note.msg);
+      assert.equal(modelCalls, 0, `${bad}: an illegal explicit name must not be silently replaced by a model-chosen one`);
+      assert.equal(pi.execCalls.length, before, `${bad}: nothing created`);
+    }
+    await pi.commands.ws.handler("workos fix the 3d printing flakes", ctx);
+    assert.equal(modelCalls, 1, "a multi-word hint is a purpose, not a name — the model plans");
+    const generated = pi.execCalls.at(-1)[3];
+    assert.match(generated, /^[a-z][a-z0-9_-]{0,31}$/, generated);
+    assert.ok(generated.length <= 32, generated);
+  }));
+
+// A listed name can be claimed by someone else between agent list and agent start; recovery must
+// inspect the pane this run actually got back (here the collision-suffixed scout-2 in wH:p2).
+const collisionExec = (failOn: string) => async (_c: string, args: string[]) => {
+  if (args[1] === "list") return agentsReply([ME, { name: "scout", pane_id: "w2:p7", workspace_id: "w2" }]);
+  if (args[0] === "tab") return tabReply;
+  if (args[1] === failOn) return { code: 1, stdout: "", stderr: failOn === "start" ? "agent_not_ready" : "agent_prompt_stalled" };
+  return { code: 0, stdout: JSON.stringify({ result: {} }), stderr: "" };
+};
+
+test("/delegate: agent start failure keeps the raw error and points inspection at the returned pane, not the name", async () => {
+  const pi = makePi({ execImpl: collisionExec("start") });
+  herdrFleet(pi);
+  const ctx = fleetCtx();
+  await pi.commands.delegate.handler("scout Owner outcome: go", ctx);
+  const note = ctx.notes.at(-1);
+  assert.equal(note.level, "error");
+  assert.ok(note.msg.includes("agent_not_ready"), note.msg);
+  assert.ok(note.msg.includes("scout-2"), "the actual collision-suffixed child");
+  assert.ok(note.msg.includes("herdr agent get wH:p2"), `pane-targeted inspect: ${note.msg}`);
+  assert.ok(note.msg.includes("herdr agent read wH:p2 --source recent-unwrapped"), note.msg);
+  assert.ok(!note.msg.includes("agent get scout"), "never inspects a possibly-claimed name");
+  assert.ok(!note.msg.includes("tab close"), "never steers toward closing possibly-live work");
+});
+
+test("/delegate: prompt failure warns that a stall is not proof of non-delivery and inspects by pane", async () => {
+  const pi = makePi({ execImpl: collisionExec("prompt") });
+  herdrFleet(pi);
+  const ctx = fleetCtx();
+  await pi.commands.delegate.handler("scout Owner outcome: go", ctx);
+  const note = ctx.notes.at(-1);
+  assert.equal(note.level, "error");
+  assert.ok(note.msg.includes("agent_prompt_stalled"), note.msg);
+  assert.ok(note.msg.includes("scout-2"), note.msg);
+  assert.ok(note.msg.includes("herdr agent get wH:p2"), note.msg);
+  assert.ok(/not proof|does not prove/.test(note.msg), note.msg);
+});
+
+test("/ws: agent start failure names the new workspace child and pane for inspection", () =>
+  withWsConfig({ workos: "~/work/workos" }, async () => {
+    const pi = makePi({
+      execImpl: async (_c: string, args: string[]) => {
+        if (args[0] === "agent" && args[1] === "list") return agentsReply([]);
+        if (args[0] === "workspace") return { code: 0, stdout: JSON.stringify({ result: { root_pane: { pane_id: "p3" } } }), stderr: "" };
+        return { code: 1, stdout: "", stderr: "agent_not_ready" };
+      },
+    });
+    herdrFleet(pi);
+    const ctx = makeCtx();
+    await pi.commands.ws.handler("workos fix-flaky-tests", ctx);
+    const note = ctx.notes.at(-1);
+    assert.equal(note.level, "error");
+    assert.ok(note.msg.includes("fix-flaky-tests"), note.msg);
+    assert.ok(note.msg.includes("herdr agent get p3"), note.msg);
+    assert.ok(note.msg.includes("herdr agent read p3 --source recent-unwrapped"), note.msg);
   }));
