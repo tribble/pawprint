@@ -20,20 +20,6 @@ export class DynamicBorder {
 }
 export const getMarkdownTheme = () => ({});
 
-// Mirror of pi's parseSessionEntries (session-manager.js): JSONL parse, malformed lines skipped.
-export function parseSessionEntries(content) {
-  const entries = [];
-  for (const line of content.trim().split("\n")) {
-    if (!line.trim()) continue;
-    try {
-      entries.push(JSON.parse(line));
-    } catch {
-      // skip malformed lines
-    }
-  }
-  return entries;
-}
-
 // Minimal mirrors of pi's context pipeline (session-manager.ts, messages.ts, compaction/utils.ts):
 // entries → AgentMessages → LLM messages → transcript text. Only the shapes the tests exercise.
 export function sessionEntryToContextMessages(entry) {

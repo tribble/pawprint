@@ -59,14 +59,6 @@ export function makePi(overrides = {}) {
     registerEntryRenderer(type, fn) {
       this.entryRenderers[type] = fn;
     },
-    providers: {},
-    registerProvider(name, cfg) {
-      this.providers[name] = cfg;
-    },
-    markdownTransformers: [],
-    registerMarkdownTransformer(fn) {
-      this.markdownTransformers.push(fn);
-    },
     registerFlag(name, def) {
       this.flags[`__def:${name}`] = def;
     },
@@ -120,14 +112,8 @@ export function makeCtx(overrides = {}) {
     async reload() {
       this.reloads += 1;
     },
-    signal: overrides.signal,
     modelRegistry: {
-      find: overrides.find ?? ((provider, id) => ({ provider, id })),
-      streamSimple:
-        overrides.streamSimple ??
-        (() => {
-          throw new Error("streamSimple: no test stub");
-        }),
+      find: (provider, id) => ({ provider, id }),
     },
     sessionManager: {
       getEntries: () => overrides.entries ?? [],
@@ -135,7 +121,6 @@ export function makeCtx(overrides = {}) {
       getSessionId: () => overrides.sessionId,
       getBranch: () => overrides.branch ?? [],
       buildContextEntries: () => overrides.contextEntries ?? [],
-      buildSessionProjection: () => overrides.projection ?? { entries: [], messages: [], thinkingLevel: "medium", model: null },
       getLeafId: () => overrides.leafId ?? null,
     },
     ui: {

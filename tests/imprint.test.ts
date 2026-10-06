@@ -151,7 +151,6 @@ test("3b. a directory or symlink where a tracked file belongs, or a symlinked pa
   const drift = r.stderr.split("\n").filter((l) => l.startsWith("DRIFT:")).map((l) => l.replace(/ \(in the way: .*\)$/, ""));
   assert.deepEqual(drift.sort(), [
     "DRIFT:         agent/cloak.json",
-    "DRIFT:         agent/configs/editor.json",
     "DRIFT:         agent/configs/ws.json",
     "DRIFT:         agent/settings.json",
   ]);
@@ -416,20 +415,20 @@ test("12. --only: exactly the named files (+ backup of a differing one); unknown
   rmSync(join(t, "auth.json"));
 
   mkdirSync(join(t, "configs"), { recursive: true });
-  writeFileSync(join(t, "configs", "editor.json"), "// mine\n");
-  const dry = runSetup(["--dry-run", "--target", t, "--only", "configs/editor.json", "cloak.json"]);
+  writeFileSync(join(t, "configs", "ws.json"), "// mine\n");
+  const dry = runSetup(["--dry-run", "--target", t, "--only", "configs/ws.json", "cloak.json"]);
   assert.equal((dry.match(/^DRY: cp -a /gm) ?? []).length, 3, "plan: one backup + two copies");
-  assert.deepEqual([...manifest(t).keys()], ["configs/editor.json"], "dry-run wrote nothing");
+  assert.deepEqual([...manifest(t).keys()], ["configs/ws.json"], "dry-run wrote nothing");
 
-  const r = spawnSetup(["--target", t, "--only", "configs/editor.json", "cloak.json"]);
+  const r = spawnSetup(["--target", t, "--only", "configs/ws.json", "cloak.json"]);
   assert.equal(r.status, 0, r.stderr);
   const got = [...manifest(t).keys()].sort();
-  const bak = got.find((f) => f.startsWith("configs/editor.json.bak-pawprint-"));
+  const bak = got.find((f) => f.startsWith("configs/ws.json.bak-pawprint-"));
   assert.ok(bak, "differing file was backed up");
-  assert.deepEqual(got, ["configs/editor.json", bak!, "cloak.json"].sort(), "exactly the two files + the backup");
+  assert.deepEqual(got, ["configs/ws.json", bak!, "cloak.json"].sort(), "exactly the two files + the backup");
   assert.equal(readFileSync(join(t, bak!), "utf8"), "// mine\n");
-  assert.equal(readFileSync(join(t, "configs", "editor.json"), "utf8"), readFileSync(join(PRINT, "configs", "editor.json"), "utf8"));
-  assert.equal(r.stderr.trim(), "configs/editor.json encodes tribble's own choices — read it before you keep it", "personal file warns, non-personal is silent");
+  assert.equal(readFileSync(join(t, "configs", "ws.json"), "utf8"), readFileSync(join(PRINT, "configs", "ws.json"), "utf8"));
+  assert.equal(r.stderr.trim(), "configs/ws.json encodes tribble's own choices — read it before you keep it", "personal file warns, non-personal is silent");
   assert.ok(!r.stdout.includes("Manual steps remain") && r.stdout.includes("machine machinery: SKIPPED"));
 
   const p = spawnSetup(["--target", t, "--only", "settings.json"]);
