@@ -125,7 +125,6 @@
       "childRuns": "inherit"
     }
   },
-  "lastChangelogVersion": "1.0.0",
   "theme": "calm-tribble",
   "defaultProjectTrust": "ask"
 }

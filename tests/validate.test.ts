@@ -1,16 +1,14 @@
-// validate.sh: the read-only audit of the live worktree. Fresh setup → green
-// naming main == origin/main; a modified, deleted or new file under agent/ →
-// DRIFT naming exactly it; an unpushed commit / unlock → named; a target that
-// is no worktree of this repo → fails; missing env var → fails naming it; a
-// secret committed anywhere in history → fails (gitleaks); a manifest file
-// without a catalog entry, or an entry for an unshipped file → fails naming it.
+// validate.sh: the read-only audit of a plain live dir. Fresh setup → green
+// naming the applied match; a changed managed value, a missing or differing
+// source-only file → named; runtime-owned and unmanaged live additions are
+// never drift; a git-linked target fails naming the migration. Manifest
+// catalog, tools, env (presence only) and secrets-history checks unchanged.
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { execFileSync, spawnSync } from "node:child_process";
-import { chmodSync, mkdtempSync, mkdirSync, writeFileSync, readFileSync, copyFileSync, rmSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { linkSync, mkdirSync, writeFileSync, readFileSync, copyFileSync, rmSync, symlinkSync } from "node:fs";
 import { join } from "node:path";
-import { REPO, fixtureRepo, git, setupAll } from "./fixture.ts";
+import { REPO, fixtureRepo, mktmp, setupAll } from "./fixture.ts";
 
 const ENV_OK = {
   ...process.env,
@@ -18,109 +16,120 @@ const ENV_OK = {
   CLOUDFLARE_GATEWAY_ID: "SENTINEL-GATEWAY-2b7",
 };
 
-/** fixture repo + its live worktree at <tmp>/pi; validate runs from the fixture. */
+/** fixture repo + its plain live dir at <scratch>/pi; validate runs from the fixture. */
 function liveFixture() {
   const repo = fixtureRepo();
-  const live = join(mkdtempSync(join(tmpdir(), "pawprint-v-")), "pi");
+  const live = join(mktmp("v"), "pi");
   const r = setupAll(repo, live);
   assert.equal(r.status, 0, r.stderr + r.stdout);
   return { repo, live };
 }
-function validate(repo: string, live: string, env: NodeJS.ProcessEnv = ENV_OK) {
-  return spawnSync("bash", [join(repo, "scripts", "validate.sh"), "--target", join(live, "agent")], { encoding: "utf8", env });
+function validate(repo: string, live: string, env: NodeJS.ProcessEnv = ENV_OK, target = join(live, "agent")) {
+  return spawnSync("bash", [join(repo, "scripts", "validate.sh"), "--target", target], { encoding: "utf8", env });
 }
-const liveLines = (out: string) => out.split("\n").filter((l) => /^(live|DRIFT)/.test(l));
+const liveLines = (out: string) => out.split("\n").filter((l) => /^(live|DRIFT|MISSING)/.test(l));
 
-test("fresh setup → validate green, exit 0, live line names main == origin/main", () => {
+test("fresh setup → validate green, exit 0, live line reports the applied match", () => {
   const { repo, live } = liveFixture();
   const r = validate(repo, live);
   assert.equal(r.status, 0, r.stderr + r.stdout);
-  assert.ok(r.stdout.includes("VALID: live config is the checkout"));
-  assert.deepEqual(liveLines(r.stdout), [`live:          clean (main ${git(live, "rev-parse", "--short", "HEAD")} == origin/main)`]);
+  assert.ok(r.stdout.includes("VALID: live config matches the print"));
+  assert.deepEqual(liveLines(r.stdout), [`live:          applied (${join(live, "agent")} matches the print)`]);
   assert.ok(r.stdout.includes("manifest ok:"), "manifest == tracked agent/ files");
   assert.ok(r.stdout.includes("tool ok:"), "tools audited");
   assert.ok(r.stdout.includes("about ok:"), "catalog audited");
 });
 
-test("modified, deleted and new file under agent/ → DRIFT names exactly those; runtime files never", () => {
+test("changed managed values and missing/differing source files are named; runtime and unmanaged additions are not drift", () => {
   const { repo, live } = liveFixture();
-  writeFileSync(join(live, "agent", "settings.json"), readFileSync(join(live, "agent", "settings.json")) + "\n");
-  rmSync(join(live, "agent", "cloak.json"));
-  writeFileSync(join(live, "agent", "agents", "new.md"), "new\n");
-  writeFileSync(join(live, "agent", "auth.json"), "SENTINEL");
-  mkdirSync(join(live, "agent", "sessions")); writeFileSync(join(live, "agent", "sessions", "s.jsonl"), "{}");
+  const agent = join(live, "agent");
+  // managed drift: a managed value changed, a managed MCP url changed, a
+  // source-only file differs, one is missing
+  const settingsPath = join(agent, "settings.json");
+  const settings = JSON.parse(readFileSync(settingsPath, "utf8"));
+  settings.quietStartup = false;
+  writeFileSync(settingsPath, JSON.stringify(settings, null, 2));
+  const mcpPath = join(agent, "mcp.json");
+  const mcp = JSON.parse(readFileSync(mcpPath, "utf8"));
+  mcp.mcpServers["slack-workos"].url = "https://wrong.example/mcp";
+  writeFileSync(mcpPath, JSON.stringify(mcp, null, 2));
+  writeFileSync(join(agent, "AGENTS.md"), readFileSync(join(agent, "AGENTS.md"), "utf8") + "\nlive edit\n");
+  rmSync(join(agent, "cloak.json"));
+  // runtime and unmanaged additions: none of this is drift
+  writeFileSync(join(agent, "auth.json"), "SENTINEL");
+  mkdirSync(join(agent, "sessions"));
+  writeFileSync(join(agent, "sessions", "s.jsonl"), "{}");
+  writeFileSync(join(agent, "agents", "new.md"), "new\n");
+  const stamped = { ...JSON.parse(readFileSync(settingsPath, "utf8")), lastChangelogVersion: "999.0.0", deviceId: "synthetic", editorPaddingX: 9 };
+  writeFileSync(settingsPath, JSON.stringify(stamped, null, 2));
+  const mcpPlus = JSON.parse(readFileSync(mcpPath, "utf8"));
+  mcpPlus.mcpServers["local-only"] = { command: "fake" };
+  mcpPlus.mcpServers["slack-workos"].enabled = false;
+  mcpPlus.autoEnableCodemode = false;
+  writeFileSync(mcpPath, JSON.stringify(mcpPlus, null, 2));
+
   const r = validate(repo, live);
   assert.equal(r.status, 1);
-  assert.deepEqual(liveLines(r.stdout).sort(), ["DRIFT:         agent/agents/new.md", "DRIFT:         agent/cloak.json", "DRIFT:         agent/settings.json"]);
-});
-
-test("pi's lastChangelogVersion stamp alone → `live:` names the keep command with the new version, exit 0; any other change → DRIFT", () => {
-  const { repo, live } = liveFixture();
-  const settings = join(live, "agent", "settings.json");
-  const stamp = (v: string) => writeFileSync(settings, readFileSync(settings, "utf8").replace(/"lastChangelogVersion": "[^"]*"/, `"lastChangelogVersion": "${v}"`));
-  stamp("0.88.0");
-  let r = validate(repo, live);
-  assert.equal(r.status, 0, r.stderr + r.stdout);
-  assert.deepEqual(liveLines(r.stdout), [
-    "live:          pi wrote agent/settings.json (lastChangelogVersion) — keep: git -C " + live + " add -p agent/settings.json && git -C " + live + " commit -m 'pi 0.88.0 stamp' && git -C " + live + " push",
+  assert.deepEqual(liveLines(r.stdout).sort(), [
+    "DRIFT:         AGENTS.md (differs from source — setup.sh --apply)",
+    "DRIFT:         mcp.json (managed values differ — setup.sh --apply)",
+    "DRIFT:         settings.json (managed values differ — setup.sh --apply)",
+    "MISSING:       cloak.json (setup.sh --apply)",
   ]);
-  assert.ok(r.stdout.includes("VALID: live config is the checkout"));
-  // the stamp plus any other settings change is ordinary drift
-  writeFileSync(settings, readFileSync(settings, "utf8").replace('"quietStartup": true', '"quietStartup": false'));
-  r = validate(repo, live);
-  assert.equal(r.status, 1);
-  assert.deepEqual(liveLines(r.stdout), ["DRIFT:         agent/settings.json"]);
-  // the stamp plus another modified file: both DRIFT
-  stamp("0.88.0"); writeFileSync(settings, readFileSync(settings, "utf8").replace('"quietStartup": false', '"quietStartup": true'));
-  writeFileSync(join(live, "agent", "cloak.json"), "\n", { flag: "a" });
-  r = validate(repo, live);
-  assert.equal(r.status, 1);
-  assert.deepEqual(liveLines(r.stdout).sort(), ["DRIFT:         agent/cloak.json", "DRIFT:         agent/settings.json"]);
-  git(live, "checkout", "--", "agent/cloak.json");
-  // a property smuggled onto the stamp line is not a stamp
-  writeFileSync(settings, readFileSync(settings, "utf8").replace(/"lastChangelogVersion": "0.88.0",/, '"lastChangelogVersion": "0.88.0", "enableSkillCommands": false,'));
-  r = validate(repo, live);
-  assert.equal(r.status, 1);
-  assert.deepEqual(liveLines(r.stdout), ["DRIFT:         agent/settings.json"]);
-  // the stamp plus a mode change is not a stamp — whatever git's color or fileMode config says
-  for (const cfg of [[], ["color.ui=always"], ["core.fileMode=false"]]) {
-    git(live, "checkout", "--", "agent/settings.json"); stamp("0.88.0"); chmodSync(settings, 0o755);
-    const env = { ...ENV_OK, GIT_CONFIG_COUNT: String(cfg.length), ...Object.fromEntries(cfg.flatMap((kv, i) => { const [k, v] = kv.split("="); return [[`GIT_CONFIG_KEY_${i}`, k], [`GIT_CONFIG_VALUE_${i}`, v]]; })) };
-    r = validate(repo, live, env);
-    assert.equal(r.status, 1, cfg.join());
-    assert.deepEqual(liveLines(r.stdout), ["DRIFT:         agent/settings.json"], cfg.join());
-    chmodSync(settings, 0o644);
-  }
-  // two stamp lines already committed: ambiguous, never a stamp
-  git(live, "checkout", "--", "agent/settings.json");
-  writeFileSync(settings, readFileSync(settings, "utf8").replace(/(\n  "lastChangelogVersion": "[^"]*",)/, "$1$1"));
-  git(live, "commit", "-q", "--no-verify", "-am", "dup"); git(live, "push", "-q");
-  writeFileSync(settings, readFileSync(settings, "utf8").replace(/"lastChangelogVersion": "[^"]*"/, '"lastChangelogVersion": "0.89.0"'));
-  r = validate(repo, live);
-  assert.equal(r.status, 1);
-  assert.deepEqual(liveLines(r.stdout), ["DRIFT:         agent/settings.json"]);
+
+  // re-apply repairs the drift; every runtime/unmanaged addition stays and is green
+  const again = setupAll(repo, live);
+  assert.equal(again.status, 0, again.stderr + again.stdout);
+  const ok = validate(repo, live);
+  assert.equal(ok.status, 0, ok.stderr + ok.stdout);
+  assert.ok(readFileSync(settingsPath, "utf8").includes("999.0.0"), "runtime stamp kept through re-apply");
+  assert.ok(JSON.parse(readFileSync(mcpPath, "utf8")).mcpServers["local-only"], "live-only server kept");
 });
 
-test("unpushed commit, unlocked worktree, wrong branch → each named, exit 1", () => {
+test("a git-linked target fails, naming the migration", () => {
   const { repo, live } = liveFixture();
-  writeFileSync(join(live, "agent", "settings.json"), readFileSync(join(live, "agent", "settings.json")) + "\n");
-  git(live, "commit", "-q", "--no-verify", "-am", "local change");
-  git(live, "worktree", "unlock", live);
-  let r = validate(repo, live);
+  execFileSync("git", ["init", "-q", live]);
+  const r = validate(repo, live);
   assert.equal(r.status, 1);
-  assert.deepEqual(liveLines(r.stdout).map((l) => l.split(":")[0]), ["live UNLOCKED", "live UNPUSHED"]);
-  assert.match(r.stdout, /live UNPUSHED: 1 commit\(s\)/);
-  git(live, "switch", "-q", "-c", "side");
-  r = validate(repo, live);
-  assert.equal(r.status, 1);
-  assert.match(r.stdout, /^live BRANCH:\s+side \(want main\)$/m);
+  assert.match(r.stdout, /^live GIT-LINKED: .*retire the worktree metadata/m);
 });
 
-test("target that is no worktree of this repo → fails naming the fix", () => {
+test("aliased target spellings cannot bypass git-link detection or the shape guard", () => {
+  const { repo, live } = liveFixture();
+  execFileSync("git", ["init", "-q", live]);
+  // string concatenation, not path.join: join() would normalize the aliases away
+  for (const spelling of [`${live}/agent/.`, `${live}/agent/`]) {
+    const r = validate(repo, live, ENV_OK, spelling);
+    assert.equal(r.status, 1, spelling);
+    assert.match(r.stdout, /^live GIT-LINKED:/m, spelling);
+  }
+  // a '..' spelling never reaches the git-link check: refused at the door
+  const dd = validate(repo, live, ENV_OK, `${live}/agent/../agent`);
+  assert.equal(dd.status, 2);
+  assert.match(dd.stderr, /'\.\.'.*without \.\./);
+});
+
+test("an empty or '..' --target is refused before any audit runs", () => {
+  for (const [t, pattern] of [["", /empty --target/], ["/nonexistent/x/../agent", /'\.\.'.*without \.\./]] as const) {
+    const r = spawnSync("bash", [join(REPO, "scripts", "validate.sh"), "--target", t], { encoding: "utf8", env: ENV_OK });
+    assert.equal(r.status, 2, t || "(empty)");
+    assert.match(r.stderr, pattern);
+    assert.equal(r.stdout, "", "no audit output from a refused run");
+  }
+});
+
+test("a symlinked config root is not silently followed (validate names it unsafe)", () => {
   const { repo } = liveFixture();
-  const r = validate(repo, mkdtempSync(join(tmpdir(), "pawprint-vn-")));
-  assert.equal(r.status, 1);
-  assert.match(r.stdout, /^live NOT WORKTREE: .* setup\.sh --all$/m);
+  const home = mktmp("vroot");
+  const real = join(home, "real");
+  mkdirSync(join(real, "agent"), { recursive: true });
+  // a fully applied live dir, reached through a symlinked .pi
+  const applied = setupAll(repo, real);
+  assert.equal(applied.status, 0, applied.stderr + applied.stdout);
+  symlinkSync(real, join(home, ".pi"));
+  const r = validate(repo, join(home, ".pi"), ENV_OK, join(home, ".pi", "agent"));
+  assert.equal(r.status, 1, "symlinked root must not validate clean");
+  assert.match(r.stdout, /unsafe|refus/, "the guard's reason is named, not a diff");
 });
 
 test("manifest files[] out of step with tracked agent/ files → fails naming both sides", () => {
@@ -133,7 +142,7 @@ test("manifest files[] out of step with tracked agent/ files → fails naming bo
 
 test("catalog: missing/empty `about` and an `about` for an unshipped file → fails naming each", () => {
   // validate.sh resolves manifest.json relative to itself, so a two-file stand-in repo is enough
-  const fake = mkdtempSync(join(tmpdir(), "pawprint-v6-"));
+  const fake = mktmp("v6");
   mkdirSync(join(fake, "scripts"));
   copyFileSync(join(REPO, "scripts", "validate.sh"), join(fake, "scripts", "validate.sh"));
   writeFileSync(join(fake, "manifest.json"), JSON.stringify({
@@ -150,7 +159,7 @@ test("catalog: missing/empty `about` and an `about` for an unshipped file → fa
 });
 
 test("catalog: a `does` over 80 chars → fails naming the path and length", () => {
-  const fake = mkdtempSync(join(tmpdir(), "pawprint-v7-"));
+  const fake = mktmp("v7");
   mkdirSync(join(fake, "scripts"));
   copyFileSync(join(REPO, "scripts", "validate.sh"), join(fake, "scripts", "validate.sh"));
   writeFileSync(join(fake, "manifest.json"), JSON.stringify({
@@ -173,9 +182,45 @@ test("missing env var → validate fails naming it (presence, never values)", ()
   assert.ok(!r.stdout.includes("SENTINEL-GATEWAY-2b7"), "values never printed");
 });
 
+test("unsafe live file shapes are rejected: symlinked, hardlinked, or non-regular targets", () => {
+  const { repo, live } = liveFixture();
+  const agent = join(live, "agent");
+
+  // a symlinked source-only file with MATCHING content — cmp alone would pass it
+  const ag = readFileSync(join(agent, "AGENTS.md"));
+  rmSync(join(agent, "AGENTS.md"));
+  writeFileSync(join(agent, "AGENTS.md.real"), ag);
+  symlinkSync(join(agent, "AGENTS.md.real"), join(agent, "AGENTS.md"));
+
+  // a hardlinked source-only file with matching content
+  const cloak = readFileSync(join(agent, "cloak.json"));
+  rmSync(join(agent, "cloak.json"));
+  writeFileSync(join(agent, "cloak.linked"), cloak);
+  linkSync(join(agent, "cloak.linked"), join(agent, "cloak.json"));
+
+  // a directory where a managed file belongs
+  rmSync(join(agent, "presets.json"));
+  mkdirSync(join(agent, "presets.json"));
+
+  // a symlinked settings.json (matching content — merge alone would pass it)
+  const st = readFileSync(join(agent, "settings.json"));
+  rmSync(join(agent, "settings.json"));
+  writeFileSync(join(agent, "settings.real.json"), st);
+  symlinkSync(join(agent, "settings.real.json"), join(agent, "settings.json"));
+
+  const r = validate(repo, live);
+  assert.equal(r.status, 1, r.stdout);
+  const lines = liveLines(r.stdout).join("\n");
+  assert.match(lines, /AGENTS\.md \(unsafe/, "symlinked source-only file named");
+  assert.match(lines, /cloak\.json \(unsafe/, "hardlinked source-only file named");
+  assert.match(lines, /presets\.json \(unsafe/, "directory collision named");
+  assert.match(lines, /settings\.json/, "settings refusal surfaced");
+  assert.match(lines, /refus|unsafe/, "the reason names the guard, not a diff");
+});
+
 test("fake ghp_ token committed in a clone → validate fails on the secrets line", () => {
-  const t = mkdtempSync(join(tmpdir(), "pawprint-v5-"));
-  const clone = join(mkdtempSync(join(tmpdir(), "pawprint-v5repo-")), "repo");
+  const t = mktmp("v5");
+  const clone = join(mktmp("v5repo"), "repo");
   execFileSync("git", ["clone", "-q", REPO, clone]);
   copyFileSync(join(REPO, "scripts", "validate.sh"), join(clone, "scripts", "validate.sh"));
   const validateClone = (env = ENV_OK) =>

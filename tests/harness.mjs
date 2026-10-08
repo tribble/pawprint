@@ -90,6 +90,10 @@ export function makePi(overrides = {}) {
     appendEntry(type, data) {
       state.entries.push({ type, data });
     },
+    userMessages: [],
+    sendUserMessage(content, opts) {
+      this.userMessages.push({ content, opts });
+    },
   };
   return pi;
 }

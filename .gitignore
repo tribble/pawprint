@@ -1,9 +1,9 @@
 # pawprint — default-deny: nothing is tracked unless allowlisted below.
-# ~/.pi is a sparse worktree of this repo (cone: agent/), so this file is also
-# what keeps auth.json, sessions/, git/ and every other runtime file pi writes
-# under agent/ invisible to git. Allowlist directories, never `agent/**`;
-# agent/bin/ is pi's (fd, rg) and stays ignored: a binary dropped there must
-# never become trackable.
+# The live ~/.pi is a plain dir; this file is what keeps every checkout's
+# tracked surface exact, so runtime files pi writes under agent/ (auth.json,
+# sessions/, git/, …) can never become trackable here. Allowlist directories,
+# never `agent/**`; agent/bin/ is pi's (fd, rg) and stays ignored: a binary
+# dropped there must never become trackable.
 *
 !.gitignore
 !.githooks/
@@ -17,6 +17,7 @@
 !scripts/sync-forks.sh
 !scripts/patch-pi-anthropic-gateway
 !scripts/compare.ts
+!scripts/apply-config.ts
 !manifest.json
 !biome.json
 !package.json

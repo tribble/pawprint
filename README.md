@@ -7,10 +7,12 @@ The curated print of my pi agent config, in two halves. The repo root is a
 `pi update --extensions` pulls). Next to it, not pi's: `ghostty/config.ghostty`
 (copied out by `setup.sh`) and `mise.toml` (the typecheck toolchain).
 `agent/` mirrors `~/.pi/agent`-relative paths and holds exactly the
-reviewed-safe *config* files; on my machine `~/.pi` **is a sparse worktree of
-this repo** (cone: `agent/`), so the live config is the checkout itself. The default-deny `.gitignore` is what keeps `auth.json`, OAuth
-state, sessions and package clones out: nothing under `agent/` is tracked
-unless its directory is allowlisted. **`manifest.json` is the adopters'
+reviewed-safe *config* files; on my machine `~/.pi` is a **plain
+runtime/config directory** that `setup.sh --apply` applies the print onto
+(source-only files copy; `settings.json`/`mcp.json` merge field-aware, so pi's
+runtime state survives). The default-deny `.gitignore` decides what a checkout
+can ever track: nothing under `agent/` is tracked unless its directory is
+allowlisted. **`manifest.json` is the adopters'
 catalog**: its `files` list (agent-dir-relative) must equal the tracked
 `agent/` files (`validate.sh` checks), plus `tools` (PATH audit) and `env`
 (presence audit). Adopters get pieces by **copying** (`--only`) — never
@@ -54,8 +56,21 @@ with `--dry-run` before copying:
 ```
 
 An existing target file that differs is backed up next to itself as
-`<path>.bak-pawprint-<timestamp>` before being overwritten. Nothing is deleted. `--target DIR` (or `$PAWPRINT_TARGET`)
+`<path>.bak-pawprint-<timestamp>` before being overwritten (backups only on an
+alternate `--target`; the default `~/.pi/agent` is the owner's live dir and is
+never copied out of). Nothing is deleted. Exception:
+`settings.json` and `mcp.json` are not copied — they are merged field-aware
+(`scripts/apply-config.ts`): the catalog's values win per key, your other
+settings and servers survive, so no backup is needed. `--target DIR` (or `$PAWPRINT_TARGET`)
 copies somewhere other than `~/.pi/agent`.
+
+Prerequisites: every mode needs bash and jq. Source-only copies (`--only`
+without `settings.json`/`mcp.json`) need nothing more. Merging
+`settings.json` or `mcp.json` also needs node and an installed pi (found via
+mise, `npm -g`, or a `pi` on PATH): settings writes go through pi's own
+settings storage and the MCP merge is validated against pi's package. A
+`--only` naming either JSON file preflights pi's package before its first
+selected write and refuses when pi is missing.
 
 `npm test` and `scripts/validate.sh` are my tooling — not needed to adopt
 anything. Questions or a broken piece
@@ -74,19 +89,39 @@ git clone git@github.com:tribble/pawprint.git ~/work/pawprint
 ~/work/pawprint/setup.sh --all
 ```
 
-`setup.sh --all` makes `~/.pi` a **locked sparse worktree on `main`** of the
-clone (cone `agent/` + `.githooks/`; root files come along), detaching the
-clone from `main` since a branch checks out once. An existing `~/.pi/agent` is
-adopted in place: equal files are left alone, missing ones checked out, a
-differing one is `DRIFT` — nothing is overwritten and the run stops until it
-is resolved with git in `~/.pi`. Re-runs fast-forward to `origin/main`, refusing
-when an incoming new file would land on something already live. `--dry-run`
-prints the plan and writes nothing; `--config-only` skips the machine machinery.
+`setup.sh --all` first establishes the runtime the apply needs (mise toolchain
+pin; pi via npm if no `pi` exists yet), then applies the print onto
+`~/.pi/agent`, a **plain directory** (never a git worktree), then installs
+every package the applied `settings.json` declares (native `pi install
+<source> --no-approve` each, in order), then runs the rest of the machine
+machinery.
+Source-only files copy from the checkout; `settings.json`/`mcp.json` merge
+field-aware: source
+values win per key, runtime-owned (changelog stamp, device id) and unmanaged
+live values survive, unchanged files are not rewritten. Symlinked path
+components at or below the config root (`~/.pi`), hardlinked or non-regular
+destinations, malformed JSON, and a
+git-linked target are refused, never followed or overwritten — and the target
+is compared by directory identity (symlink-following), so aliased spellings
+(`agent/`, `agent/.`, case variants, a symlinked live dir) cannot sneak past
+the backup, symlink, or git-link rules. A `..` component or an empty value in
+any target/source path is refused outright — use an absolute path without
+`..` — and a newline in a target is refused (it would silently truncate the
+path).
+Re-runs are idempotent. `setup.sh --apply` is the apply plus the package
+installs; it never bootstraps, so it preflights pi's required modules and
+exports before any managed write and refuses if they are missing. A failed
+install exits nonzero naming the failed source, the config stays applied, and
+the printed retry preserves the original mode — `--all` after a failed `--all`
+(the remaining machine setup still runs), `--apply` after a failed `--apply`.
+`--dry-run`
+prints the plan and writes nothing — it needs no pi installation or bootstrap
+(bash and jq are still required); `--config-only` or a non-default `--target` skips the package installs and the machine machinery.
 
-The machine machinery (skipped under `--dry-run` / `--config-only` /
-non-default target) then bootstraps the rest: pi + agent-browser via npm,
-mise toolchain pin + `.pi-types` symlink (both at the repo root, for the
-typecheck), packages from the live `settings.json` manifest, ghostty config
+The machine machinery after the apply (skipped under `--dry-run` / `--config-only` /
+non-default target): agent-browser via npm,
+`.pi-types` symlink (repo root, for the
+typecheck), ghostty config
 copy-out, gh-dash extension. Prereq: `CLOUDFLARE_ACCOUNT_ID` / `CLOUDFLARE_GATEWAY_ID` set in
 `~/.config/fish/conf.d` (see the dotfiles repo's `pi.fish.template`).
 
@@ -94,19 +129,77 @@ Manual steps after setup: `/login cloudflare-ai-gateway` (or env) ·
 `pi mcp login <server>` per OAuth server in `agent/mcp.json` (native MCP;
 first run needs fresh browser sign-ins;
 tokens land in the ignored `~/.pi/agent/mcp-auth.json`) · `/trust` per project.
+
+## Retiring the worktree
+
+`~/.pi` used to be a locked sparse worktree of this repo. Retiring that is a
+metadata-only rename — every file stays in place, and rollback is the same
+rename back. The locked worktree's admin entry in the clone survives
+`git worktree prune`, so rollback keeps working.
+
+```sh
+LIVE=~/.pi; CLONE=~/work/pawprint
+```
+
+Migrate — copy the whole block. `set -e` and one check per line: a failed
+precondition stops the sequence before the `mv`. (These exact commands are
+exercised on synthetic worktrees in `tests/migration.test.ts`.)
+
+```sh
+set -e
+[ -f "$LIVE/.git" ]                      # .git is a regular gitfile (linked worktree)
+[ ! -L "$LIVE/.git" ]                    # …not a symlink
+[ "$(git -C "$LIVE" rev-parse --path-format=absolute --git-common-dir)" = "$(git -C "$CLONE" rev-parse --path-format=absolute --git-common-dir)" ]   # a worktree of THIS clone
+git -C "$CLONE" worktree list --porcelain | grep -A3 "^worktree $LIVE$" | grep -q '^locked '   # locked admin entry → rollback survives prune
+[ ! -e "$LIVE/.git-pawprint-retired" ]   # nothing to clobber…
+[ ! -L "$LIVE/.git-pawprint-retired" ]   # …not even a dangling symlink
+mv "$LIVE/.git" "$LIVE/.git-pawprint-retired"
+if git -C "$LIVE" status >/dev/null 2>&1; then echo "unexpected: still a repo — stop"; exit 1; fi
+```
+
+Then refresh the source checkout to the approved revision and apply. The clone
+stays **detached**: the retired locked entry keeps `main` reserved, so never
+`switch main` — refresh with an explicit fetch + fast-forward:
+
+```sh
+git -C "$CLONE" fetch origin main
+git -C "$CLONE" merge --ff-only FETCH_HEAD
+"$CLONE"/setup.sh --apply
+cd "$CLONE" && scripts/validate.sh      # → VALID
+```
+
+Rollback — metadata only, any time while the locked admin entry is kept
+(re-applying settings is a separate forward step, not part of rollback):
+
+```sh
+set -e
+[ -f "$LIVE/.git-pawprint-retired" ]     # retired pointer intact, a regular file
+[ ! -L "$LIVE/.git-pawprint-retired" ]
+[ ! -e "$LIVE/.git" ]                    # no active pointer
+[ ! -L "$LIVE/.git" ]
+mv "$LIVE/.git-pawprint-retired" "$LIVE/.git"
+git -C "$LIVE" status --porcelain        # worktree again, on main
+```
+
+Deferred cleanup, only once rollback is no longer wanted: `git -C
+~/work/pawprint worktree unlock ~/.pi && git -C ~/work/pawprint worktree
+prune`. Afterwards the rename-back does not relink (`git worktree repair`
+cannot recreate a pruned entry) — the retired gitfile is then just a file to
+delete.
 ## Drift repair
 
 ```sh
-scripts/validate.sh   # READ-ONLY audit: ~/.pi is a locked worktree of this repo
-                      # on main, status clean, main == origin/main (else DRIFT /
-                      # UNPUSHED / BEHIND per line); manifest == tracked agent/;
-                      # tools on PATH, env vars set (presence, never values),
-                      # git history free of secrets (gitleaks); exit non-zero
-                      # on any mismatch
+scripts/validate.sh   # READ-ONLY audit: ~/.pi is a plain dir whose managed
+                      # content matches this checkout (per-file DRIFT/MISSING
+                      # lines otherwise); manifest == tracked agent/; tools on
+                      # PATH, env vars set (presence, never values), git
+                      # history free of secrets (gitleaks); exit non-zero on
+                      # any mismatch
 ```
 
-Drift is a git diff in `~/.pi`: `git -C ~/.pi diff`, then keep it
-(`add -p && commit && push`) or drop it (`checkout -- <file>`).
+Drift repair is `setup.sh --apply`. To keep a value pi wrote live (a UI-toggled
+preference), copy it into the source repo first — apply leaves unmanaged live
+values alone either way.
 
 Cloudflare-routed Anthropic models failing with "credentials … expired" or
 "Credentials file not found"? Root cause is a stale Anthropic SDK profile in
@@ -125,8 +218,8 @@ touches nothing if a future pi version changes the patched lines.
 
 ## Developing
 
-The repo has a dev side that never reaches `~/.pi` (`tests/`, `scripts/` and
-the package dirs are outside the sparse cone; root files come along, unused).
+The repo has a dev side that never reaches `~/.pi` (only `agent/` content is
+ever applied; `tests/`, `scripts/` and the package dirs stay in the repo).
 
 ```sh
 npm run types       # create/refresh the local .pi-types symlink to the mise-installed Pi types
@@ -142,40 +235,45 @@ fixture repos and mktemp targets only — never this checkout's git, never
 
 ## Changing config
 
-`~/.pi` is the `main` checkout; never author on it. Start every change in its
+The source of truth is the repo, never the live dir. Start every change in its
 own worktree (`git -C ~/work/pawprint worktree add ~/work/pawprint-<branch> -b <branch> origin/main`;
 the base checkout is never edited or checked out on a branch; after merge
 `git -C ~/work/pawprint worktree remove ~/work/pawprint-<branch> && git branch -d <branch>`),
-edit, `npm test`, commit, then deploy by merging:
-`git -C ~/.pi merge --ff-only <branch> && git -C ~/.pi push && pi update --extension git:github.com/tribble/pawprint`. That is the whole
-deploy for `agent/<path>` (config). For package content (`extensions/`,
-`skills/`, `prompts/`, `themes/`) the merge only publishes; the live copy is
-pi's clone under `~/.pi/agent/git/github.com/tribble/pawprint`, refreshed by
-`pi update --extensions` (bare `pi update` is pi itself only; `/update` or
-`auto-update.ts`, ~daily, does both) and picked up on `/reload`. First cutover
-only: merge and push *before* the first `pi update --extensions`, or the clone
-is of a `main` that has no package yet and loads nothing.
+edit, `npm test`, commit, merge, then deploy (the base checkout stays detached
+— the retired worktree metadata keeps `main` reserved — so refresh it with an
+explicit fetch + fast-forward, not `pull`):
+`git -C ~/work/pawprint fetch origin main && git -C ~/work/pawprint merge --ff-only FETCH_HEAD && ~/work/pawprint/setup.sh --apply`
+— the apply's install step also pulls the floating pawprint clone to origin's
+latest, so no separate self-update step. For package content (`extensions/`,
+`skills/`, `prompts/`, `themes/`) the live copy is pi's clone under
+`~/.pi/agent/git/github.com/tribble/pawprint`, refreshed by `pi update
+--extensions` (bare `pi update` is pi itself only; `/update` or
+`auto-update.ts`, ~daily, does both) and picked up on `/reload`.
 
-Every third-party package in `agent/settings.json` is pinned (`@<sha>` /
-`@<version>`), so the daily update moves only pawprint itself; a pin moves on
-purpose. Once a week a session start says `weekly package review due —
-/packages`: `/packages` lists each pin against upstream (read-only),
-`/packages bump <name>` or `bump --all` rewrites the pin, reconciles the clone
-(`pi update --extensions`) and commits + pushes `~/.pi` — then `/reload`.
-Before bumping `pi-subagents`, see the pin note in `agent/AGENTS.md`.
+Pawprint owns package membership and the exact pins: every third-party package
+in `agent/settings.json` is pinned (`@<sha>` / `@<version>`), and the floating
+`git:github.com/tribble/pawprint` self entry is the one approved exception —
+the daily update moves only pawprint itself. Once a week a session start says
+`weekly package review due — /packages`: bare `/packages` lists each pin
+against upstream (read-only, the only route that earns review credit).
+`/packages bump <name|--all>`, `/packages install <source>` and `/packages
+remove <name>` never touch the live config — they queue a source-worktree task
+into the active session (queued means requested; nothing changed yet), and
+that agent changes `agent/settings.json` through the normal
+worktree/review/commit flow, then deploys and independently verifies both the
+saved source and the live install state. Apply replaces the live `packages`
+array wholesale with the source's, so a live-only `pi install`/`pi remove` is
+overwritten by the next apply (old clone files stay on disk) unless authored
+in source first. Before bumping `pi-subagents`, see the pin note in
+`agent/AGENTS.md`.
 
-Something pi/mcp wrote into the live config shows up in
-`git -C ~/.pi status`; keep it with
-`git -C ~/.pi add -p agent/<file> && commit && push` — `validate.sh` names the
-one routine case (pi stamping `lastChangelogVersion` after an upgrade) as
-`live:` with that command instead of `DRIFT`. Never in
-`~/.pi`: `add -f`, `add -A`, `clean`, `stash -u`, branch switches — the
-untracked files there are the credentials and sessions. A branch that starts
-tracking a path already present live (an ignored file) overwrites it on merge —
-adopt such a file from `~/.pi` (`add` + commit) instead of from a branch.
+Something pi/mcp wrote into the live config just stays there — apply never
+touches unmanaged values. Keep one intentionally by copying the value into the
+source repo and committing it; `validate.sh` reports managed-value drift.
+`~/.pi` is not a git repo: no git mutations there at all.
 
 Two structural layers keep secrets out — the default-deny `.gitignore`
-(nothing under `agent/` is tracked unless its directory is allowlisted; never
+(nothing under `agent/` is trackable unless its directory is allowlisted; never
 `agent/**`) and secrets-by-reference in the config itself. In the tracked
 `agent/mcp.json`, every secret value is a `${ENV}` reference or a `!command`
 (`"!echo Bearer $(gh auth token)"`), never a literal token or client secret;
@@ -189,7 +287,7 @@ masks `mcp-auth.json` token values, but only in `read`-tool output — a `bash` 
 one called from codemode, is not masked, so the agent/AGENTS.md rule against reading or
 copying credential contents through bash/codemode is the control on every other
 path — plus one content scan:
-`.githooks/pre-commit` runs `gitleaks` on every staged diff, in `~/.pi` too
+`.githooks/pre-commit` runs `gitleaks` on every staged diff
 (`setup.sh` sets `core.hooksPath`, repo-wide; a missing scanner fails the
 commit, since this repo is public) and `scripts/validate.sh` scans the whole
 history. Fingerprints for genuine false positives go in `.gitleaksignore`,
