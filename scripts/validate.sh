@@ -1,58 +1,104 @@
 #!/usr/bin/env bash
-# validate.sh — READ-ONLY audit: is the live config the checkout it should be?
-# Live: dirname(target) is a locked worktree of this repo, on main, status
-# clean, main == origin/main. Manifest files[] == tracked agent/ files. Every
-# manifest file catalogued (`about` entry with a `does`; no entry for a file
-# that isn't shipped). Tools on PATH. Env vars SET (presence only, never
-# values). Repo history free of secrets (gitleaks; missing scanner fails —
-# this repo is public). Exit non-zero on any mismatch.
+# validate.sh — READ-ONLY audit: does the live config match the print?
+# Live: a PLAIN dir (a leftover .git → fail naming the migration), every
+# manifest file present, source-only files byte-equal to the checkout, and
+# settings.json/mcp.json equal after field-aware application (runtime-owned
+# and unmanaged live values are not drift — scripts/apply-config.ts --check).
+# Manifest files[] == tracked agent/ files. Every manifest file catalogued
+# (`about` entry with a `does`; no entry for a file that isn't shipped). Tools
+# on PATH. Env vars SET (presence only, never values). Repo history free of
+# secrets (gitleaks; missing scanner fails — this repo is public). Exit
+# non-zero on any mismatch.
 # Usage: validate.sh [--target DIR]   (default ~/.pi/agent)
 set -uo pipefail
+ORIGIN=$PWD   # relative --target spellings resolve against the caller's cwd
 cd "$(dirname "$0")/.." || exit 1
 
+# Same lexical normalization as setup.sh (never realpath: symlink evidence
+# must survive for the shape guard). Directory identity, not spelling.
+# Entrypoints refuse '..' before this runs (see setup.sh).
+normalize_dir() {
+  local p="$1" part out=""
+  case "$p" in /*) ;; *) p="$ORIGIN/$p";; esac
+  # The COMPOSED absolute path must be one line (see setup.sh): a newline via
+  # $ORIGIN would make read below silently truncate the path.
+  case "$p" in
+    *$'\n'*) echo "refusing newline in composed path (from the caller's cwd) — a target is a single directory path" >&2; return 1;;
+  esac
+  local -a parts
+  IFS=/ read -ra parts <<<"$p"   # read -ra, not a for-list: components must never glob-expand
+  for part in ${parts[@]+"${parts[@]}"}; do   # 3.2-safe under set -u
+    case "$part" in
+      ""|.) ;;
+      ..) out="${out%/*}";;
+      *) out="$out/$part";;
+    esac
+  done
+  printf '%s\n' "${out:-/}"
+}
+
 target="$HOME/.pi/agent"
-if [ "${1:-}" = "--target" ]; then target="$2"; fi
+if [ "${1:-}" = "--target" ]; then target="${2:-}"; fi
+# Same entrypoint refusals as setup.sh, before normalization: an empty target
+# (would become the caller's cwd), a newline (read would silently truncate the
+# path at it), and any '..' component.
+[ -n "$target" ] || { echo "empty --target — pass a directory (default: ~/.pi/agent)" >&2; exit 2; }
+case "$target" in
+  *$'\n'*) echo "refusing newline in --target — a target is a single directory path" >&2; exit 2;;
+esac
+case "/$target/" in
+  */../*) echo "refusing '..' in --target: $target — use an absolute path without .." >&2; exit 2;;
+esac
+target=$(normalize_dir "$target") || exit 2   # propagate the refusal (no set -e here)
 root=$(dirname "$target")
-git=(git -C "$root")
+
+# Same shapes setup.sh refuses to write through: a symlinked component at or
+# below the target dir (ancestors above it are platform layout), a hardlinked
+# target (nlink > 1), or a non-regular entry.
+# <base> is the config ROOT (the live dir's parent): owner-writable, not
+# platform layout — ancestors above the root are.
+unsafe_shape() {  # <base> <path>
+  local base="$1" p="$2" rest c
+  case "$p" in "$base"/*) rest="${p#"$base"/}";; *) return 1;; esac
+  c="$base"
+  if [ -L "$c" ]; then return 0; fi
+  while [ -n "$rest" ]; do
+    case "$rest" in */*) c="$c/${rest%%/*}"; rest="${rest#*/}";; *) c="$c/$rest"; rest="";; esac
+    if [ -L "$c" ]; then return 0; fi
+  done
+  if [ -e "$p" ] && [ ! -f "$p" ]; then return 0; fi
+  if [ -f "$p" ] && [ -n "$(find "$p" -links +1 -print -quit 2>/dev/null)" ]; then return 0; fi
+  return 1
+}
 
 fail=0
-mine=$(git rev-parse --path-format=absolute --git-common-dir 2>/dev/null)
-if [ -z "$mine" ] || [ "$("${git[@]}" rev-parse --path-format=absolute --git-common-dir 2>/dev/null)" != "$mine" ]; then
-  echo "live NOT WORKTREE: $root is not a worktree of this repo — setup.sh --all"; fail=1
+if [ -e "$root/.git" ]; then
+  echo "live GIT-LINKED: $root/.git exists — live is a plain dir now; retire the worktree metadata (README: Retiring the worktree)"; fail=1
+elif [ ! -d "$target" ]; then
+  echo "live MISSING:  $target — setup.sh --all"; fail=1
 else
-  branch=$("${git[@]}" branch --show-current); sha=$("${git[@]}" rev-parse --short HEAD)
   live_ok=1
-  [ "$branch" = main ] || { echo "live BRANCH:   $branch (want main)"; live_ok=0; }
-  [ -e "$("${git[@]}" rev-parse --path-format=absolute --git-dir)/locked" ] ||
-    { echo "live UNLOCKED: git -C $root worktree lock --reason 'live pi config' $root"; live_ok=0; }
-  # pi stamps lastChangelogVersion into settings.json on every upgrade: when that
-  # value is the only change in the whole worktree (same bytes once the version is
-  # masked, same mode), name the keep command instead of DRIFT.
-  status=$("${git[@]}" status --porcelain)
-  stamp=""
-  mask='s/^\( *"lastChangelogVersion": *"\)[^"]*"/\1X"/'
-  if [ "$status" = " M agent/settings.json" ] &&
-     [ "$(grep -c '^ *"lastChangelogVersion":' "$root/agent/settings.json")" = 1 ] &&
-     ! "${git[@]}" -c core.fileMode=true diff --no-color agent/settings.json | grep -q '^old mode' &&
-     cmp -s <("${git[@]}" show HEAD:agent/settings.json | sed "$mask") <(sed "$mask" "$root/agent/settings.json"); then
-    stamp=$(sed -n 's/^ *"lastChangelogVersion": *"\([^"]*\)".*/\1/p' "$root/agent/settings.json")
-  fi
-  if [ -n "$stamp" ]; then
-    echo "live:          pi wrote agent/settings.json (lastChangelogVersion) — keep: git -C $root add -p agent/settings.json && git -C $root commit -m 'pi $stamp stamp' && git -C $root push"
-  else
-    while IFS= read -r line; do
-      [ -n "$line" ] || continue
-      echo "DRIFT:         ${line:3}"; live_ok=0
-    done <<<"$status"
-  fi
-  if "${git[@]}" rev-parse -q --verify origin/main >/dev/null; then
-    ahead=$("${git[@]}" rev-list --count origin/main..HEAD); behind=$("${git[@]}" rev-list --count HEAD..origin/main)
-    [ "$ahead" = 0 ] || { echo "live UNPUSHED: $ahead commit(s) — git -C $root push"; live_ok=0; }
-    [ "$behind" = 0 ] || { echo "live BEHIND:   $behind commit(s) — git -C $root pull --ff-only"; live_ok=0; }
-  else
-    echo "live NO ORIGIN: origin/main unknown"; live_ok=0
-  fi
-  if [ "$live_ok" != 1 ]; then fail=1; elif [ -z "$stamp" ]; then echo "live:          clean ($branch $sha == origin/main)"; fi
+  while IFS= read -r rel; do
+    src="$PWD/agent/$rel"; dst="$target/$rel"
+    if [ ! -e "$dst" ]; then echo "MISSING:       $rel (setup.sh --apply)"; live_ok=0; continue; fi
+    case "$rel" in
+      settings.json|mcp.json)
+        if ! out=$(node scripts/apply-config.ts --check "${rel%.json}" "$src" "$dst" 2>&1); then
+          case "$out" in
+            drift:*) echo "DRIFT:         $rel (managed values differ — setup.sh --apply)";;
+            *) echo "DRIFT:         $rel — $out";;
+          esac
+          live_ok=0
+        fi;;
+      *)
+        if unsafe_shape "$root" "$dst"; then
+          echo "DRIFT:         $rel (unsafe live shape — symlinked path, hardlink, or not a regular file; fix by hand)"; live_ok=0
+        elif ! cmp -s "$src" "$dst"; then
+          echo "DRIFT:         $rel (differs from source — setup.sh --apply)"; live_ok=0
+        fi;;
+    esac
+  done < <(jq -r '.files[]' manifest.json)
+  if [ "$live_ok" = 1 ]; then echo "live:          applied ($target matches the print)"; else fail=1; fi
 fi
 
 # manifest.json files[] is the adopters' catalog: exactly the tracked agent/ files
@@ -105,5 +151,5 @@ else
   echo "secrets FAIL:  ${err:-leak in git history — see: gitleaks git --redact -v .}"; fail=1
 fi
 
-if [ "$fail" = 0 ]; then echo "VALID: live config is the checkout"; else echo "INVALID: mismatches above" >&2; fi
+if [ "$fail" = 0 ]; then echo "VALID: live config matches the print"; else echo "INVALID: mismatches above" >&2; fi
 exit "$fail"

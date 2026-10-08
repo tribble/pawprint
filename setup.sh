@@ -1,27 +1,93 @@
 #!/usr/bin/env bash
-# pawprint: put the curated pi config on a machine.
+# pawprint: put the curated pi config on a machine. The live config dir
+# (~/.pi/agent) is a PLAIN runtime/config directory — never a git worktree.
+#   --all: the owner's machine: bootstrap the runtime (mise, pi), apply the
+#   print + install its packages, then machine machinery (agent-browser,
+#   ghostty, gh-dash).
+#   --apply: the apply step + package installs (default live target), onto an
+#   existing plain live dir. Never bootstraps pi.
 #   --only: COPIES agent/<path> into the target dir (adopters) — never symlinks:
 #   a tool writing its config through a symlink would write into this repo.
-#   Target files that differ are backed up to <path>.bak-pawprint-<ts>.
-#   --all: the owner's machine. The target's parent (~/.pi) becomes a locked,
-#   sparse (cone: agent) worktree of this repo on main — the live config IS the
-#   checkout. Files already there and equal are adopted, missing ones checked
-#   out, a differing one is DRIFT: nothing is overwritten and the run stops.
+#   On an ALTERNATE --target, differing target files are backed up to
+#   <path>.bak-pawprint-<ts>; on the default live target nothing is ever
+#   copied out (no snapshots of live files, ever).
 #
-# Usage: setup.sh (--all | --only PATH...) [--dry-run] [--target DIR] [--config-only]
+# Apply (--all/--apply): source-only files COPY from this checkout — source
+# owns them; a differing live file is overwritten with no backup (no snapshots
+# of the live dir, ever). settings.json/mcp.json — the files pi also writes —
+# merge field-aware (scripts/apply-config.ts): source values win per key,
+# runtime-owned and unmanaged live values survive, unchanged files are not
+# rewritten. Symlinked path components, hardlinked or non-regular destinations,
+# and malformed JSON are refused, never followed or overwritten. A git-linked
+# target (a leftover .git) is refused: retire the worktree metadata first
+# (README: "Retiring the worktree"). On the default live target the apply is
+# followed by native package installs (`pi install <source> --no-approve` for
+# every source in the applied settings.json; first failure exits nonzero, the
+# config stays applied) — skipped truthfully by --dry-run / --config-only / an
+# alternate target.
+#
+# Usage: setup.sh (--all | --apply | --only PATH...) [--dry-run] [--target DIR] [--config-only]
 #        setup.sh --list
 #   target default: $PAWPRINT_TARGET or ~/.pi/agent (--all needs it named agent/)
-#   --all: worktree at dirname(target) + machine machinery
+#   --all: apply the print + machine machinery
+#   --apply: apply the print only
 #   --only: copy just these manifest paths (no machinery)
 #   --list: print the catalog (manifest.json `about`, one entry per file) — a
 #   table on a TTY, JSON otherwise — and exit
-#   --config-only (alias --imprint-only): run ONLY the worktree/copy step — skip
-#   the machine-machinery section (pi install/packages/mise/ghostty/gh-dash)
+#   --config-only (alias --imprint-only): run ONLY the apply/copy step — skip
+#   package installs and the machine-machinery section (agent-browser, ghostty,
+#   gh-dash, mise types symlink)
 #   Bare setup.sh (no selector) refuses and points at the three above.
 set -euo pipefail
+ORIGIN=$PWD   # relative --target spellings resolve against the CALLER's cwd
 cd "$(dirname "$0")"
 
-dry=0 imprint_only=0 list=0 all=0 only=() target="${PAWPRINT_TARGET:-$HOME/.pi/agent}"
+# Lexical path normalization (never realpath: a symlinked component must still
+# be there for the guard to find — resolve first and the evidence is gone).
+# Absolutizes (relative → $ORIGIN), collapses //, /./, trailing slashes.
+# Entrypoints refuse '..' before this runs: collapsing it lexically could name
+# a different directory than the filesystem reaches through a symlink.
+normalize_dir() {
+  local p="$1" part out=""
+  case "$p" in /*) ;; *) p="$ORIGIN/$p";; esac
+  # The COMPOSED absolute path must be one line: a newline arriving via $ORIGIN
+  # (a caller's cwd) would make read below silently truncate the path. The raw
+  # '--target' refusal above covers a literal newline; this covers the join.
+  case "$p" in
+    *$'\n'*) echo "refusing newline in composed path (from the caller's cwd) — a target is a single directory path" >&2; return 1;;
+  esac
+  local -a parts
+  IFS=/ read -ra parts <<<"$p"   # read -ra, not a for-list: components must never glob-expand
+  for part in ${parts[@]+"${parts[@]}"}; do   # 3.2-safe under set -u
+    case "$part" in
+      ""|.) ;;
+      ..) out="${out%/*}";;   # internal callers only ($HOME); entrypoints refuse '..'
+      *) out="$out/$part";;
+    esac
+  done
+  printf '%s\n' "${out:-/}"
+}
+
+# Directory identity, not spelling: normalized-string match, or same dev:inode
+# when both exist. stat -L: identity FOLLOWS symlinks (a symlinked ~/.pi/agent
+# is still the live dir; BSD stat lstats by default) — the WRITE guards are
+# what refuse symlinked target paths, this compare only recognizes aliases.
+same_dir() {  # <dir-a> <dir-b> → 0 same, 1 confirmed different, 2 UNKNOWN
+  # capture-then-compare: a failing normalize inside a conditional's $() would
+  # yield two empty strings — false identity with the live dir. Unknown is its
+  # own status: the caller aborts rather than picking a backup rule on a guess.
+  local na nb
+  na=$(normalize_dir "$1") || return 2
+  nb=$(normalize_dir "$2") || return 2
+  if [ "$na" = "$nb" ]; then return 0; fi
+  if [ ! -d "$1" ] || [ ! -d "$2" ]; then return 1; fi   # a missing dir is confirmed different
+  local ai bi
+  ai=$(stat -L -f '%d:%i' "$1" 2>/dev/null || stat -L -c '%d:%i' "$1" 2>/dev/null) || return 2
+  bi=$(stat -L -f '%d:%i' "$2" 2>/dev/null || stat -L -c '%d:%i' "$2" 2>/dev/null) || return 2
+  [ "$ai" = "$bi" ]
+}
+
+dry=0 imprint_only=0 list=0 all=0 apply=0 only=() target="${PAWPRINT_TARGET:-$HOME/.pi/agent}"
 while [ $# -gt 0 ]; do
   case "$1" in
     --dry-run) dry=1;;
@@ -29,6 +95,7 @@ while [ $# -gt 0 ]; do
     --target) shift; target="$1";;
     --list) list=1;;
     --all) all=1;;
+    --apply) apply=1;;
     --only)  # every following arg up to the next --flag is a path
       shift; imprint_only=1
       while [ $# -gt 0 ] && [ "${1#--}" = "$1" ]; do only+=("$1"); shift; done
@@ -53,16 +120,34 @@ if [ "$list" = 1 ]; then
 fi
 
 # No selector: a visitor who runs the bare script must not get the full imprint.
-if [ "$all" = 0 ] && [ ${#only[@]} -eq 0 ]; then
+if [ "$all" = 0 ] && [ "$apply" = 0 ] && [ ${#only[@]} -eq 0 ]; then
   cat >&2 <<'EOF'
 pawprint: this is one person's pi config print. See AGENTS.md / README.
   ./setup.sh --list                 what's in it
   ./setup.sh --only <path>…         install pieces (add --dry-run first)
-  ./setup.sh --all                  owner only — makes ~/.pi a worktree of this repo
+  ./setup.sh --all                  owner only — apply the print to ~/.pi + machine bootstrap
 EOF
   exit 2
 fi
-[ "$all" = 0 ] || [ ${#only[@]} -eq 0 ] || { echo "--all and --only are exclusive" >&2; exit 2; }
+[ "$all" = 0 ] || { [ "$apply" = 0 ] && [ ${#only[@]} -eq 0 ]; } || { echo "--all, --apply and --only are exclusive" >&2; exit 2; }
+[ "$apply" = 0 ] || [ ${#only[@]} -eq 0 ] || { echo "--all, --apply and --only are exclusive" >&2; exit 2; }
+
+# Entrypoint refusals, BEFORE normalization erases the evidence: an empty
+# target (would normalize to the caller's cwd), a newline (read stops at the
+# first one — the rest of the path would silently vanish), and any '..'
+# component (a lexical collapse could pick a different directory than the
+# filesystem reaches through a symlink — refuse, never guess).
+[ -n "$target" ] || { echo "empty --target — pass a directory (default: ~/.pi/agent)" >&2; exit 2; }
+case "$target" in
+  *$'\n'*) echo "refusing newline in --target — a target is a single directory path" >&2; exit 2;;
+esac
+case "/$target/" in
+  */../*) echo "refusing '..' in --target: $target — use an absolute path without .." >&2; exit 2;;
+esac
+
+# Directory identity, not spelling: normalize once (lexically — symlink
+# evidence survives), then every boundary below works on the canonical form.
+target=$(normalize_dir "$target") || exit 2   # propagate the refusal (no silent empty target)
 
 # --only: refuse before anything is copied if a path is not in the manifest;
 # warn on each file that encodes tribble's own choices, then proceed.
@@ -84,122 +169,172 @@ if [ -e .git ] && [ "$(git config core.hooksPath)" != .githooks ]; then
   run git config core.hooksPath .githooks || { sleep 1; [ "$(git config core.hooksPath)" = .githooks ]; }
 fi
 
+# Refuse an unsafe path shape before any read or write: a symlinked component
+# at or below <base>, a non-regular final entry (never copy INTO a directory
+# collision), or a hardlinked final entry (nlink > 1 — writing it would
+# clobber the linked file). For the live side <base> is the config ROOT
+# (dirname of the target, e.g. ~/.pi): it is owner-writable, not platform
+# layout — ancestors above the root (e.g. macOS /var → /private/var) are.
+guard_path() {  # <base> <path> <rel>
+  local base="$1" p="$2" rel="$3" rest c
+  case "$p" in "$base"/*) rest="${p#"$base"/}";; *) echo "REFUSED:       $rel — $p is not under $base" >&2; return 1;; esac
+  c="$base"
+  if [ -L "$c" ]; then echo "REFUSED:       $rel — symlinked path component: $c" >&2; return 1; fi
+  while [ -n "$rest" ]; do
+    case "$rest" in */*) c="$c/${rest%%/*}"; rest="${rest#*/}";; *) c="$c/$rest"; rest="";; esac
+    if [ -L "$c" ]; then echo "REFUSED:       $rel — symlinked path component: $c" >&2; return 1; fi
+  done
+  if [ -e "$p" ] && [ ! -f "$p" ]; then echo "REFUSED:       $rel — not a regular file: $p" >&2; return 1; fi
+  if [ -f "$p" ] && [ -n "$(find "$p" -links +1 -print -quit)" ]; then
+    echo "REFUSED:       $rel — hardlinked elsewhere: $p" >&2; return 1
+  fi
+  return 0
+}
+
+guard_paths() {  # <src> <dst> <rel>
+  guard_path "$PWD/agent" "$1" "$3" || return 1
+  guard_path "$(dirname "$target")" "$2" "$3" || return 1
+  return 0
+}
+
+# Copy one source-only manifest file into the target dir.
+# $2 nonempty: back up a differing target file first (--only on an alternate
+# target, adopters). $2 empty: overwrite (--all/--apply — source owns these
+# files; no snapshots).
+imprint_copy() {  # <rel> <backup-ts|"">
+  local rel="$1" ts="$2" dst="$target/$1" src="$PWD/agent/$1"
+  guard_paths "$src" "$dst" "$rel" || return 1
+  if [ ! -f "$src" ]; then
+    echo "REFUSED:       $rel — source is missing or not a regular file: $src" >&2
+    return 1
+  fi
+  if [ -f "$dst" ] && cmp -s "$src" "$dst"; then
+    echo "ok (same):     $dst"
+    return 0
+  fi
+  if [ -n "$ts" ] && [ -e "$dst" ]; then
+    run cp -a "$dst" "$dst.bak-pawprint-$ts"
+    echo "backed up:     $dst -> $dst.bak-pawprint-$ts"
+  fi
+  run mkdir -p "$(dirname "$dst")"
+  run cp -a "$src" "$dst"     # -a: preserve modes (exec bits) + timestamps
+  echo "imprinted:     $dst"
+}
+
+# settings.json/mcp.json — the files pi writes too — merge field-aware, so
+# runtime-owned and unmanaged live values survive (scripts/apply-config.ts,
+# which also resolves pi's installed package: PAWPRINT_PI_PKG, mise, npm -g,
+# or a PATH-installed pi). A settings apply on a machine without pi fails with
+# a clear message — run --all, which bootstraps the runtime first.
+apply_json() {  # <rel> (settings.json|mcp.json)
+  local rel="$1" kind="${1%%.json}"
+  if [ ! -f "$PWD/agent/$rel" ]; then
+    # a selected file that cannot be applied must not report success
+    echo "REFUSED:       $rel — source is missing or not a regular file: $PWD/agent/$rel" >&2
+    return 1
+  fi
+  run node "$PWD/scripts/apply-config.ts" "$kind" "$PWD/agent/$rel" "$target/$rel"
+}
+
 # ------------------------------------------------------- --only: copy in ---
 if [ ${#only[@]} -gt 0 ]; then
-  ts=$(date +%Y%m%d%H%M%S)
+  # Backups are for adopters onto an ALTERNATE target; on the owner's live
+  # dir — however spelled — --only never copies a live file (no snapshots).
+  # Backups only on CONFIRMED difference: an identity error aborts — guessing
+  # either way is prohibited (a live backup, or an adopter file overwritten
+  # without the backup it was promised).
+  ts=""
+  rc=0
+  same_dir "$target" "$HOME/.pi/agent" || rc=$?
+  case "$rc" in
+    0) ;;
+    1) ts=$(date +%Y%m%d%H%M%S);;
+    *) echo "cannot confirm whether the target is the live dir — refusing to copy" >&2; exit 1;;
+  esac
+  # A --only naming settings.json/mcp.json needs pi's package (native settings
+  # writer, MCP merge validation) — resolve it before the first SELECTED
+  # write; source-only selections need no runtime. --dry-run skips resolution.
+  if [ "$dry" = 0 ] && printf '%s\n' "${only[@]}" | grep -qE '^(settings|mcp)\.json$'; then
+    PAWPRINT_PI_PKG=$(node "$PWD/scripts/apply-config.ts" --resolve-pi)
+    export PAWPRINT_PI_PKG
+  fi
   printf '%s\n' "${only[@]}" | while IFS= read -r rel; do
-    dst="$target/$rel"
-    src="$PWD/agent/$rel"
-    if [ -f "$dst" ] && cmp -s "$src" "$dst"; then
-      echo "ok (same):     $dst"
-      continue
-    fi
-    if [ -e "$dst" ]; then
-      run cp -a "$dst" "$dst.bak-pawprint-$ts"
-      echo "backed up:     $dst -> $dst.bak-pawprint-$ts"
-    fi
-    [ -f "$src" ] || continue   # index lists it but worktree lacks it
-    run mkdir -p "$(dirname "$dst")"
-    run cp -a "$src" "$dst"     # -a: preserve modes (exec bits) + timestamps
-    echo "imprinted:     $dst"
+    case "$rel" in
+      settings.json|mcp.json) apply_json "$rel";;
+      *) imprint_copy "$rel" "$ts";;
+    esac
   done
   echo
   echo "machine machinery: SKIPPED (--only)"
   exit 0
 fi
 
-# ------------------------------------------------- --all: live worktree ---
-# The live config dir must be the cone (agent/) of the worktree at its parent.
-[ "$(basename "$target")" = agent ] || { echo "--all: target must be an agent/ dir (got $target)" >&2; exit 2; }
-root=$(dirname "$target")
-git=(git --literal-pathspecs -C "$root")   # literal: a tracked name like `[ab].ts` must never glob onto siblings
-# Nested .gitignore files under the live agent/ that git would READ under the
-# policy of <rev>: a nested file can un-ignore anything, so any active one is
-# DRIFT. One inside a directory the policy ignores (package clones under
-# agent/git/…) is inert — git never re-includes below an excluded parent.
-# Judged in a scratch repo holding only <rev>'s .gitignore.
-nested_ignores() {
-  [ -d "$target" ] || return 0
-  local policy rel; policy=$(mktemp -d "$root/pi.policy.XXXXXX")
-  git -C "$policy" init -q; git show "$1:.gitignore" > "$policy/.gitignore"
-  find "$target" -iname .gitignore -print0 | while IFS= read -r -d '' f; do   # -iname: the live fs may be case-insensitive
-    rel=${f#"$root/"}; mkdir -p "$policy/$(dirname "$rel")"    # dir patterns (`!agent/`) only match a directory that exists
-    git -C "$policy" check-ignore -q --no-index "$(dirname "$rel")" || echo "$rel"
-  done
-  rm -rf "$policy"
-}
-# Something already on disk where git wants to write $1 — the path itself (a
-# dir, a symlink, an ignored live file), a symlink on the way, a non-dir
-# parent: git would replace it, so it is DRIFT instead. Prints the blocker.
-in_the_way() {
-  local p="$root" rest="$1"
-  while [ -n "$rest" ]; do   # component walk by parameter expansion: safe for spaces, non-ASCII, even newlines
-    p="$p/${rest%%/*}"; [ "${rest#*/}" != "$rest" ] && rest="${rest#*/}" || rest=""
-    if [ -L "$p" ] || { [ "$p" = "$root/$1" ] && [ -e "$p" ]; } || { [ -e "$p" ] && [ ! -d "$p" ]; }; then echo "$p"; return; fi
-  done
-}
-common=$(git rev-parse --path-format=absolute --git-common-dir)
-if [ "$("${git[@]}" rev-parse --path-format=absolute --git-common-dir 2>/dev/null)" != "$common" ]; then
-  [ -e "$root/.git" ] && { echo "$root is a git checkout of something else — not touching it" >&2; exit 1; }
-  if [ "$dry" = 1 ]; then echo "DRY: make $root a locked sparse worktree (agent/) of $PWD on main"; exit 0; fi
-  # The ignore policy is what keeps auth.json & co out of git: before .git is
-  # attached, the live tree must carry either no .gitignore or exactly main's,
-  # and no nested one that git would read (a nested file can un-ignore anything;
-  # one inside a directory main's policy ignores — package clones under
-  # agent/git/… — is inert: git never re-includes below an excluded parent).
-  # Judged with MAIN's policy, in a scratch repo holding only that file.
-  if [ -L "$root/.gitignore" ] || { [ -e "$root/.gitignore" ] && ! cmp -s "$root/.gitignore" <(git show main:.gitignore); }; then
-    echo "DRIFT:         .gitignore (must be main's as a regular file, or absent) — not attaching" >&2; exit 1
-  fi
-  mkdir -p "$root"
-  nested=$(nested_ignores main)
-  [ -z "$nested" ] || { sed "s#^#DRIFT:         #; s#\$# (nested ignore file overrides the allowlist) — not attaching#" <<<"$nested" >&2; exit 1; }
-  # main can be checked out once; this checkout gives it up (no file changes).
-  [ "$(git branch --show-current)" != main ] || { git switch -q --detach; echo "detached $PWD from main: main now lives in $root"; }
-  # `worktree add` wants an empty path; the live dir is not. Add at a scratch
-  # path, move the .git pointer file over, let git repair the back-link.
-  scratch=$(mktemp -d "$root/pi.XXXXXX")
-  git worktree add -q --no-checkout --lock --reason "live pi config" "$scratch" main || { rmdir "$scratch"; exit 1; }
-  mv "$scratch/.git" "$root/.git" && rmdir "$scratch"
-  git worktree repair "$root" >/dev/null 2>&1
-  "${git[@]}" sparse-checkout set --cone agent .githooks   # .githooks: the gitleaks pre-commit hook
-  "${git[@]}" reset -q   # index = main, files untouched
-  [ -e "$root/.gitignore" ] || "${git[@]}" checkout -q -- .gitignore   # ignore policy in place before anything else
-  echo "worktree:      $root (main, sparse: agent/ .githooks/, locked)"
+# ------------------------------- runtime bootstrap (fresh machines, --all) ---
+# The settings/mcp apply needs pi's installed package, which a fresh machine
+# does not have yet — establish the runtime BEFORE the apply. --apply/--only
+# never bootstrap. Same conditions as the machinery below (the rest of it — the
+# tools — still runs after the apply, against the applied settings).
+if [ "$all" = 1 ] && [ "$dry" = 0 ] && [ "$imprint_only" = 0 ] && [ "$target" = "$HOME/.pi/agent" ]; then
+  command -v mise >/dev/null 2>&1 && { mise trust -q mise.toml 2>/dev/null; mise install; }
+  command -v pi >/dev/null 2>&1 || npm install -g @earendil-works/pi-coding-agent
 fi
-[ "$("${git[@]}" branch --show-current)" = main ] || { echo "$root is not on main — fix by hand" >&2; exit 1; }
-drift=""
-# Missing files: only a truly absent path is checked out.
-while IFS= read -r -d '' f; do
-  b=$(in_the_way "$f")
-  if [ -n "$b" ]; then drift+="$f (in the way: $b)"$'\n'; continue; fi
-  run "${git[@]}" checkout -q -- "$f"; echo "checked out:   $root/$f"
-done < <("${git[@]}" diff -z --name-only --diff-filter=D)
-# Never overwrite a live file: a differing one is DRIFT, resolve it in $root with git.
-drift+=$("${git[@]}" status --porcelain | grep -v '^ D ' | cut -c4- || true)
-if [ -n "$drift" ]; then
-  sed '/^$/d; s/^/DRIFT:         /' <<<"$drift" >&2
-  echo "resolve in $root (git add -p / git checkout -- <file>), then re-run" >&2
+
+# -------------------------------------- --all / --apply: plain live dir ---
+if [ "$all" = 1 ]; then
+  [ "$(basename "$target")" = agent ] || { echo "--all: target must be an agent/ dir (got $target)" >&2; exit 2; }
+fi
+root=$(dirname "$target")
+if [ -e "$root/.git" ]; then
+  echo "$root is still git-linked — retire the worktree metadata first (README: Retiring the worktree), then re-run" >&2
   exit 1
 fi
-# Clean: bring main up to date. An incoming NEW file landing on something live
-# (an ignored file, say) would be silently replaced by the merge — DRIFT instead.
-if [ "$dry" = 0 ] && "${git[@]}" rev-parse -q --verify '@{u}' >/dev/null 2>&1; then
-  "${git[@]}" fetch -q
-  while IFS= read -r -d '' f; do
-    b=$(in_the_way "$f"); [ -z "$b" ] || drift+="$f (incoming from origin, in the way: $b)"$'\n'
-  done < <("${git[@]}" diff -z --name-only --no-renames --diff-filter=AT HEAD '@{u}')
-  # the incoming policy may un-ignore a directory that holds a (so far inert) nested .gitignore
-  while IFS= read -r f; do [ -z "$f" ] || drift+="$f (nested ignore file, active under the incoming .gitignore)"$'\n'; done < <(nested_ignores "$("${git[@]}" rev-parse '@{u}')")
-  if [ -n "$drift" ]; then
-    sed '/^$/d; s/^/DRIFT:         /' <<<"$drift" >&2
-    echo "move it aside (or git add it in $root), then re-run" >&2
-    exit 1
-  fi
-  "${git[@]}" merge -q --ff-only '@{u}'
+# settings.json/mcp.json both need pi's installed package: resolve it ONCE —
+# modules and exports checked by apply-config.ts --resolve-pi — before ANY
+# manifest write, then reuse it for every per-file apply. --all's bootstrap
+# above supplies it on a fresh machine; --apply never bootstraps, so a missing
+# pi refuses here with nothing written. --dry-run skips resolution.
+if [ "$dry" = 0 ]; then
+  PAWPRINT_PI_PKG=$(node "$PWD/scripts/apply-config.ts" --resolve-pi)
+  export PAWPRINT_PI_PKG
 fi
-echo "live:          clean ($root on main $("${git[@]}" rev-parse --short HEAD))"
-
+jq -r '.files[]' manifest.json | while IFS= read -r rel; do
+  case "$rel" in
+    settings.json|mcp.json) apply_json "$rel";;
+    *) imprint_copy "$rel" "";;
+  esac
+done
+# ----------------------------------- package install (applied settings) ---
+# The apply above made the live settings.json's package list the source's
+# (arrays replace wholesale). Install every declared source natively:
+# `pi install <source> --no-approve` reconciles a clone to the configured
+# git/npm pin and keeps object-form resource filters. No skip-if-clone-present,
+# no warn-and-continue: a stale clone at the wrong pin is what the native
+# install fixes, and the FIRST failure exits nonzero — config applied, packages
+# incomplete, never claim success.
+# PI_CODING_AGENT_DIR binds pi to THIS target. --apply never bootstraps pi
+# (--all's bootstrap did, above); a missing pi surfaces as the first failed
+# install. Skipped truthfully on --dry-run / --config-only / a non-default
+# target.
+if [ "$dry" = 1 ] || [ "$imprint_only" = 1 ] || [ "$target" != "$HOME/.pi/agent" ]; then
+  echo
+  echo "package installation: SKIPPED (dry-run / --config-only / non-default target)"
+else
+  pkg_sources=$(jq -r '.packages[]? | if type == "object" then .source else . end' "$target/settings.json")
+  while IFS= read -r src; do
+    [ -n "$src" ] || continue
+    if ! PI_CODING_AGENT_DIR="$target" pi install "$src" --no-approve; then
+      echo "config applied, but package installation INCOMPLETE — failed source: $src" >&2
+      if [ "$all" = 1 ]; then mode=all; else mode=apply; fi
+      echo "retry: $0 --$mode   # re-applies the config, then re-runs the remaining setup" >&2
+      exit 1
+    fi
+  done <<< "$pkg_sources"
+fi
+if [ "$apply" = 1 ]; then
+  echo
+  echo "machine machinery: SKIPPED (--apply)"
+  exit 0
+fi
 echo
 echo "Manual steps remain: /login cloudflare-ai-gateway (or env) · pi mcp login <server> per OAuth server · /trust per project — see README."
 
@@ -215,29 +350,13 @@ fi
 : "${CLOUDFLARE_ACCOUNT_ID:?set it in ~/.config/fish/conf.d first — see README}"
 : "${CLOUDFLARE_GATEWAY_ID:?set it in ~/.config/fish/conf.d first — see README}"
 
-command -v pi >/dev/null 2>&1 || npm install -g @earendil-works/pi-coding-agent
-
+# pi and the mise toolchain were installed by the bootstrap above (or existed).
 # toolchain (typecheck): pinned via mise.toml at the repo root; tsconfig resolves
 # pi's types through .pi-types → the mise-installed pi's package store (also has
 # @types/node). `npm run types` refreshes the symlink in any checkout.
-command -v mise >/dev/null 2>&1 && { mise trust -q mise.toml 2>/dev/null; mise install; }
-command -v mise >/dev/null 2>&1 && pi_dir="$(mise where npm:@earendil-works/pi-coding-agent)" && ln -sfn "$pi_dir/node_modules/.mise/node_modules" .pi-types
+command -v mise >/dev/null 2>&1 && pi_dir="$(mise where npm:@earendil-works/pi-coding-agent)" && ln -sfn "$pi_dir/node_modules/.mise/node_modules" .pi-types || true
 command -v agent-browser >/dev/null 2>&1 || npm install -g agent-browser
 agent-browser install >/dev/null 2>&1 || true   # browser runtime
-
-# Packages: settings.json is the manifest — the LIVE one in $target, not this
-# (possibly stale) checkout's. Skip any whose clone already exists —
-# re-running `pi install` on a listed source risks rewriting filtered
-# object-form entries (e.g. the kit's extension filters).
-jq -r '.packages[] | if type == "object" then .source else . end' "$target/settings.json" |
-  while IFS= read -r src; do
-    dir="$target/git/$(printf '%s' "$src" | sed -E 's#^(git:|https?://|ssh://git@)##; s#:#/#; s#\.git$##')"
-    if [ -d "$dir" ]; then
-      echo "skip (present): $src"
-    else
-      pi install "$src" --no-approve || echo "WARN: $src failed"
-    fi
-  done
 
 # ghostty: canonical config lives in this repo; install to the path Ghostty honors
 if [ -d /Applications/Ghostty.app ]; then

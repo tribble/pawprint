@@ -5,5 +5,5 @@
       "suspicious": { "noExplicitAny": "error" }
     }
   },
-  "files": { "includes": ["extensions/**", "tests/**", "scripts/compare.ts"] }
+  "files": { "includes": ["extensions/**", "tests/**", "scripts/compare.ts", "scripts/apply-config.ts"] }
 }
