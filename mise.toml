@@ -3,4 +3,5 @@
 [tools]
 node = "24"
 "npm:typescript" = "7.0.2"
-"npm:@biomejs/biome" = "2.5.14"
+"npm:oxlint" = "1.87.0"
+"npm:oxlint-tsgolint" = "7.0.2003"

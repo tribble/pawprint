@@ -1,9 +1,0 @@
-{
-  "linter": {
-    "rules": {
-      "preset": "none",
-      "suspicious": { "noExplicitAny": "error" }
-    }
-  },
-  "files": { "includes": ["extensions/**", "tests/**", "scripts/compare.ts", "scripts/apply-config.ts"] }
-}

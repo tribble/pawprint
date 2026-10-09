@@ -6,7 +6,7 @@ piece"). This file is for changing this repo.
 - One worktree per change: `git -C ~/work/pawprint worktree add ~/work/pawprint-<branch> -b <branch> origin/main`;
   remove it after merge. `~/work/pawprint` is never edited; `~/.pi` is a plain runtime/config dir — managed
   config lands there only via `setup.sh --apply`, never by hand-editing managed files; nothing is ever `npm install`ed here or in `~/.pi`.
-- The gate is `npm test`: `biome lint` (no `any`; opt out per line with a reason), `tsc`, then the node tests. Red = not done.
+- The gate is `npm test`: `oxlint` (type-aware via tsgolint; no `any`, no floating/misused promises; opt out per line with a reason), `tsc`, then the node tests. Red = not done.
 - Toolchain is mise: `tsc`, `node`, `pi` come from it. Never `npx`. Pi's install is
   `$(mise where npm:@earendil-works/pi-coding-agent)/node_modules/@earendil-works/pi-coding-agent` — its `docs/` and `dist/`
   are there; read them instead of guessing pi's behaviour.

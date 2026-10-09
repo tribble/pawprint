@@ -16,7 +16,7 @@ import { mktmp, piPackageDir } from "./fixture.ts";
 const REPO = join(import.meta.dirname, "..");
 const SRC = join(REPO, "agent");
 
-// biome-ignore lint/suspicious/noExplicitAny: fixture assertions index parsed JSON without narrowing every level
+// oxlint-disable-next-line typescript/no-explicit-any -- fixture assertions index parsed JSON without narrowing every level
 type Json = Record<string, any>;
 const srcSettings: Json = JSON.parse(readFileSync(join(SRC, "settings.json"), "utf8"));
 const srcMcp: Json = JSON.parse(readFileSync(join(SRC, "mcp.json"), "utf8"));
