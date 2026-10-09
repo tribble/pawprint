@@ -2,11 +2,15 @@
 // a named tab in the caller's workspace and prompts it. All herdr calls are fake pi.exec records.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from "node:fs";
+import { mkdtempSync, mkdirSync, writeFileSync, rmSync, readFileSync, realpathSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { makePi, makeCtx } from "./harness.mjs";
 import herdrFleet from "../extensions/herdr-fleet.ts";
+import { setAgentDir } from "./stubs/pi-coding-agent.mjs";
+
+const sourceAgentDir = new URL("../agent", import.meta.url).pathname;
+setAgentDir(sourceAgentDir);
 
 const agentsReply = (agents: unknown) => ({
   code: 0,
@@ -18,6 +22,7 @@ const agentsReply = (agents: unknown) => ({
 // pin both so tests are the same inside and outside herdr.
 process.env.HERDR_PANE_ID = "wH:p1";
 process.env.HERDR_ENV = "1";
+delete process.env.PI_SUBAGENT_CHILD; // Exercise the interactive parent boundary unless a case selects a leaf.
 const ME = { name: "coordinator-test", agent_status: "idle", cwd: "/tmp/me", pane_id: "wH:p1", workspace_id: "wH" };
 // Children are addressed to my intercom ID (pi-<sha256(session id)[0:32]>), never my name, which can change.
 // sha256("fleet-sess").hex[0:32], precomputed so the test does not share the implementation's formula.
@@ -87,21 +92,24 @@ const delegateExec = (roster: unknown[]) => async (_c: string, args: string[]) =
   return { code: 0, stdout: JSON.stringify({ result: {} }), stderr: "" };
 };
 
-test("/delegate: agent list → tab in MY workspace → agent start --name → prompt --wait --until working (task + report-to-my-ID/close contract; Owner outcome alone passes the gate)", async () => {
+test("/delegate: tab in MY workspace → explicit profile → pane-targeted task (verbatim owner + parent/close contract)", async () => {
   const pi = makePi({ execImpl: delegateExec([ME]) });
   herdrFleet(pi);
   const ctx = fleetCtx();
   await pi.commands.delegate.handler("scout Owner outcome: fix the flake", ctx);
-  assert.deepEqual(pi.execCalls.slice(0, 3), [
+  assert.deepEqual(pi.execCalls.slice(0, 2), [
     ["herdr", "agent", "list"],
     // a tab in the caller's workspace (grouped sidebar nests it under the caller), never a new workspace;
     // the spawner is identified by intercom ID, not by its (renamable) session name
-    ["herdr", "tab", "create", "--workspace", "wH", "--cwd", process.cwd(), "--label", "scout", "--no-focus", "--env", `PI_SPAWNED_BY=${MY_ID}`],
-    // --name: the child's human name (session name = herdr agent name)
-    ["herdr", "agent", "start", "scout", "--kind", "pi", "--pane", "wH:p2", "--timeout", "60000", "--", "--name", "scout", "--thinking", "max"],
+    ["herdr", "tab", "create", "--workspace", "wH", "--cwd", process.cwd(), "--label", "scout", "--no-focus", "--env", `PI_CODING_AGENT_DIR=${sourceAgentDir}`, "--env", `PI_SPAWNED_BY=${MY_ID}`],
   ]);
+  const start = pi.execCalls[2];
+  assert.deepEqual(start.slice(0, 13), ["herdr", "agent", "start", "scout", "--kind", "pi", "--pane", "wH:p2", "--timeout", "60000", "--", "--name", "scout"]);
+  assert.equal(start[start.indexOf("--model") + 1], "cloudflare-ai-gateway/gpt-6-astra");
+  assert.equal(start[start.indexOf("--thinking") + 1], "high");
+  assert.match(readFileSync(start[start.indexOf("--append-system-prompt") + 1], "utf8"), /Coder/);
   const [prompt, ...rest] = pi.execCalls[3].slice(4);
-  assert.deepEqual([pi.execCalls[3].slice(0, 4), rest], [["herdr", "agent", "prompt", "scout"], ["--wait", "--until", "working", "--timeout", "10000"]]);
+  assert.deepEqual([pi.execCalls[3].slice(0, 4), rest], [["herdr", "agent", "prompt", "wH:p2"], ["--wait", "--until", "working", "--timeout", "10000"]]);
   assert.ok(prompt.startsWith("Owner outcome: fix the flake\n\n"), prompt);
   assert.ok(!prompt.includes("Approved mock"), prompt);
   assert.ok(prompt.includes("Copy the `Owner outcome:` block unchanged into every subagent brief"), prompt);
@@ -129,7 +137,7 @@ test("/delegate: names taken by live agents → next free suffix for label, agen
   assert.equal(pi.execCalls[1][8], "scout-11"); // --label
   assert.equal(pi.execCalls[2][3], "scout-11"); // agent start <name>
   assert.equal(pi.execCalls[2][12], "scout-11"); // -- --name <name>
-  assert.equal(pi.execCalls[3][3], "scout-11"); // agent prompt <name>
+  assert.equal(pi.execCalls[3][3], "wH:p2"); // delivery targets the returned pane
 });
 
 test("/delegate: tab without pane_id → error notify", async () => {
@@ -168,15 +176,22 @@ function withWsConfig(repos: Record<string, string> | null, fn: () => Promise<vo
 
 test("/ws <repo-id> <slug>: explicit id + slug → no model call, de-duped label, pi --name in that dir", () =>
   withWsConfig({ workos: "~/work/workos" }, async () => {
-    const pi = makePi({ execImpl: wsExec(["fix-flaky-tests"]) });
+    const pi = makePi({ execImpl: wsExec(["fix-flaky-tests-coordinator"]) });
     herdrFleet(pi);
     const ctx = makeCtx();
     await pi.commands.ws.handler("workos fix-flaky-tests", ctx);
-    assert.deepEqual(pi.execCalls, [
+    assert.deepEqual(pi.execCalls.slice(0, 2), [
       ["herdr", "agent", "list"],
-      ["herdr", "workspace", "create", "--cwd", `${process.env.HOME}/work/workos`, "--label", "fix-flaky-tests-2"],
-      ["herdr", "agent", "start", "fix-flaky-tests-2", "--kind", "pi", "--pane", "p3", "--timeout", "60000", "--", "--name", "fix-flaky-tests-2"],
+      ["herdr", "workspace", "create", "--cwd", `${process.env.HOME}/work/workos`, "--label", "fix-flaky-tests-coordinator-2", "--env", `PI_CODING_AGENT_DIR=${sourceAgentDir}`],
     ]);
+    const start = pi.execCalls[2];
+    assert.deepEqual(start.slice(0, 13), ["herdr", "agent", "start", "fix-flaky-tests-coordinator-2", "--kind", "pi", "--pane", "p3", "--timeout", "60000", "--", "--name", "fix-flaky-tests-coordinator-2"]);
+    assert.equal(pi.execCalls.length, 3);
+    assert.equal(start[start.indexOf("--model") + 1], "cloudflare-ai-gateway/gpt-6-astra");
+    assert.equal(start[start.indexOf("--thinking") + 1], "high");
+    assert.match(readFileSync(start[start.indexOf("--append-system-prompt") + 1], "utf8"), /Coordinator/);
+    assert.match(start.at(-1), /interactive/);
+    assert.ok(!start.includes("--approve"));
   }));
 
 test("/ws <prose>: model picks name AND repo from the configured ids only", () =>
@@ -206,7 +221,7 @@ test("/ws <prose>: model picks name AND repo from the configured ids only", () =
     assert.deepEqual(seenOpts?.env, { E: "x" });
     assert.ok(seenOpts && !("reasoning" in seenOpts), "planning call must not enable reasoning");
     assert.equal(pi.execCalls[1][4], `${process.env.HOME}/work/workos`);
-    assert.equal(pi.execCalls[1][6], "fix-flaky-mac-tests");
+    assert.equal(pi.execCalls[1][6], "fix-flaky-mac-tests-coordinator");
   }));
 
 test("/ws: model can't place it / unknown repo → error, nothing created", () =>
@@ -322,10 +337,10 @@ test("/delegate: 32-char and underscored names are legal; a 32-char collision ke
   assert.notEqual(used, taken32);
   assert.equal(used.length, 32, used);
   assert.match(used, /^[a-z][a-z0-9_-]{0,31}$/);
-  assert.equal(pi2.execCalls[3][3], used, "prompt targets the suffixed name");
+  assert.equal(pi2.execCalls[3][3], "wH:p2", "prompt targets the returned pane");
 });
 
-test("/ws with explicit dir: legal single-token names used directly; illegal ones rejected before planning; multi-word purposes still generate legal names", () =>
+test("/ws with explicit dir: legal names gain Coordinator suffix; illegal names rejected before planning; multi-word purposes still plan", () =>
   withWsConfig({ workos: "~/work/workos" }, async () => {
     const slug32 = `a${"b".repeat(31)}`;
     const pi = makePi({ execImpl: wsExec([]) });
@@ -345,10 +360,10 @@ test("/ws with explicit dir: legal single-token names used directly; illegal one
     };
     await pi.commands.ws.handler(`workos ${slug32}`, ctx);
     assert.equal(modelCalls, 0, "a legal 32-char slug needs no model call");
-    assert.equal(pi.execCalls[2][3], slug32);
+    assert.equal(pi.execCalls[2][3], `a${"b".repeat(19)}-coordinator`);
     await pi.commands.ws.handler("workos my_agent", ctx);
     assert.equal(modelCalls, 0, "an underscored single-token name is legal");
-    assert.equal(pi.execCalls[5][3], "my_agent");
+    assert.equal(pi.execCalls[5][3], "my_agent-coordinator");
     for (const bad of ["3d-printing-fix", "a".repeat(33), "FixFlaky"]) {
       const before = pi.execCalls.length;
       await pi.commands.ws.handler(`workos ${bad}`, ctx);
@@ -420,3 +435,442 @@ test("/ws: agent start failure names the new workspace child and pane for inspec
     assert.ok(note.msg.includes("herdr agent get p3"), note.msg);
     assert.ok(note.msg.includes("herdr agent read p3 --source recent-unwrapped"), note.msg);
   }));
+
+test("launch_agent and /delegate share effective cwd, unique names, parent, topology and owner bytes", async () => {
+  const task = "Owner outcome:\nKeep `this` exactly.\n\nDerived design: small slice.";
+  const directory = realpathSync(mkdtempSync(join(tmpdir(), "fleet-cwd-")));
+  try {
+    const runs = [];
+    for (const human of [true, false]) {
+      const pi = makePi({ execImpl: delegateExec([ME, { name: "lead" }]) });
+      const ctx = fleetCtx();
+      pi.events.on("pi-change-working-dir:resolve-execution-cwd", (request: { sessionManager: unknown; result?: { cwd: string } }) => {
+        assert.equal(request.sessionManager, ctx.sessionManager);
+        request.result = { cwd: directory };
+      });
+      herdrFleet(pi);
+      if (human) await pi.commands.delegate.handler(`lead ${task}`, ctx);
+      else {
+        assert.ok(pi.tools.launch_agent, "distinct model-callable launcher");
+        assert.equal(pi.tools.delegate, undefined, "pi-subagents owns delegate");
+        const result = await pi.tools.launch_agent.execute("launch", { name: "lead", task }, undefined, undefined, ctx);
+        assert.equal(result.details.cwd, directory);
+        assert.equal(result.details.parent, MY_ID);
+      }
+      assert.equal(pi.execCalls[1][6], directory, "event cwd, not stale session/process cwd");
+      assert.ok(pi.execCalls[1].includes("--no-focus"));
+      assert.ok(pi.execCalls[1].includes(`PI_SPAWNED_BY=${MY_ID}`));
+      assert.equal(pi.execCalls[2][3], "lead-2");
+      assert.ok(pi.execCalls[3][4].startsWith(`${task}\n\n`), "verbatim task");
+      assert.ok(!pi.execCalls.flat().includes("--approve"));
+      assert.match(readFileSync(pi.execCalls[2][pi.execCalls[2].indexOf("--append-system-prompt") + 1], "utf8"), /three.*rounds/i);
+      assert.match(pi.execCalls[2].at(-1), /publishing|publish/);
+      runs.push(pi.execCalls);
+    }
+    assert.deepEqual(runs[0], runs[1]);
+  } finally {
+    rmSync(directory, { recursive: true, force: true });
+  }
+});
+
+test("role config independently selects model, effort and instructions without changing global defaults", async () => {
+  const configDir = mkdtempSync(join(tmpdir(), "fleet-profiles-"));
+  const settingsBefore = readFileSync(join(sourceAgentDir, "settings.json"), "utf8");
+  mkdirSync(join(configDir, "configs"));
+  writeFileSync(join(configDir, "configs/session-roles.json"), JSON.stringify({
+    coder: { model: "example/coder", thinking: "low", instructionsFile: "coder.md" },
+    coordinator: { model: "example/coordinator", thinking: "max", instructionsFile: "coordinator.md" },
+  }));
+  writeFileSync(join(configDir, "configs/coder.md"), "Coder selected instructions.\nFull multiline body.\n");
+  writeFileSync(join(configDir, "configs/coordinator.md"), "Coordinator selected instructions.\nFull multiline body.\n");
+  setAgentDir(configDir);
+  try {
+    for (const [role, model, thinking] of [["coder", "example/coder", "low"], ["coordinator", "example/coordinator", "max"]]) {
+      const launches = [];
+      for (const human of [true, false]) {
+        const pi = makePi({ execImpl: delegateExec([ME]) });
+        herdrFleet(pi);
+        if (human) await pi.commands.delegate.handler(`--role ${role} lead Owner outcome: do thing`, fleetCtx());
+        else await pi.tools.launch_agent.execute("role", { name: "lead", task: "Owner outcome: do thing", role }, undefined, undefined, fleetCtx());
+        const start = pi.execCalls[2];
+        assert.ok(start, "profile selected and launched");
+        assert.equal(start[start.indexOf("--model") + 1], model);
+        assert.equal(start[start.indexOf("--thinking") + 1], thinking);
+        assert.ok(readFileSync(start[start.indexOf("--append-system-prompt") + 1], "utf8").includes(`${role === "coder" ? "Coder" : "Coordinator"} selected instructions.`));
+        assert.match(start.at(-1), /Mode: delegated/);
+        assert.ok(pi.execCalls[1].includes(`PI_CODING_AGENT_DIR=${configDir}`));
+        assert.ok(pi.execCalls[1].includes(`PI_SPAWNED_BY=${MY_ID}`));
+        assert.ok(start.at(-1).includes(MY_ID));
+        assert.match(start.at(-1), /authority/i);
+        assert.match(start.at(-1), /paused/i);
+        launches.push(pi.execCalls);
+      }
+      assert.deepEqual(launches[0], launches[1]);
+    }
+    const ws = makePi({ execImpl: wsExec([]) });
+    herdrFleet(ws);
+    await ws.commands.ws.handler(`${configDir} profile-coordinator`, fleetCtx());
+    const interactive = ws.execCalls[2];
+    assert.equal(interactive[interactive.indexOf("--model") + 1], "example/coordinator");
+    assert.equal(interactive[interactive.indexOf("--thinking") + 1], "max");
+    assert.match(interactive.at(-1), /interactive/);
+    assert.ok(!interactive.at(-1).includes(MY_ID));
+    assert.ok(ws.execCalls[1].includes(`PI_CODING_AGENT_DIR=${configDir}`));
+    assert.equal(readFileSync(join(sourceAgentDir, "settings.json"), "utf8"), settingsBefore);
+  } finally {
+    setAgentDir(sourceAgentDir);
+    rmSync(configDir, { recursive: true, force: true });
+  }
+});
+
+test("launch_agent rejects invalid intent, names, modes, cwd and resolver errors before spawn", async () => {
+  for (const params of [
+    { name: "lead", task: "paraphrase" },
+    { name: "Bad", task: "Owner outcome: go" },
+    { name: "lead", role: "unknown", task: "Owner outcome: go" },
+    { name: "lead", role: "coder", mode: "interactive", task: "Owner outcome: go" },
+    { name: "lead", cwd: "/nonexistent-fleet-cwd", task: "Owner outcome: go" },
+    { name: "lead", noProjectResources: "false", task: "Owner outcome: go" },
+  ]) {
+    const pi = makePi({ execImpl: delegateExec([ME]) });
+    herdrFleet(pi);
+    await assert.rejects(() => pi.tools.launch_agent.execute("bad", params, undefined, undefined, fleetCtx()));
+    assert.equal(pi.execCalls.length, 0);
+  }
+  for (const result of [{ cwd: "/gone", error: "Working directory unavailable" }, { cwd: "relative" }]) {
+    const pi = makePi({ execImpl: delegateExec([ME]) });
+    pi.events.on("pi-change-working-dir:resolve-execution-cwd", (request: { result?: unknown }) => { request.result = result; });
+    herdrFleet(pi);
+    await assert.rejects(() => pi.tools.launch_agent.execute("cwd", { name: "lead", task: "Owner outcome: go" }, undefined, undefined, fleetCtx()));
+    assert.equal(pi.execCalls.length, 0);
+  }
+});
+
+test("launch_agent preserves uncertain start/delivery errors without retry or closing the pane", async () => {
+  for (const phase of ["start", "prompt"]) {
+    const pi = makePi({ execImpl: collisionExec(phase) });
+    herdrFleet(pi);
+    await assert.rejects(
+      () => pi.tools.launch_agent.execute("uncertain", { name: "scout", task: "Owner outcome: go" }, undefined, undefined, fleetCtx()),
+      /pane wH:p2.*do not resubmit blindly/,
+    );
+    assert.equal(pi.execCalls.filter((args: string[]) => args[2] === phase).length, 1);
+    assert.equal(pi.execCalls.length, phase === "start" ? 3 : 4);
+    assert.ok(!pi.execCalls.flat().includes("close"));
+  }
+});
+
+test("explicit cwd is relative to the effective directory; unavailable change_dir owner fails closed", async () => {
+  const directory = realpathSync(mkdtempSync(join(tmpdir(), "fleet-dir-")));
+  mkdirSync(join(directory, "worktree"));
+  try {
+    for (const human of [true, false]) {
+      const pi = makePi({ execImpl: delegateExec([ME]) });
+      pi.events.on("pi-change-working-dir:resolve-execution-cwd", (request: { result?: { cwd: string } }) => { request.result = { cwd: directory }; });
+      herdrFleet(pi);
+      if (human) await pi.commands.delegate.handler('--cwd "worktree" lead Owner outcome: go', fleetCtx());
+      else await pi.tools.launch_agent.execute("dir", { name: "lead", task: "Owner outcome: go", cwd: "worktree" }, undefined, undefined, fleetCtx());
+      assert.equal(pi.execCalls[1][6], join(directory, "worktree"));
+    }
+    const pi = makePi({ execImpl: delegateExec([ME]) });
+    pi.getAllTools = () => [{ name: "change_dir" }];
+    herdrFleet(pi);
+    await assert.rejects(
+      () => pi.tools.launch_agent.execute("old-owner", { name: "lead", task: "Owner outcome: go" }, undefined, undefined, fleetCtx()),
+      /update the extension and restart Pi/,
+    );
+    assert.equal(pi.execCalls.length, 0);
+  } finally {
+    rmSync(directory, { recursive: true, force: true });
+  }
+});
+
+test("invalid or missing source role profiles fail before any herdr call", async () => {
+  const configDir = mkdtempSync(join(tmpdir(), "fleet-invalid-profiles-"));
+  mkdirSync(join(configDir, "configs"));
+  writeFileSync(join(configDir, "configs/valid.md"), "Valid role instructions.\n");
+  writeFileSync(join(configDir, "configs/empty.md"), "");
+  setAgentDir(configDir);
+  try {
+    for (const [profile, error] of [
+      [undefined, /missing coder profile/],
+      [{ model: "gpt-6-astra", thinking: "high", instructionsFile: "valid.md" }, /qualified provider\/model/],
+      [{ model: "provider/id", thinking: "extreme", instructionsFile: "valid.md" }, /thinking is invalid/],
+      [{ model: "provider/id", thinking: "high", instructionsFile: "" }, /instructionsFile must name/],
+      [{ model: "provider/id", thinking: "high", instructionsFile: "empty.md" }, /instruction file must be nonempty/],
+    ] as const) {
+      writeFileSync(join(configDir, "configs/session-roles.json"), JSON.stringify({ coder: profile }));
+      const pi = makePi({ execImpl: delegateExec([ME]) });
+      herdrFleet(pi);
+      await assert.rejects(() => pi.tools.launch_agent.execute("profile", { name: "lead", task: "Owner outcome: go" }, undefined, undefined, fleetCtx()), error);
+      assert.equal(pi.execCalls.length, 0);
+    }
+  } finally {
+    setAgentDir(sourceAgentDir);
+    rmSync(configDir, { recursive: true, force: true });
+  }
+});
+
+test("herdr startup transports full multiline role instructions through a file, with control-free argv", async () => {
+  const pi = makePi({ execImpl: delegateExec([ME]) });
+  herdrFleet(pi);
+  await pi.commands.delegate.handler("lead Owner outcome: go", fleetCtx());
+  const start = pi.execCalls[2];
+  assert.ok(start.every((arg: string) => !Array.from(arg).some((char) => {
+    const code = char.charCodeAt(0);
+    return code < 32 || (code >= 127 && code <= 159);
+  })), "herdr rejects controls in every agent-start argument");
+  const appended = start.flatMap((arg: string, i: number) => arg === "--append-system-prompt" ? [start[i + 1]] : []);
+  assert.equal(appended.length, 2);
+  assert.match(readFileSync(appended[0], "utf8"), /Coder/);
+  assert.match(appended[1], /Mode: delegated/);
+  assert.ok(appended[1].includes(MY_ID));
+});
+
+test("multisegment native model IDs remain qualified while effort stays independent", async () => {
+  const directory = mkdtempSync(join(tmpdir(), "fleet-model-"));
+  mkdirSync(join(directory, "configs"));
+  const config = JSON.parse(readFileSync(join(sourceAgentDir, "configs/session-roles.json"), "utf8"));
+  config.coder.model = "cloudflare-ai-gateway/accounts/fireworks/models/kimi-k3";
+  config.coder.thinking = "low";
+  writeFileSync(join(directory, "configs", config.coder.instructionsFile), readFileSync(join(sourceAgentDir, "configs", config.coder.instructionsFile)));
+  writeFileSync(join(directory, "configs/session-roles.json"), JSON.stringify(config));
+  setAgentDir(directory);
+  try {
+    for (const model of ["cloudflare-ai-gateway/accounts/fireworks/models/kimi-k3", "openrouter/meta-llama/llama-3.1-8b-instruct:free"]) {
+      config.coder.model = model;
+      writeFileSync(join(directory, "configs/session-roles.json"), JSON.stringify(config));
+      const pi = makePi({ execImpl: delegateExec([ME]) });
+      herdrFleet(pi);
+      const result = await pi.tools.launch_agent.execute("model", { name: "lead", task: "Owner outcome: go" }, undefined, undefined, fleetCtx());
+      assert.equal(result.details.model, model);
+      assert.equal(result.details.thinking, "low");
+      assert.equal(pi.execCalls[2][pi.execCalls[2].indexOf("--thinking") + 1], "low");
+    }
+  } finally {
+    setAgentDir(sourceAgentDir);
+    rmSync(directory, { recursive: true, force: true });
+  }
+});
+
+test("workspace prose and explicit directories recover from vanished cwd; delegated defaults stay fail-closed", async () => {
+  const directory = realpathSync(mkdtempSync(join(tmpdir(), "fleet-recovery-")));
+  try {
+    const pi = makePi({ execImpl: delegateExec([ME]) });
+    pi.events.on("pi-change-working-dir:resolve-execution-cwd", (request: { result?: unknown }) => {
+      request.result = { cwd: "/gone", error: "Working directory unavailable" };
+    });
+    herdrFleet(pi);
+    const result = await pi.tools.launch_agent.execute("recover", { name: "lead", cwd: directory, task: "Owner outcome: go" }, undefined, undefined, fleetCtx());
+    assert.equal(result.details.cwd, directory);
+    for (const cwd of [undefined, "."]) {
+      await assert.rejects(pi.tools.launch_agent.execute("missing", { name: "lead", cwd, task: "Owner outcome: go" }, undefined, undefined, fleetCtx()), /Working directory unavailable/);
+    }
+    await withWsConfig({ recovery: directory }, async () => {
+      const ws = makePi({ execImpl: wsExec([]) });
+      ws.events.on("pi-change-working-dir:resolve-execution-cwd", () => { throw new Error("resolver must not run"); });
+      herdrFleet(ws);
+      await ws.commands.ws.handler("recovery fix-recovery", fleetCtx());
+      assert.equal(ws.execCalls[1][4], directory);
+      await ws.commands.ws.handler(`${directory} fix-direct`, fleetCtx());
+      assert.equal(ws.execCalls[4][4], directory);
+      const prose = makePi({ execImpl: wsExec([]) });
+      prose.events.on("pi-change-working-dir:resolve-execution-cwd", (request: { result?: unknown }) => {
+        request.result = { cwd: "/gone", error: "Working directory unavailable" };
+      });
+      herdrFleet(prose);
+      const ctx = fleetCtx();
+      ctx.modelRegistry = {
+        getApiKeyAndHeaders: async () => ({ ok: true }),
+        getProvider: () => ({ stream: () => ({ result: async () => ({ stopReason: "stop", content: [{ type: "text", text: '{"name":"fix-flaky-tests","repo":"recovery"}' }] }) }) }),
+      };
+      await prose.commands.ws.handler("fix the flaky mac tests", ctx);
+      assert.notEqual(ctx.notes.at(-1)?.level, "error", ctx.notes.at(-1)?.msg);
+      assert.equal(prose.execCalls[1][4], directory);
+    });
+  } finally {
+    rmSync(directory, { recursive: true, force: true });
+  }
+});
+
+test("Coordinator suffix and collision space are reserved once; task delivery targets its pane", async () => {
+  const wanted = `a${"b".repeat(31)}`;
+  const first = `a${"b".repeat(19)}-coordinator`;
+  const second = `a${"b".repeat(17)}-coordinator-2`;
+  const pi = makePi({ execImpl: delegateExec([ME, { name: first }]) });
+  herdrFleet(pi);
+  const result = await pi.tools.launch_agent.execute("name", { name: wanted, role: "coordinator", task: "Owner outcome: go" }, undefined, undefined, fleetCtx());
+  assert.equal(result.details.name, second);
+  assert.equal(pi.execCalls[1][8], second);
+  assert.equal(pi.execCalls[2][3], second);
+  assert.equal(pi.execCalls[2][12], second);
+  assert.equal(pi.execCalls[3][3], "wH:p2");
+  for (const [name, expected, taken] of [
+    ["topic-coordinator", "topic-coordinator", []],
+    ["coordinator-3d-print", "coordinator-3d-print", []],
+    ["coordinator-3d-print", "coordinator-3d-print-2", ["coordinator-3d-print"]],
+    [`coordinator-${"3".repeat(20)}`, `coordinator-${"3".repeat(18)}-2`, [`coordinator-${"3".repeat(20)}`]],
+  ] as const) {
+    const existing = makePi({ execImpl: delegateExec([ME, ...taken.map((used) => ({ name: used }))]) });
+    herdrFleet(existing);
+    const kept = await existing.tools.launch_agent.execute("component", { name, role: "coordinator", task: "Owner outcome: go" }, undefined, undefined, fleetCtx());
+    assert.equal(kept.details.name, expected);
+    assert.match(kept.details.name, /^[a-z][a-z0-9_-]{0,31}$/);
+    assert.equal(kept.details.name.match(/coordinator/g)?.length, 1);
+  }
+});
+
+test("unresolved native project trust prevents creation and delivery; explicit opt-out cannot approve it", async () => {
+  const directory = realpathSync(mkdtempSync(join(tmpdir(), "fleet-trust-")));
+  mkdirSync(join(directory, ".pi"));
+  writeFileSync(join(directory, ".pi/settings.json"), "{}");
+  try {
+    for (const human of [true, false]) {
+      const pi = makePi({ execImpl: delegateExec([ME]) });
+      herdrFleet(pi);
+      const ctx = fleetCtx();
+      if (human) {
+        await pi.commands.delegate.handler(`--cwd "${directory}" lead Owner outcome: go`, ctx);
+        assert.match(ctx.notes.at(-1).msg, /trust.*decision/i);
+      } else await assert.rejects(
+        () => pi.tools.launch_agent.execute("trust", { name: "lead", cwd: directory, task: "Owner outcome: go" }, undefined, undefined, ctx),
+        /trust.*decision/i,
+      );
+      assert.equal(pi.execCalls.length, 0, "no pane, start or task Enter");
+    }
+    const optOutCalls = [];
+    for (const human of [true, false]) {
+      const pi = makePi({ execImpl: delegateExec([ME]) });
+      herdrFleet(pi);
+      if (human) await pi.commands.delegate.handler(`--no-approve --cwd "${directory}" lead Owner outcome: go`, fleetCtx());
+      else await pi.tools.launch_agent.execute("opt-out", { name: "lead", cwd: directory, task: "Owner outcome: go", noProjectResources: true }, undefined, undefined, fleetCtx());
+      assert.ok(pi.execCalls[2].includes("--no-approve"));
+      assert.ok(!pi.execCalls.flat().includes("--approve"));
+      optOutCalls.push(pi.execCalls);
+    }
+    assert.deepEqual(optOutCalls[0], optOutCalls[1]);
+  } finally {
+    rmSync(directory, { recursive: true, force: true });
+  }
+});
+
+test("leaf marker omits pane tool and refuses the shared command boundary; only /ws is interactive", async () => {
+  const registeredParent = makePi({ execImpl: delegateExec([ME]) });
+  herdrFleet(registeredParent);
+  process.env.PI_SUBAGENT_CHILD = "1";
+  try {
+    await assert.rejects(
+      () => registeredParent.tools.launch_agent.execute("cached-tool", { name: "lead", task: "Owner outcome: go" }, undefined, undefined, fleetCtx()),
+      /leaf.*subagent/i,
+    );
+    assert.equal(registeredParent.execCalls.length, 0);
+    const pi = makePi({ execImpl: delegateExec([ME]) });
+    herdrFleet(pi);
+    assert.equal(pi.tools.launch_agent, undefined);
+    const ctx = fleetCtx();
+    await pi.commands.delegate.handler("lead Owner outcome: go", ctx);
+    assert.match(ctx.notes.at(-1).msg, /leaf|subagent/i);
+    assert.equal(pi.execCalls.length, 0);
+  } finally {
+    delete process.env.PI_SUBAGENT_CHILD;
+  }
+  for (const human of [true, false]) {
+    const pi = makePi({ execImpl: delegateExec([ME]) });
+    herdrFleet(pi);
+    const ctx = fleetCtx();
+    if (human) {
+      await pi.commands.delegate.handler("--role coordinator --mode interactive lead Owner outcome: go", ctx);
+      assert.match(ctx.notes.at(-1).msg, /delegated|interactive.*ws/i);
+    } else await assert.rejects(
+      () => pi.tools.launch_agent.execute("mode", { name: "lead", role: "coordinator", mode: "interactive", task: "Owner outcome: go" }, undefined, undefined, ctx),
+      /delegated|interactive.*ws/i,
+    );
+    assert.equal(pi.execCalls.length, 0);
+  }
+});
+
+test("native saved trust decisions take precedence over policy; policy never and explicit opt-out decline resources", async () => {
+  const directory = realpathSync(mkdtempSync(join(tmpdir(), "fleet-trust-policy-")));
+  const configDir = join(directory, "agent");
+  mkdirSync(join(configDir, "configs"), { recursive: true });
+  mkdirSync(join(directory, "project/.pi"), { recursive: true });
+  const cwd = join(directory, "project");
+  writeFileSync(join(cwd, ".pi/settings.json"), "{}");
+  const config = JSON.parse(readFileSync(join(sourceAgentDir, "configs/session-roles.json"), "utf8"));
+  writeFileSync(join(configDir, "configs/session-roles.json"), JSON.stringify(config));
+  writeFileSync(join(configDir, "configs", config.coder.instructionsFile), readFileSync(join(sourceAgentDir, "configs", config.coder.instructionsFile)));
+  setAgentDir(configDir);
+  try {
+    for (const [decision, policy, declined] of [
+      [true, "ask", false],
+      [false, "always", true],
+      [null, "never", true],
+      [null, "always", false],
+    ] as const) {
+      writeFileSync(join(configDir, "settings.json"), JSON.stringify({ defaultProjectTrust: policy }));
+      // Simulated pre-existing decisions only; no native trust approval action.
+      const stored = JSON.stringify(decision === null ? {} : { [directory]: decision });
+      writeFileSync(join(configDir, "trust.json"), stored);
+      const pi = makePi({ execImpl: delegateExec([ME]) });
+      herdrFleet(pi);
+      await pi.tools.launch_agent.execute("policy", { name: "lead", cwd, task: "Owner outcome: go" }, undefined, undefined, fleetCtx());
+      assert.ok(pi.execCalls[1].includes(`PI_CODING_AGENT_DIR=${configDir}`), "herdr requires explicit env; child must read the preflight's config");
+      assert.equal(pi.execCalls[2].includes("--no-approve"), declined);
+      assert.ok(!pi.execCalls.flat().includes("--approve"));
+      assert.equal(readFileSync(join(configDir, "trust.json"), "utf8"), stored);
+    }
+  } finally {
+    setAgentDir(sourceAgentDir);
+    rmSync(directory, { recursive: true, force: true });
+  }
+});
+
+test("new unresolved trust during creation or startup preserves Pi and never sends task Enter", async () => {
+  const directory = realpathSync(mkdtempSync(join(tmpdir(), "fleet-trust-race-")));
+  try {
+    for (const phase of ["tab", "start"]) {
+      const pi = makePi({ execImpl: async (cmd: string, args: string[]) => {
+        if ((phase === "tab" && args[0] === "tab") || (phase === "start" && args[0] === "agent" && args[1] === "start")) {
+          mkdirSync(join(directory, ".pi"));
+          writeFileSync(join(directory, ".pi/settings.json"), "{}");
+        }
+        return delegateExec([ME])(cmd, args);
+      } });
+      herdrFleet(pi);
+      await assert.rejects(
+        () => pi.tools.launch_agent.execute("race", { name: "lead", cwd: directory, task: "Owner outcome: go" }, undefined, undefined, fleetCtx()),
+        /Keep pane wH:p2.*Pi.*editor.*never.*shell.*Do not retry/,
+      );
+      assert.equal(pi.execCalls.length, 3, "Pi start occurs before editor recovery; no bare-shell paste instruction");
+      assert.equal(pi.execCalls[2][2], "start");
+      assert.ok(!pi.execCalls.some((args: string[]) => args[2] === "prompt" || args.includes("close")));
+      rmSync(join(directory, ".pi"), { recursive: true });
+    }
+  } finally {
+    rmSync(directory, { recursive: true, force: true });
+  }
+});
+
+test("/ws leaves native trust to the human, pins agent dir, and sends no input", async () => {
+  const directory = realpathSync(mkdtempSync(join(tmpdir(), "fleet-ws-trust-")));
+  mkdirSync(join(directory, ".pi"));
+  writeFileSync(join(directory, ".pi/settings.json"), "{}");
+  try {
+    for (const optOut of [false, true]) {
+      const pi = makePi({ execImpl: wsExec([]) });
+      herdrFleet(pi);
+      const ctx = fleetCtx();
+      await pi.commands.ws.handler(`${optOut ? "--no-approve " : ""}${directory} human-coordinator`, ctx);
+      assert.equal(ctx.notes.at(-1).level, "info");
+      assert.equal(pi.execCalls[1][2], "create");
+      assert.ok(pi.execCalls[1].includes(`PI_CODING_AGENT_DIR=${sourceAgentDir}`));
+      assert.ok(!pi.execCalls[1].includes("--no-focus"));
+      assert.ok(!pi.execCalls[1].some((arg: string) => arg.startsWith("PI_SPAWNED_BY=")));
+      assert.equal(pi.execCalls[2].includes("--no-approve"), optOut);
+      assert.ok(!pi.execCalls.flat().includes("--approve"));
+      assert.equal(pi.execCalls.length, 3, "no prompt, keys or task Enter");
+    }
+  } finally {
+    rmSync(directory, { recursive: true, force: true });
+  }
+});

@@ -79,6 +79,65 @@ anything. Questions or a broken piece
 Working in this repo itself, not adopting? The root `AGENTS.md` is the
 contributor side.
 
+## Pane role profiles
+
+`herdr-fleet` reads `<agent-dir>/configs/session-roles.json` at launch time.
+Each Coordinator/Coder profile selects `model` (qualified `provider/id`, including
+multi-segment IDs), `thinking`, and `instructionsFile` (relative to the config
+directory). Both ship with Astra/high. The source-managed Markdown instruction
+files preserve their full contents through native `--append-system-prompt` file
+input. A second append argument supplies the one-line interaction contract.
+Apply the config and both instruction files with the extension. Profile selection
+never changes `defaultModel`. Explicit append flags replace native
+`APPEND_SYSTEM.md` discovery; include any instructions you need from that file
+in your role instruction files.
+
+Agents invoke the native `launch_agent` tool with `name` and `task` (including
+the owner's verbatim `Owner outcome:` block). Optional fields are `role`, `cwd`
+and `noProjectResources` (explicit native trust opt-out). It defaults to Coder;
+use `role: "coordinator"` for a nested Coordinator. Routine delegation needs no
+raw herdr construction or slash-command typing. The separate `delegate` tool
+runs headless subagents.
+
+Human shortcuts:
+
+```text
+/delegate <name> <task>
+/delegate --role coordinator <name> <task>
+/delegate --cwd "/path/to/worktree" --no-approve <name> <task>
+/ws [--no-approve] [repo|dir] <purpose>
+```
+
+`launch_agent` and human `/delegate` are delegated-only and retain parent
+Intercom provenance. Human `/ws` starts an interactive Coordinator in a focused
+workspace. Coordinator names reserve the role marker and collision suffix
+before purpose truncation. A name such as `coordinator-3d-print` keeps its
+leading role marker so its numeric purpose remains legal.
+
+Delegation opens a no-focus tab in the current workspace and delivers the task
+to the returned pane ID. The default directory is effective cwd, including
+`change_dir`. Relative cwd uses that directory; explicit absolute directories
+and known repo-map paths can recover after the old directory disappears.
+Children receive the caller's `PI_CODING_AGENT_DIR` so profile and trust
+sources match.
+
+Unresolved native project trust stops delegated launches before creation or task
+Enter. Human `/ws` sends no input and lets native Pi show its focused trust
+dialog; only explicit `--no-approve` opts out on that path.
+Start Pi interactively in the target directory and choose the trust decision
+yourself, or explicitly decline protected resources with `--no-approve` /
+`noProjectResources`. Saved decisions and native global policy are respected.
+If trust becomes unresolved after startup, keep and inspect the returned pane.
+Confirm Pi is running, resolve its native trust prompt yourself, and paste the
+original task only when the Pi editor is ready — never into a shell. Do not
+retry the launcher. Never retry an uncertain start or delivery blindly.
+
+The launch tool is omitted for headless leaf subagents; the shared boundary also
+rejects their calls. These guards are workflow boundaries, not an OS sandbox.
+Interaction mode grants no additional ship authority. Authority comes from the
+actual owner request, scoped handoff and applicable standing policy.
+Create isolated worktrees yourself for concurrent writers.
+
 ## Fresh machine (mine)
 
 This is how *I* set up a new machine; if you are not me, you want "Adopt a
