@@ -50,8 +50,8 @@
       "personal": true
     },
     "presets.json": {
-      "does": "tribble's presets for `/preset`: `plan`, `implement`, `kimi` (→ *-kimi agents)",
-      "needs": ["pawprint package (extensions/preset.ts)", "cloudflare-ai-gateway", "agents/worker-kimi.md", "agents/scout-kimi.md"],
+      "does": "tribble's presets for `/preset`: `plan`, `implement`",
+      "needs": ["pawprint package (extensions/preset.ts)", "cloudflare-ai-gateway"],
       "personal": true
     },
     "settings.json": {
