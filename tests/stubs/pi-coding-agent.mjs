@@ -1,9 +1,9 @@
 // Stub for runtime imports from @earendil-works/pi-coding-agent.
 // getAgentDir is mutable per-test: setAgentDir() BEFORE importing the
 // extension under test (auto-update.ts captures it at module load).
-import { mkdtempSync } from "node:fs";
+import { mkdtempSync, existsSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { join, dirname } from "node:path";
 
 let agentDir = mkdtempSync(join(tmpdir(), "pawprint-agentdir-"));
 
@@ -14,6 +14,35 @@ export function getAgentDir() {
   return agentDir;
 }
 export const CONFIG_DIR_NAME = ".pi";
+
+// File-backed native trust doubles. The real loader is also exercised by the
+// no-credential launch probe; these fixtures never persist a trust decision.
+export function hasTrustRequiringProjectResources(cwd) {
+  if (["settings.json", "mcp.json", "extensions", "skills", "prompts", "themes", "SYSTEM.md", "APPEND_SYSTEM.md"]
+    .some((entry) => existsSync(join(cwd, ".pi", entry)))) return true;
+  for (let dir = cwd; ; dir = dirname(dir)) {
+    if (dir !== process.env.HOME && existsSync(join(dir, ".agents/skills"))) return true;
+    if (dirname(dir) === dir) return false;
+  }
+}
+export class ProjectTrustStore {
+  constructor(dir) { this.dir = dir; }
+  get(cwd) {
+    const path = join(this.dir, "trust.json");
+    const entries = existsSync(path) ? JSON.parse(readFileSync(path, "utf8")) : {};
+    for (let dir = cwd; ; dir = dirname(dir)) {
+      if (typeof entries[dir] === "boolean") return entries[dir];
+      if (dirname(dir) === dir) return null;
+    }
+  }
+}
+export class SettingsManager {
+  static create(_cwd, dir) {
+    const path = join(dir, "settings.json");
+    const settings = existsSync(path) ? JSON.parse(readFileSync(path, "utf8")) : {};
+    return { getDefaultProjectTrust: () => settings.defaultProjectTrust ?? "ask", drainErrors: () => [] };
+  }
+}
 
 export class DynamicBorder {
   constructor() {}

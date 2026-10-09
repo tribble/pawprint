@@ -11,7 +11,10 @@
     "presets.json",
     "settings.json",
     "cloak.json",
-    "configs/ws.json"
+    "configs/ws.json",
+    "configs/session-roles.json",
+    "configs/session-role-coordinator.md",
+    "configs/session-role-coder.md"
   ],
   "about": {
     "AGENTS.md": {
@@ -20,7 +23,7 @@
       "personal": true
     },
     "agents/reviewer-fable.md": {
-      "does": "`reviewer-fable` subagent: read-only code reviewer pinned to claude-fable-5-1",
+      "does": "`reviewer-fable`: legacy-name Opus 5.5 compatibility profile; use `reviewer`",
       "needs": ["pi-subagents", "cloudflare-ai-gateway", "models.json"],
       "personal": true
     },
@@ -62,6 +65,21 @@
     "cloak.json": {
       "does": "pi-cloak config: masks .env, auth.json and token-shaped strings before the model",
       "needs": ["pi-cloak"]
+    },
+    "configs/session-role-coordinator.md": {
+      "does": "Coordinator pane instructions: integration, acceptance and escalation",
+      "needs": ["configs/session-roles.json"],
+      "personal": true
+    },
+    "configs/session-role-coder.md": {
+      "does": "Coder pane instructions: delegation, verification and bounded independent review",
+      "needs": ["configs/session-roles.json"],
+      "personal": true
+    },
+    "configs/session-roles.json": {
+      "does": "Coordinator/Coder pane profiles: qualified model, thinking and instruction file",
+      "needs": ["pawprint package (extensions/herdr-fleet.ts)"],
+      "personal": true
     },
     "configs/ws.json": {
       "does": "tribble's repo map for `/ws`: short id → local checkout path (workos, infra)",

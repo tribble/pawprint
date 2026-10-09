@@ -1,7 +1,7 @@
 ---
 name: reviewer-fable
-description: Code review specialist that validates implementation and reports issues (claude-fable-5-1 variant — Anthropic-family reviewer for cross-family review)
-model: cloudflare-ai-gateway/claude-fable-5-1
+description: Legacy-name compatibility profile on Opus 5.5; use reviewer for new reviews
+model: cloudflare-ai-gateway/claude-opus-5-5
 thinking: xhigh
 systemPromptMode: replace
 inheritProjectContext: true

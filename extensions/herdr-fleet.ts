@@ -4,11 +4,12 @@
 //   /ws [repo|dir] <purpose> new focused workspace: dir from identifier or the model's read of the purpose; name from purpose; repo ids from `configs/ws.json`
 // Delegated pane agents are first-class: they join intercom under their herdr name,
 // and you talk to them by focusing their pane (herdr agent focus <name>).
-import type { ExtensionAPI, ExtensionCommandContext } from "@earendil-works/pi-coding-agent";
-import { normalizeContext } from "@earendil-works/pi-ai";
+import { getAgentDir, hasTrustRequiringProjectResources, ProjectTrustStore, SettingsManager, type ExtensionAPI, type ExtensionCommandContext, type ExtensionContext } from "@earendil-works/pi-coding-agent";
+import { normalizeContext, StringEnum } from "@earendil-works/pi-ai";
+import { Type } from "typebox";
 import { createHash } from "node:crypto";
-import { existsSync, readFileSync, statSync } from "node:fs";
-import { resolve } from "node:path";
+import { existsSync, readFileSync, statSync, realpathSync } from "node:fs";
+import { resolve, join, isAbsolute } from "node:path";
 
 // This session's pi-intercom ID — what a child must report to, because names change and IDs do not
 // (pi-subagents src/pi-intercom/index.ts L1284 at the pinned 84614b3: `pi-` + sha256(sessionId).hex[0:32]).
@@ -20,9 +21,15 @@ function assertHerdr() {
   if (process.env.HERDR_ENV !== "1") throw new Error("not running inside Herdr (HERDR_ENV is not 1)");
 }
 
-async function herdr(pi: ExtensionAPI, args: string[]): Promise<unknown> {
+function assertPaneLaunch() {
   assertHerdr();
-  const r = await pi.exec("herdr", args);
+  if (process.env.PI_SUBAGENT_CHILD === "1") throw new Error("headless leaf subagents cannot launch pane agents");
+}
+
+async function herdr(pi: ExtensionAPI, args: string[], signal?: AbortSignal): Promise<unknown> {
+  assertHerdr();
+  signal?.throwIfAborted();
+  const r = await pi.exec("herdr", args, { signal });
   if (r.code !== 0) {
     throw new Error(`herdr ${args.join(" ")} failed: ${(r.stderr || r.stdout).trim()}`);
   }
@@ -64,10 +71,21 @@ async function planWorkspace(pi: ExtensionAPI, ctx: ExtensionCommandContext, arg
   const [first = "", ...restWords] = args.split(/\s+/).filter(Boolean);
   let dir: string | undefined;
   let hint = args;
-  const explicit = first.replace(/^~(?=$|\/)/, process.env.HOME ?? "~");
+  const expanded = first.replace(/^~(?=$|\/)/, process.env.HOME ?? "~");
   const repos = repoMap();
-  if (first && existsSync(explicit) && statSync(explicit).isDirectory()) dir = resolve(explicit);
-  else if (first && repos[first]) dir = repos[first];
+  if (first && repos[first]) dir = isAbsolute(repos[first]) ? repos[first] : resolve(executionCwd(pi, ctx), repos[first]);
+  else if (first) {
+    let explicit: string | undefined;
+    if (isAbsolute(expanded)) explicit = expanded;
+    else {
+      try {
+        explicit = resolve(executionCwd(pi, ctx), expanded);
+      } catch {
+        // This speculative directory probe may fall back to model-selected repo prose.
+      }
+    }
+    if (explicit && existsSync(explicit) && statSync(explicit).isDirectory()) dir = realpathSync(explicit);
+  }
   if (dir) hint = restWords.join(" ");
   if (dir && LEGAL_NAME.test(hint)) return { name: hint, dir }; // slug + dir: no model call
   // A single-token hint beside an explicit dir/repo is a requested name, not a purpose: never
@@ -138,8 +156,8 @@ interface FleetAgent {
   workspace_id?: string;
 }
 
-async function agentList(pi: ExtensionAPI): Promise<FleetAgent[]> {
-  return ((await herdr(pi, ["agent", "list"])) as { agents?: FleetAgent[] }).agents ?? [];
+async function agentList(pi: ExtensionAPI, signal?: AbortSignal): Promise<FleetAgent[]> {
+  return ((await herdr(pi, ["agent", "list"], signal)) as { agents?: FleetAgent[] }).agents ?? [];
 }
 
 // The agent in this pane is me. Ownership is grouping: /delegate opens tabs in my workspace, so
@@ -152,17 +170,26 @@ function myWorkspace(agents: FleetAgent[]): string | undefined {
 
 // herdr agent names are unique per server and double as intercom addresses: suffix on collision,
 // truncating the base so the suffixed name still fits the 32-char limit.
-function uniqueName(name: string, agents: FleetAgent[]): string {
+function uniqueName(name: string, agents: FleetAgent[], role?: Role): string {
   const taken = new Set(agents.map((a) => a.name));
-  let label = name;
-  for (let i = 2; taken.has(label); i++) label = `${name.slice(0, 31 - String(i).length)}-${i}`;
-  return label;
+  const purpose = role === "coordinator"
+    ? name.replace(/(^|[-_])coordinator(?=$|[-_])/g, "").replace(/^[-_]+|[-_]+$/g, "")
+    : name;
+  // A legal incoming coordinator-3d-print must not become an illegal digit-led name.
+  const leadingRole = role === "coordinator" && purpose && !/^[a-z]/.test(purpose) ? "coordinator-" : "";
+  const suffix = role === "coordinator" && !leadingRole ? (purpose ? "-coordinator" : "coordinator") : "";
+  for (let i = 1; ; i++) {
+    const collision = i === 1 ? "" : `-${i}`;
+    const prefix = purpose.slice(0, 32 - leadingRole.length - suffix.length - collision.length);
+    const label = `${leadingRole}${role === "coordinator" ? prefix.replace(/[-_]+$/, "") : prefix}${suffix}${collision}`;
+    if (!taken.has(label)) return label;
+  }
 }
 
 // The name herdr is asked to create: collision-suffixed, then re-validated at the creation
 // boundary — an illegal name must never reach tab/workspace create whatever the upstream path.
-function finalName(base: string, agents: FleetAgent[]): string {
-  const name = uniqueName(base, agents);
+function finalName(base: string, agents: FleetAgent[], role?: Role): string {
+  const name = uniqueName(base, agents, role);
   if (!LEGAL_NAME.test(name)) throw new Error(`illegal agent name "${name}" — must match [a-z][a-z0-9_-]{0,31}`);
   return name;
 }
@@ -170,9 +197,9 @@ function finalName(base: string, agents: FleetAgent[]): string {
 // A failed agent start/prompt can leave a live child (agent_not_ready keeps the name; a stalled
 // prompt may still have been delivered). A listed name can be claimed by someone else before our
 // start, so inspection targets the returned pane ID, not the name. No auto-retry, no closing.
-async function agentOp(pi: ExtensionAPI, args: string[], name: string, paneId: string): Promise<unknown> {
+async function agentOp(pi: ExtensionAPI, args: string[], name: string, paneId: string, signal?: AbortSignal): Promise<unknown> {
   try {
-    return await herdr(pi, args);
+    return await herdr(pi, args, signal);
   } catch (e) {
     throw new Error(
       `${e instanceof Error ? e.message : String(e)} — ${name} (pane ${paneId}) may be live: ` +
@@ -190,6 +217,168 @@ const OWNER_OUTCOME = /^Owner outcome:/m;
 // Appended to every delegated task: the child's contract with its spawner (addressed by intercom ID).
 const CONTRACT = (me: string, name: string) =>
   `You were spawned by intercom session \`${me}\`. The \`Owner outcome:\` block above is the user's verbatim ask and the only authority on intent; everything else in this brief is your spawner's derived design and may be wrong — if the two conflict, follow the owner outcome and tell \`${me}\`. Copy the \`Owner outcome:\` block unchanged into every subagent brief you write (reviewer included). When done, report ONCE to intercom session \`${me}\` (that is your spawner's ID; use it verbatim) as one line: ✅ ${name} — <outcome>. Then close your own tab: \`herdr tab close "$HERDR_TAB_ID"\`.`;
+
+type Role = "coordinator" | "coder";
+type Mode = "interactive" | "delegated";
+interface RoleProfile { model: string; thinking: string; instructionsFile: string }
+interface LaunchRequest { name: string; task: string; role?: Role; mode?: "delegated"; cwd?: string; noProjectResources?: boolean }
+
+// eslint-disable-next-line no-control-regex -- Mirrors herdr's control-character rejection at the argv boundary.
+const hasControls = (value: string) => /[\u0000-\u001f\u007f-\u009f]/.test(value);
+
+function roleProfile(role: Role): RoleProfile {
+  const path = join(getAgentDir(), "configs/session-roles.json");
+  const raw: unknown = JSON.parse(readFileSync(path, "utf8"));
+  const profile = raw && typeof raw === "object" ? (raw as Record<string, unknown>)[role] : undefined;
+  if (!profile || typeof profile !== "object") throw new Error(`missing ${role} profile in ${path}`);
+  const { model, thinking, instructionsFile } = profile as Record<string, unknown>;
+  if (typeof model !== "string" || hasControls(model) || !/^[a-z0-9][a-z0-9._-]*\/\S+$/.test(model)) {
+    throw new Error(`${path}: ${role}.model must be a qualified provider/model ID`);
+  }
+  if (typeof thinking !== "string" || !["off", "minimal", "low", "medium", "high", "xhigh", "max"].includes(thinking)) {
+    throw new Error(`${path}: ${role}.thinking is invalid`);
+  }
+  if (typeof instructionsFile !== "string" || !instructionsFile.trim() || hasControls(instructionsFile)) {
+    throw new Error(`${path}: ${role}.instructionsFile must name a role instruction file`);
+  }
+  const file = resolve(getAgentDir(), "configs", instructionsFile);
+  if (hasControls(file) || !readFileSync(file, "utf8").trim()) throw new Error(`${path}: ${role} instruction file must be nonempty and have a control-free path`);
+  return { model, thinking, instructionsFile: file };
+}
+
+// change_dir keeps session resources and ctx.cwd unchanged. Ask its synchronous
+// event owner for the execution directory; never guess from process.cwd().
+function executionCwd(pi: ExtensionAPI, ctx: ExtensionContext): string {
+  const request: { sessionManager: ExtensionContext["sessionManager"]; result?: { cwd?: unknown; error?: unknown } } = {
+    sessionManager: ctx.sessionManager,
+  };
+  pi.events.emit("pi-change-working-dir:resolve-execution-cwd", request);
+  if (request.result !== undefined) {
+    const result = request.result;
+    if (!result || typeof result !== "object") throw new Error("invalid execution directory from change_dir");
+    if (result.error !== undefined) {
+      throw new Error(typeof result.error === "string" && result.error ? result.error : "invalid execution directory error from change_dir");
+    }
+    if (typeof result.cwd !== "string" || !isAbsolute(result.cwd) || hasControls(result.cwd)) {
+      throw new Error("invalid execution directory from change_dir");
+    }
+    return result.cwd;
+  }
+  if (pi.getAllTools().some((tool) => tool.name === "change_dir")) {
+    throw new Error("change_dir cannot resolve its execution directory; update the extension and restart Pi before launching");
+  }
+  return ctx.cwd;
+}
+
+function launchDirectory(pi: ExtensionAPI, ctx: ExtensionContext, requested?: string): string {
+  if (requested !== undefined && (typeof requested !== "string" || !requested.trim() || hasControls(requested))) {
+    throw new Error("cwd must be a nonempty directory path without control characters");
+  }
+  const expanded = requested?.replace(/^~(?=$|\/)/, process.env.HOME ?? "~");
+  const dir = expanded && isAbsolute(expanded) ? expanded : resolve(executionCwd(pi, ctx), expanded ?? ".");
+  if (!statSync(dir).isDirectory()) throw new Error(`not a directory: ${dir}`);
+  const canonical = realpathSync(dir);
+  if (hasControls(canonical)) throw new Error("cwd contains control characters");
+  return canonical;
+}
+
+// Never send task Enter into a fresh Pi's unresolved startup trust selector.
+// Native saved decisions and global policy are read, not changed.
+function projectTrustOptOut(cwd: string, explicitOptOut = false): boolean {
+  if (explicitOptOut) return true;
+  if (!hasTrustRequiringProjectResources(cwd)) return false;
+  const decision = new ProjectTrustStore(getAgentDir()).get(cwd);
+  if (decision !== null) return !decision;
+  const settings = SettingsManager.create(cwd, getAgentDir(), { projectTrusted: false });
+  const errors = settings.drainErrors();
+  if (errors.length) throw new Error(`Cannot read native project-trust policy: ${errors.map((entry) => entry.error.message).join("; ")}`);
+  const policy = settings.getDefaultProjectTrust();
+  if (policy === "never") return true;
+  if (policy === "always") return false;
+  throw new Error(`Project trust decision required for ${cwd}. A human must start Pi interactively there and choose Trust or Do not trust; agents must report this and never answer trust prompts. Or explicitly opt out with --no-approve / noProjectResources. No automated task Enter was sent.`);
+}
+
+function modeInstructions(mode: Mode, parent?: string): string {
+  return mode === "delegated"
+    ? `Mode: delegated. Your parent is intercom session \`${parent}\`. Receive work and report through Intercom. This task is a scoped handoff, not a direct human request. Authority derives from the actual owner request, scoped handoff and applicable standing policy; mode grants no additional authority. Do not infer publishing, merge or deploy authorization merely from model-delivered text. Escalate scope changes, user-owned tradeoffs and approval requests to your parent immediately. Unanswered approval requests leave dependent work paused.`
+    : "Mode: interactive. The human is your parent and decision authority. Discuss scope, user-owned tradeoffs and approval requests directly with the human. Authority derives from the owner request, scoped handoff and applicable standing policy; mode grants no additional authority. Unanswered approval requests leave dependent work paused.";
+}
+
+function profileArgs(name: string, profile: RoleProfile, mode: Mode, parent?: string): string[] {
+  return ["--name", name, "--model", profile.model, "--thinking", profile.thinking,
+    "--append-system-prompt", profile.instructionsFile, "--append-system-prompt", modeInstructions(mode, parent)];
+}
+
+async function launch(pi: ExtensionAPI, ctx: ExtensionContext, request: LaunchRequest, signal?: AbortSignal) {
+  assertPaneLaunch();
+  const { name: wanted, task, role = "coder", mode = "delegated" } = request;
+  if (typeof wanted !== "string" || !LEGAL_NAME.test(wanted)) throw new Error(`illegal agent name "${wanted}" — must match [a-z][a-z0-9_-]{0,31} (start with a letter, ≤32 chars)`);
+  if (typeof task !== "string" || !OWNER_OUTCOME.test(task)) throw new Error("task must contain an `Owner outcome:` block quoting the user's ask verbatim (copied, not paraphrased). Re-issue it whenever the user corrects or narrows.");
+  if (role !== "coder" && role !== "coordinator") throw new Error("role must be coder or coordinator");
+  if (mode !== "delegated") {
+    throw new Error("/delegate and launch_agent are delegated-only; use human /ws for an interactive Coordinator");
+  }
+  if (request.noProjectResources !== undefined && typeof request.noProjectResources !== "boolean") {
+    throw new Error("noProjectResources must be an explicit boolean opt-out");
+  }
+  const profile = roleProfile(role);
+  const cwd = launchDirectory(pi, ctx, request.cwd);
+  const parent = intercomId(ctx.sessionManager.getSessionId());
+  const optOut = projectTrustOptOut(cwd, request.noProjectResources);
+  const agents = await agentList(pi, signal);
+  const ws = myWorkspace(agents);
+  if (!ws) throw new Error("/delegate needs to run inside a herdr pane");
+  const name = finalName(wanted, agents, role);
+  const tabArgs = ["tab", "create", "--workspace", ws, "--cwd", cwd, "--label", name, "--no-focus"];
+  tabArgs.push("--env", `PI_CODING_AGENT_DIR=${getAgentDir()}`, "--env", `PI_SPAWNED_BY=${parent}`);
+  let tab: unknown;
+  try {
+    tab = await herdr(pi, tabArgs, signal);
+  } catch (error) {
+    throw new Error(`${error instanceof Error ? error.message : String(error)} — a tab may exist in ${ws}; inspect before retrying, do not resubmit blindly`);
+  }
+  const paneId = findPaneId(tab);
+  if (!paneId) throw new Error(`tab created but no pane_id in response; inspect tabs in ${ws} before retrying`);
+  const checkCreatedPaneTrust = () => {
+    try {
+      const currentOptOut = projectTrustOptOut(cwd, request.noProjectResources);
+      if (currentOptOut !== optOut) throw new Error("Native project-trust decision changed during launch");
+    } catch (error) {
+      throw new Error(`${error instanceof Error ? error.message : String(error)} Keep pane ${paneId}. A human must inspect with \`herdr agent get ${paneId}\` and focus with \`herdr agent focus ${paneId}\`, resolve any native trust prompt, confirm Pi is running and its editor is ready, then paste the original task into the Pi editor, never into a shell. Agents must report this and never answer trust prompts. No task was delivered. Do not retry the launcher.`);
+    }
+  };
+  await agentOp(pi, ["agent", "start", name, "--kind", "pi", "--pane", paneId, "--timeout", "60000", "--",
+    ...profileArgs(name, profile, mode, parent), ...(optOut ? ["--no-approve"] : [])], name, paneId, signal);
+  checkCreatedPaneTrust();
+  // Until working acknowledges delivery without waiting for the child's whole turn.
+  await agentOp(pi, ["agent", "prompt", paneId, `${task}\n\n${CONTRACT(parent, name)}`, "--wait", "--until", "working", "--timeout", "10000"], name, paneId, signal);
+  return { name, paneId, role, mode, cwd, parent, model: profile.model, thinking: profile.thinking };
+}
+
+function parseDelegate(args: string): LaunchRequest {
+  const options: { role?: Role; mode?: "delegated"; cwd?: string; noProjectResources?: boolean } = {};
+  let rest = args.trim();
+  while (rest.startsWith("--")) {
+    if (/^--no-approve(?:\s+|$)/.test(rest)) {
+      options.noProjectResources = true;
+      rest = rest.replace(/^--no-approve(?:\s+|$)/, "");
+      continue;
+    }
+    const option = rest.match(/^--(role|mode|cwd)\s+(?:"([^"]+)"|'([^']+)'|(\S+))(?:\s+|$)/);
+    if (!option) throw new Error("Usage: /delegate [--role coder|coordinator] [--cwd <dir>] [--no-approve] <name> <task>");
+    const value = option[2] ?? option[3] ?? option[4];
+    if (option[1] === "role") options.role = value as Role;
+    else if (option[1] === "mode") {
+      if (value !== "delegated") throw new Error("/delegate is delegated-only; use /ws for an interactive Coordinator");
+      options.mode = value;
+    }
+    else options.cwd = value;
+    rest = rest.slice(option[0].length);
+  }
+  const parts = rest.match(/^(\S+)\s+([\s\S]+)$/);
+  if (!parts) throw new Error("Usage: /delegate <name> <task>");
+  return { ...options, name: parts[1], task: parts[2] };
+}
 
 export default function herdrFleet(pi: ExtensionAPI) {
   pi.registerCommand("fleet", {
@@ -221,48 +410,47 @@ export default function herdrFleet(pi: ExtensionAPI) {
 
   pi.registerCommand("delegate", {
     description:
-      "Spawn a named pi in a new tab of this workspace and hand it a task: /delegate <name> <task> (task must include an `Owner outcome:` block with the user's verbatim ask; runs in the current directory — use a worktree yourself if it edits code)",
+      "Launch a delegated Coder (default) or Coordinator in a no-focus tab: /delegate [--role coder|coordinator] [--cwd <dir>] [--no-approve] <name> <task>. Requires Owner outcome; defaults to effective cwd. /ws starts interactive Coordinators.",
     handler: async (args, ctx) => {
-      const sp = args.indexOf(" ");
-      const wanted = (sp === -1 ? args : args.slice(0, sp)).trim();
-      const task = sp === -1 ? "" : args.slice(sp + 1).trim();
-      if (!wanted || !task) {
-        ctx.ui.notify("Usage: /delegate <name> <task>", "error");
-        return;
-      }
-      if (!LEGAL_NAME.test(wanted)) {
-        ctx.ui.notify(`delegate: illegal agent name "${wanted}" — must match [a-z][a-z0-9_-]{0,31} (start with a letter, ≤32 chars)`, "error");
-        return;
-      }
-      if (!OWNER_OUTCOME.test(task)) {
-        ctx.ui.notify(
-          "delegate: task must contain an `Owner outcome:` block quoting the user's ask verbatim (copied, not paraphrased). Re-issue it whenever the user corrects or narrows.",
-          "error"
-        );
-        return;
-      }
       try {
-        const agents = await agentList(pi);
-        const ws = myWorkspace(agents);
-        if (!ws) throw new Error("/delegate needs to run inside a herdr pane");
-        const name = finalName(wanted, agents);
-        ctx.ui.notify(`Spawning ${name}…`, "info");
-        const me = intercomId(ctx.sessionManager.getSessionId());
-        // A tab in MY workspace (grouped sidebar nests it under me); env lets the child know its coordinator's ID.
-        const tab = await herdr(pi, ["tab", "create", "--workspace", ws, "--cwd", process.cwd(), "--label", name, "--no-focus", "--env", `PI_SPAWNED_BY=${me}`]);
-        const paneId = findPaneId(tab);
-        if (!paneId) throw new Error("tab created but no pane_id in response");
-        // --name makes session name = herdr name = intercom address (same contract as `ws create`).
-        await agentOp(pi, ["agent", "start", name, "--kind", "pi", "--pane", paneId, "--timeout", "60000", "--", "--name", name, "--thinking", "max"], name, paneId);
-        // --wait --until working = text+Enter landed and the child started; bare --wait would block until its whole turn ends.
-        await agentOp(pi, ["agent", "prompt", name, `${task}\n\n${CONTRACT(me, name)}`, "--wait", "--until", "working", "--timeout", "10000"], name, paneId);
+        const result = await launch(pi, ctx, parseDelegate(args), ctx.signal);
         ctx.ui.notify(
-          `🐑 ${name} delegated — \`herdr agent focus ${name}\` to watch; it can reach this session via intercom.`,
+          `🐑 ${result.name} delegated — ${result.role}/${result.mode}, ${result.model}/${result.thinking} in ${result.cwd}; \`herdr agent focus ${result.name}\` to watch. Fresh Pi uses that directory's resources and project-trust checks.`,
           "info"
         );
       } catch (e) {
-        ctx.ui.notify(`delegate: ${e instanceof Error ? e.message : String(e)}`, "error");
+        const message = e instanceof Error ? e.message : String(e);
+        ctx.ui.notify(message.startsWith("Usage:") ? message : `delegate: ${message}`, "error");
       }
+    },
+  });
+
+  if (process.env.PI_SUBAGENT_CHILD !== "1") pi.registerTool({
+    name: "launch_agent",
+    label: "Launch Pane Agent",
+    description: "Launch a Coder or Coordinator in a no-focus herdr tab in this workspace.",
+    promptSnippet: "Launch an independently owned pane workstream with an explicit role profile",
+    promptGuidelines: [
+      "Use launch_agent for pane workstreams; delegate runs headless subagents.",
+      "launch_agent is delegated-only, retains parent provenance and requires the verbatim Owner outcome. It defaults to effective cwd. Use an explicit cwd for another worktree. Unresolved project trust requires human action; noProjectResources explicitly opts out.",
+      "Never retry launch_agent blindly after an uncertain start or delivery; inspect the returned pane first.",
+    ],
+    parameters: Type.Object({
+      name: Type.String({ pattern: "^[a-z][a-z0-9_-]{0,31}$" }),
+      task: Type.String({ minLength: 1, description: "Task containing the verbatim Owner outcome: block" }),
+      role: Type.Optional(StringEnum(["coder", "coordinator"] as const)),
+      mode: Type.Optional(StringEnum(["delegated"] as const)),
+      cwd: Type.Optional(Type.String({ minLength: 1, description: "Another directory; relative to effective cwd, supports ~" })),
+      noProjectResources: Type.Optional(Type.Boolean({ description: "Explicitly decline trust-gated project resources for this child (--no-approve)" })),
+    }, { additionalProperties: false }),
+    constrainedSampling: { type: "json_schema", strict: "prefer" },
+    executionMode: "sequential",
+    async execute(_id, params, signal, _onUpdate, ctx) {
+      const result = await launch(pi, ctx, params, signal);
+      return {
+        content: [{ type: "text", text: `Launched ${result.name}: ${result.role}/${result.mode}, ${result.model}/${result.thinking}, pane ${result.paneId}, cwd ${result.cwd}. Fresh Pi uses that directory's resources and project-trust checks.` }],
+        details: result,
+      };
     },
   });
 
@@ -271,13 +459,16 @@ export default function herdrFleet(pi: ExtensionAPI) {
       "New focused herdr workspace running pi: /ws [repo|dir] <purpose> — directory from the identifier or inferred from the purpose (repos listed in configs/ws.json); name from the purpose (or this session's recent context)",
     handler: async (args, ctx) => {
       try {
-        assertHerdr(); // before planWorkspace can spend a model call
-        const plan = await planWorkspace(pi, ctx, args.trim());
-        const name = finalName(plan.name, await agentList(pi));
-        const ws = await herdr(pi, ["workspace", "create", "--cwd", plan.dir, "--label", name]);
+        assertPaneLaunch(); // before planWorkspace can spend a model call
+        const noProjectResources = /^--no-approve(?:\s+|$)/.test(args.trim());
+        const plan = await planWorkspace(pi, ctx, args.trim().replace(/^--no-approve(?:\s+|$)/, ""));
+        const profile = roleProfile("coordinator");
+        const name = finalName(plan.name, await agentList(pi), "coordinator");
+        const ws = await herdr(pi, ["workspace", "create", "--cwd", plan.dir, "--label", name, "--env", `PI_CODING_AGENT_DIR=${getAgentDir()}`]);
         const paneId = findPaneId(ws);
         if (!paneId) throw new Error("workspace created but no pane_id in response");
-        await agentOp(pi, ["agent", "start", name, "--kind", "pi", "--pane", paneId, "--timeout", "60000", "--", "--name", name], name, paneId);
+        await agentOp(pi, ["agent", "start", name, "--kind", "pi", "--pane", paneId, "--timeout", "60000", "--",
+          ...profileArgs(name, profile, "interactive"), ...(noProjectResources ? ["--no-approve"] : [])], name, paneId);
         ctx.ui.notify(`🐑 ${name} — pi ready in ${plan.dir.replace(process.env.HOME ?? "", "~")} (focused).`, "info");
       } catch (e) {
         ctx.ui.notify(`ws: ${e instanceof Error ? e.message : String(e)}`, "error");
