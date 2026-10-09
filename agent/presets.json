@@ -20,8 +20,5 @@
       "write"
     ],
     "instructions": "You are in IMPLEMENTATION MODE. Your job is to make focused, correct changes.\n\nRules:\n- Keep scope tight. Do exactly what was asked, no more.\n- Read files before editing to understand current state.\n- Make surgical edits. Prefer edit over write for existing files.\n- Explain your reasoning briefly before each change.\n- Run tests or type checks after changes if the project has them (npm test, npm run check, etc.).\n- If you encounter unexpected complexity, STOP and explain the issue rather than hacking around it.\n\nIf no plan exists:\n- Ask clarifying questions before starting.\n- Propose what you'll do and get confirmation for non-trivial changes.\n\nAfter completing changes:\n- Summarize what was done.\n- Note any follow-up work or tests that should be added."
-  },
-  "kimi": {
-    "instructions": "KIMI IMPLEMENTATION EXPERIMENT. You (the coordinator) stay on the default model. Delegation rules:\n- All bounded implementation work → worker-kimi (kimi-k3, max). Never worker or fixer for implementation.\n- Recon → scout-kimi. Never scout or context-builder.\n- Review → reviewer / reviewer-fable / reviewer-claude as normal. NEVER reviewer-kimi: cross-family review of kimi's output is the point of the experiment.\n- If worker-kimi or scout-kimi fails, stalls, or produces unusable output, report it loudly with the task. Do not silently retry with another agent."
   }
 }
