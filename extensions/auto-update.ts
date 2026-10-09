@@ -1,15 +1,10 @@
-// auto-update.ts — daily background self-update: pi itself + all packages.
-// Every session_start also refreshes the floating pawprint clone (pi's startup
-// banner nags while it lags origin): silent unless the clone moved, then
-// "pawprint updated — /reload to apply".
-// session_start: updates silently, notifies only. Reload on event-context is
-// deliberately not exposed by pi ("safe only in user-initiated commands"), so
-// applying extension updates is one `/reload` — or `/update` to do it all now.
+// auto-update.ts — updates run only when the user asks: /update (pi itself + all
+// packages). session_start never installs, fetches, or locks.
+// Applying extension updates is one `/reload` — or `/update` to do it all now.
 // A pi self-update always applies on next launch (core code can't hot-swap).
-// Several sessions starting together (herdr): a mkdir lock means only one runs it.
 //
-// Third-party packages in settings.json are PINNED (`@<sha>` / `@<version>`), so the
-// daily `pi update --extensions` moves nothing but the floating pawprint clone. Moving
+// Third-party packages in settings.json are PINNED (`@<sha>` / `@<version>`), so
+// `pi update --extensions` moves nothing but the floating pawprint clone. Moving
 // a pin is a decision, so it is weekly and manual: session_start nags
 // "weekly package review due — /packages" once 7 days have passed since the last
 // /packages; `/packages` lists every package with what its pin is behind (git fetch
@@ -29,16 +24,13 @@
 // workaround can go.
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { getAgentDir } from "@earendil-works/pi-coding-agent";
-import { existsSync, mkdirSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, readFileSync, realpathSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 
 const STATE = join(getAgentDir(), ".auto-update.json");
-const LOCK = STATE + ".lock";
-const TTL_MS = 20 * 60 * 60 * 1000; // ~daily
 const REVIEW_MS = 7 * 24 * 60 * 60 * 1000; // weekly pin review
 
 interface State {
-  lastRun?: string;
   lastPackagesReview?: string;
 }
 function readState(): State {
@@ -94,28 +86,6 @@ function summary({ piUpdated, extChanged }: UpdateResult): string {
   if (extChanged) parts.push("packages updated — /reload to apply");
   if (piUpdated) parts.push("pi updated — takes effect next launch");
   return parts.join("; ");
-}
-
-// This package IS pawprint — the source is literal, never discovered.
-const SELF_SOURCE = "git:github.com/tribble/pawprint";
-
-// Every session start: `pi update --extension git:github.com/tribble/pawprint` so the
-// clone never lags origin (pi's async banner check compares them). Silent on any failure;
-// pi prints "Updating <source>" for git packages whether or not anything changed, so only
-// a HEAD move counts as an update. Runs under the same mkdir lock as the daily update.
-async function refreshSelf(pi: ExtensionAPI, ctx: ExtensionContext, agentDir: string) {
-  try {
-    const dir = join(agentDir, "git", "github.com", "tribble", "pawprint");
-    const head = async () => {
-      const r = await sh(pi, "git", ["-C", dir, "rev-parse", "HEAD"], 30_000);
-      return r.ok ? r.out : "";
-    };
-    const before = await head();
-    const upd = await sh(pi, "pi", ["update", "--extension", SELF_SOURCE, "--no-approve"], 120_000);
-    const after = await head();
-    // pi can move HEAD and then fail installing: only a fully successful run notifies.
-    if (upd.ok && before && after && before !== after && ctx.hasUI) ctx.ui.notify("pawprint updated — /reload to apply", "info");
-  } catch { /* offline, reload mid-exec — next start retries */ }
 }
 
 // ------------------------------------------------------------ /packages ---
@@ -256,29 +226,7 @@ export default function autoUpdate(pi: ExtensionAPI) {
   pi.on("session_start", (_event, ctx) => {
     if (ctx.hasUI && piShippedOpus55())
       ctx.ui.notify("Pi now ships the correct Opus 5.5 gateway ID — delete the local claude-opus-5-5 entry from agent/models.json (and this check)", "info");
-    const st = readState();
-    if (ctx.hasUI && stale(st.lastPackagesReview, REVIEW_MS)) ctx.ui.notify("auto-update: weekly package review due — /packages", "info");
-    const due = stale(st.lastRun, TTL_MS);
-
-    // Multiple panes launch together (herdr) — only one session stamps/updates.
-    try {
-      mkdirSync(LOCK);
-    } catch {
-      return;
-    }
-
-    void (async () => {
-      try {
-        await refreshSelf(pi, ctx, agentDir);
-        if (!due) return;
-        const result = await runUpdates(pi);
-        writeState({ lastRun: new Date().toISOString() });
-        const note = summary(result);
-        if (ctx.hasUI && note) ctx.ui.notify(`auto-update: ${note}`, "info");
-      } finally {
-        rmSync(LOCK, { recursive: true, force: true });
-      }
-    })();
+    if (ctx.hasUI && stale(readState().lastPackagesReview, REVIEW_MS)) ctx.ui.notify("auto-update: weekly package review due — /packages", "info");
   });
 
   // The sanctioned reload path: command handlers get reload(); event handlers don't.

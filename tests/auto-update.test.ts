@@ -1,16 +1,16 @@
-// auto-update.ts: daily TTL gate, single-flight lock, notify-only on
-// session_start, /update reloads when extensions changed; weekly pin-review
-// reminder; /packages lists pins vs upstream (read-only) and routes
-// bump/install/remove as queued source-repo tasks; one-off Opus 5.5 watch
-// notifies once Pi's bundled catalog ships the dashed id.
+// auto-update.ts: session_start never updates (no subprocess, no lock);
+// /update reloads when extensions changed; weekly pin-review reminder;
+// /packages lists pins vs upstream (read-only) and routes bump/install/remove
+// as queued source-repo tasks; one-off Opus 5.5 watch notifies once Pi's
+// bundled catalog ships the dashed id.
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { execFile } from "node:child_process";
-import { mkdtempSync, writeFileSync, readFileSync, existsSync, mkdirSync } from "node:fs";
+import { mkdtempSync, writeFileSync, readFileSync, existsSync, mkdirSync, watch } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { setAgentDir } from "./stubs/pi-coding-agent.mjs";
-import { makePi, makeCtx, eventually } from "./harness.mjs";
+import { makePi, makeCtx } from "./harness.mjs";
 import { git } from "./fixture.ts";
 import { parseSource, renderTable } from "../extensions/auto-update.ts";
 
@@ -23,7 +23,7 @@ async function freshExtension(agentDir: string) {
 
 const now = () => new Date().toISOString();
 const daysAgo = (n: number) => new Date(Date.now() - n * 86_400_000).toISOString();
-// Default state: the weekly review is fresh, so only the daily update is under test.
+// Default state: the weekly review is fresh, so the reminder stays quiet unless under test.
 function setup(lastRun?: string, lastPackagesReview: string | null = now()) {
   const dir = mkdtempSync(join(tmpdir(), "pawprint-autoupdate-"));
   writeFileSync(join(dir, ".auto-update.json"), JSON.stringify({ lastRun, lastPackagesReview: lastPackagesReview ?? undefined }));
@@ -39,72 +39,35 @@ test("registers session_start handler and /update command", async () => {
   assert.ok(pi.commands.update);
 });
 
-test("fresh state: runs both updates, writes state, releases lock", async () => {
-  const dir = setup();
-  const ext = await freshExtension(dir);
-  const pi = makePi();
-  ext(pi);
-  await pi.emit("session_start", {}, makeCtx());
-  const ok = await eventually(() => state(dir).lastRun);
-  assert.ok(ok, "state file written");
-  assert.deepEqual(
-    pi.execCalls.filter((c: string[]) => c[0] === "pi"),
-    [
-      ["pi", "update", "--extension", "git:github.com/tribble/pawprint", "--no-approve"], // per-start refresh
-      ["pi", "update", "--self"],
-      ["pi", "update", "--extensions", "--no-approve"],
-    ],
-    "refresh, then both daily update commands",
-  );
-  await eventually(() => !existsSync(join(dir, ".auto-update.json.lock")));
-  assert.ok(!existsSync(join(dir, ".auto-update.json.lock")), "lock released");
-  const st = JSON.parse(readFileSync(join(dir, ".auto-update.json"), "utf8"));
-  assert.ok(Date.parse(st.lastRun), "lastRun is a real timestamp");
-});
-
-test("TTL: recent lastRun skips the daily update", async () => {
-  const dir = setup(new Date().toISOString());
-  const ext = await freshExtension(dir);
-  const pi = makePi();
-  ext(pi);
-  await pi.emit("session_start", {}, makeCtx());
-  await new Promise((r) => setTimeout(r, 100));
-  assert.deepEqual(
-    pi.execCalls.filter((c: string[]) => c[0] === "pi"),
-    [["pi", "update", "--extension", "git:github.com/tribble/pawprint", "--no-approve"]],
-    "daily work skipped; the TTL-independent per-start refresh still runs",
-  );
-});
-
-test("lock present: another session owns the update, return early", async () => {
-  const dir = setup();
-  mkdirSync(join(dir, ".auto-update.json.lock"));
-  const ext = await freshExtension(dir);
-  const pi = makePi();
-  ext(pi);
-  await pi.emit("session_start", {}, makeCtx());
-  await new Promise((r) => setTimeout(r, 100));
-  assert.equal(pi.execCalls.length, 0);
-  assert.equal(state(dir).lastRun, undefined, "no state written by loser");
-});
-
-test("session_start notifies only when something changed", async () => {
-  const dir = setup();
-  const ext = await freshExtension(dir);
-  const pi = makePi({
-    execImpl: async (_c: string, args: string[]) => ({
-      code: 0,
-      stdout: args.includes("--self") ? "pi is already up to date" : "Updating pkg-a\nDone",
-      stderr: "",
-    }),
-  });
-  ext(pi);
-  const ctx = makeCtx();
-  await pi.emit("session_start", {}, ctx);
-  await eventually(() => ctx.notes.length > 0);
-  assert.equal(ctx.notes[0].msg, "auto-update: packages updated — /reload to apply");
-  assert.equal(ctx.notes[0].level, "info");
-  assert.equal(ctx.reloads, 0, "session_start never reloads");
+test("session_start runs no update: no pi subprocess, no lock acquisition, no lastRun — fresh or due", async () => {
+  const LOCK = ".auto-update.json.lock";
+  for (const lastRun of [undefined, daysAgo(2)]) {
+    const dir = setup(lastRun);
+    const ext = await freshExtension(dir);
+    // Observe acquisition in-window: watch the state dir, and hold every subprocess
+    // at the gate so a lock taken around update work is still held when
+    // session_start returns.
+    const lockEvents: string[] = [];
+    const watcher = watch(dir, (_event, name) => {
+      if (name === LOCK) lockEvents.push(LOCK);
+    });
+    let release: () => void = () => {};
+    const gate = new Promise<void>((r) => { release = () => r(); });
+    const pi = makePi({ execImpl: async () => { await gate; return { code: 0, stdout: "", stderr: "" }; } });
+    try {
+      ext(pi);
+      await pi.emit("session_start", {}, makeCtx());
+      assert.ok(!existsSync(join(dir, LOCK)), "no lock held when session_start returns");
+      release();
+      await new Promise((r) => setTimeout(r, 100)); // settle: released work and fs events land
+      assert.deepEqual(pi.execCalls.filter((c: string[]) => c[0] === "pi"), [], "no update subprocesses");
+      assert.deepEqual(lockEvents, [], "lock never created, not even transiently");
+      assert.equal(state(dir).lastRun, lastRun, "lastRun untouched by session_start");
+    } finally {
+      release();
+      watcher.close();
+    }
+  }
 });
 
 test("/update: extension change triggers reload; clean run does not", async () => {
@@ -144,7 +107,7 @@ test("/update: headless ctx returns without doing anything", async () => {
 
 // ------------------------------------------------------ weekly review ---
 
-test("weekly reminder: due when lastPackagesReview is absent or > 7 days old, exact text, no daily update", async () => {
+test("weekly reminder: due when lastPackagesReview is absent or > 7 days old, exact text", async () => {
   for (const last of [null, daysAgo(8)]) {
     const dir = setup(now(), last);
     const ext = await freshExtension(dir);
@@ -153,7 +116,6 @@ test("weekly reminder: due when lastPackagesReview is absent or > 7 days old, ex
     const ctx = makeCtx();
     await pi.emit("session_start", {}, ctx);
     assert.deepEqual(ctx.notes, [{ msg: "auto-update: weekly package review due — /packages", level: "info" }]);
-    assert.ok(!pi.execCalls.some((c: string[]) => c.includes("--self") || c.includes("--extensions")), "reminder is independent of the daily update");
   }
 });
 
@@ -253,8 +215,6 @@ test("/packages: behind = commits pin..origin/HEAD after a fetch; npm and floati
   ]));
 });
 
-const settled = (agentDir: string) => eventually(() => !existsSync(join(agentDir, ".auto-update.json.lock")));
-
 test("/packages: a failed upstream check is shown as such, never as current; review not counted", async () => {
   const dir = setup(now(), daysAgo(9));
   writeFileSync(join(dir, "settings.json"), JSON.stringify({ packages: ["npm:@s/p@0.1.2", "npm:@s/q@1.0.0"] }));
@@ -342,101 +302,6 @@ test("/packages mutation commands queue a source-worktree task — requested onl
     assert.equal(pi.execCalls.length, 0, `${args}: no exec`);
     assert.equal(ctx.notes[0]?.level, "error", `${args}: usage error`);
   }
-});
-
-// -------------------------------------- per-start refresh of the own clone ---
-
-// What pi's `update --extension` does to a floating git clone: fetch + hard reset.
-const piRefresh = (clone: string) => async (cmd: string, args: string[]) => {
-  if (cmd === "pi" && args.includes("--extension")) {
-    git(clone, "fetch", "-q", "origin");
-    git(clone, "reset", "-q", "--hard", "origin/main");
-    return { code: 0, stdout: "", stderr: "" };
-  }
-  return realExec()(cmd, args);
-};
-
-test("refresh: every session_start updates the floating own clone, TTL-independent; a moved clone notifies exactly", async () => {
-  const lastRun = now();
-  const dir = setup(lastRun); // daily NOT due — the refresh must run anyway
-  const { dir: clone, shas } = pinnedClone(dir, "github.com", "tribble/pawprint");
-  const ext = await freshExtension(dir);
-  const pi = makePi({ execImpl: piRefresh(clone) });
-  ext(pi);
-  const ctx = makeCtx();
-  await pi.emit("session_start", {}, ctx);
-  assert.ok(await eventually(() => ctx.notes.length > 0), "moved clone notifies");
-  assert.deepEqual(ctx.notes, [{ msg: "pawprint updated — /reload to apply", level: "info" }]);
-  assert.deepEqual(
-    pi.execCalls.filter((c: string[]) => c[0] === "pi"),
-    [["pi", "update", "--extension", "git:github.com/tribble/pawprint", "--no-approve"]],
-    "exactly the literal own source; no daily run (fresh lastRun)",
-  );
-  assert.equal(git(clone, "rev-parse", "HEAD"), shas[2], "clone moved to upstream HEAD");
-  assert.equal(state(dir).lastRun, lastRun, "lastRun untouched by the refresh");
-});
-
-test("refresh: an already-current clone stays silent but is still attempted", async () => {
-  const dir = setup(now());
-  const { dir: clone, shas } = pinnedClone(dir, "github.com", "tribble/pawprint");
-  git(clone, "checkout", "-q", shas[2]); // current
-  const ext = await freshExtension(dir);
-  const pi = makePi({ execImpl: piRefresh(clone) });
-  ext(pi);
-  const ctx = makeCtx();
-  await pi.emit("session_start", {}, ctx);
-  await settled(dir);
-  assert.deepEqual(ctx.notes, []);
-  assert.deepEqual(
-    pi.execCalls.filter((c: string[]) => c[0] === "pi"),
-    [["pi", "update", "--extension", "git:github.com/tribble/pawprint", "--no-approve"]],
-  );
-});
-
-test("refresh: a pi update that fails after moving HEAD stays silent — no notify, no throw, lock released", async () => {
-  const dir = setup(now());
-  const { dir: clone, shas } = pinnedClone(dir, "github.com", "tribble/pawprint");
-  const ext = await freshExtension(dir);
-  const pi = makePi({
-    execImpl: async (cmd: string, args: string[]) => {
-      if (cmd === "pi" && args.includes("--extension")) {
-        git(clone, "fetch", "-q", "origin");
-        git(clone, "reset", "-q", "--hard", "origin/main");
-        return { code: 1, stdout: "", stderr: "install failed" };
-      }
-      return realExec()(cmd, args);
-    },
-  });
-  ext(pi);
-  const ctx = makeCtx();
-  const rejections: unknown[] = [];
-  const onRej = (e: unknown) => rejections.push(e);
-  process.on("unhandledRejection", onRej);
-  await pi.emit("session_start", {}, ctx);
-  await settled(dir);
-  assert.equal(git(clone, "rev-parse", "HEAD"), shas[2], "HEAD did move");
-  assert.deepEqual(ctx.notes, [], "a failed update never notifies");
-  assert.ok(!existsSync(join(dir, ".auto-update.json.lock")), "lock released");
-  await new Promise((r) => setTimeout(r, 50));
-  process.off("unhandledRejection", onRej);
-  assert.deepEqual(rejections, []);
-});
-
-test("refresh: failure is silent — no throw, no notify, lock released", async () => {
-  const dir = setup(now());
-  const { dir: clone, shas } = pinnedClone(dir, "github.com", "tribble/pawprint");
-  const ext = await freshExtension(dir);
-  const pi = makePi({
-    execImpl: async (cmd: string, args: string[]) =>
-      cmd === "pi" ? { code: 1, stdout: "", stderr: "offline" } : realExec()(cmd, args),
-  });
-  ext(pi);
-  const ctx = makeCtx();
-  await pi.emit("session_start", {}, ctx);
-  await settled(dir);
-  assert.deepEqual(ctx.notes, []);
-  assert.equal(git(clone, "rev-parse", "HEAD"), shas[0], "clone unmoved");
-  assert.ok(!existsSync(join(dir, ".auto-update.json.lock")), "lock released");
 });
 
 // -------------------------------------------------- opus 5.5 watch ---

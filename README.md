@@ -247,13 +247,13 @@ explicit fetch + fast-forward, not `pull`):
 latest, so no separate self-update step. For package content (`extensions/`,
 `skills/`, `prompts/`, `themes/`) the live copy is pi's clone under
 `~/.pi/agent/git/github.com/tribble/pawprint`, refreshed by `pi update
---extensions` (bare `pi update` is pi itself only; `/update` or
-`auto-update.ts`, ~daily, does both) and picked up on `/reload`.
+--extensions` (bare `pi update` is pi itself only; `/update` does both) and
+picked up on `/reload`.
 
 Pawprint owns package membership and the exact pins: every third-party package
 in `agent/settings.json` is pinned (`@<sha>` / `@<version>`), and the floating
-`git:github.com/tribble/pawprint` self entry is the one approved exception —
-the daily update moves only pawprint itself. Once a week a session start says
+`git:github.com/tribble/pawprint` self entry is the one approved exception, so
+`pi update --extensions` moves only pawprint itself. Once a week a session start says
 `weekly package review due — /packages`: bare `/packages` lists each pin
 against upstream (read-only, the only route that earns review credit).
 `/packages bump <name|--all>`, `/packages install <source>` and `/packages
