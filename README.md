@@ -223,7 +223,7 @@ ever applied; `tests/`, `scripts/` and the package dirs stay in the repo).
 
 ```sh
 npm run types       # create/refresh the local .pi-types symlink to the mise-installed Pi types
-npm test            # biome lint (no `any`; per-line opt-outs need a reason), mise-pinned tsc, then the node suites (extension behavior + imprint matrix)
+npm test            # oxlint --type-aware (no `any` + floating/misused promises; per-line opt-outs need a reason), mise-pinned tsc, then the node suites (extension behavior + imprint matrix)
 ```
 
 Zero dependencies: Node 24 runs the `.ts` natively; an ESM loader hook

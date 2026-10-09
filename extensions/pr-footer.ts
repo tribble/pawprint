@@ -40,6 +40,7 @@ export default function prFooter(pi: ExtensionAPI) {
     await refresh();
     if (!live) return;
     clearInterval(timer);
+    // oxlint-disable-next-line typescript/no-misused-promises -- an interval can't await; a refresh rejection surfaces as unhandledRejection, same as before this gate
     timer = setInterval(refresh, EVERY_MS);
     timer.unref?.();
   });

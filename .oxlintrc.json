@@ -1,0 +1,25 @@
+{
+  "categories": { "correctness": "warn" },
+  "rules": {
+    "typescript/no-explicit-any": "error",
+    "typescript/no-floating-promises": "error",
+    "typescript/no-misused-promises": "error"
+  },
+  "overrides": [
+    {
+      "files": ["tests/**"],
+      "rules": {
+        // node:test's test() returns a promise the runner awaits; idiomatic, not floating
+        "typescript/no-floating-promises": [
+          "error",
+          {
+            "allowForKnownSafeCalls": [
+              { "from": "package", "name": "test", "package": "node:test" }
+            ]
+          }
+        ]
+      }
+    }
+  ],
+  "options": { "typeAware": true }
+}

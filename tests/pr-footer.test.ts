@@ -78,6 +78,7 @@ function spyTimers() {
   const set: { fn: () => Promise<void>; ms: number; handle: unknown }[] = [];
   const cleared: unknown[] = [];
   globalThis.setInterval = ((fn: () => Promise<void>, ms: number) => {
+    // oxlint-disable-next-line typescript/no-misused-promises -- the spy passes the async callback through untouched so tests can await one tick
     const handle = realSet(fn, ms);
     set.push({ fn, ms, handle });
     return handle;

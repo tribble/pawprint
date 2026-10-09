@@ -19,7 +19,7 @@
 !scripts/compare.ts
 !scripts/apply-config.ts
 !manifest.json
-!biome.json
+!.oxlintrc.json
 !package.json
 !tsconfig.json
 !mise.toml
