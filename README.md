@@ -93,8 +93,8 @@ never changes `defaultModel`. Explicit append flags replace native
 in your role instruction files.
 
 Agents invoke the native `launch_agent` tool with `name` and `task` (including
-the owner's verbatim `Owner outcome:` block). Optional fields are `role`, `cwd`
-and `noProjectResources` (explicit native trust opt-out). It defaults to Coder;
+the owner's verbatim `Owner outcome:` block). Optional fields are `role`, `cwd`,
+`base` and `noProjectResources` (explicit native trust opt-out). It defaults to Coder;
 use `role: "coordinator"` for a nested Coordinator. Routine delegation needs no
 raw herdr construction or slash-command typing. The separate `delegate` tool
 runs headless subagents.
@@ -103,8 +103,10 @@ Human shortcuts:
 
 ```text
 /delegate <name> <task>
+/delegate --base origin/main <name> <task>
 /delegate --role coordinator <name> <task>
 /delegate --cwd "/path/to/worktree" --no-approve <name> <task>
+/release-worktree "/path/to/worktree"
 /ws [--no-approve] [repo|dir] <purpose>
 ```
 
@@ -115,18 +117,37 @@ before purpose truncation. A name such as `coordinator-3d-print` keeps its
 leading role marker so its numeric purpose remains legal.
 
 Delegation opens a no-focus tab in the current workspace and delivers the task
-to the returned pane ID. The default directory is effective cwd, including
-`change_dir`. Relative cwd uses that directory; explicit absolute directories
-and known repo-map paths can recover after the old directory disappears.
-Children receive the caller's `PI_CODING_AGENT_DIR` so profile and trust
-sources match.
+to the returned pane ID. A Coder without `cwd` gets a fresh sibling linked
+worktree from the effective repository, including `change_dir`. It starts from
+committed `HEAD`, or the immutable commit resolved from `base`. Pawprint callers
+supply `base: "origin/main"`. The launcher does not fetch or transfer dirty edits.
 
-Unresolved native project trust stops delegated launches before creation or task
-Enter. Human `/ws` sends no input and lets native Pi show its focused trust
+Explicit Coder `cwd` reuses exactly that existing linked checkout/subdirectory;
+primary checkouts, non-Git paths, existing claims and observed same-tree unowned
+sessions are refused. The unclaimed launching parent may plan alongside its
+single Coder. Claims use canonical Git administrative directories, so symlink
+and subdirectory aliases cannot admit a second writer. Never combine `cwd` and
+`base`. Coordinators keep directory behavior and reject `base`.
+
+Relative cwd uses the effective directory; explicit absolute directories and
+known repo-map paths can recover after the old directory disappears. Children
+receive the caller's `PI_CODING_AGENT_DIR` so profile and trust sources match.
+Launch receipts include the source/final directories, branch, base commit,
+launch/child IDs, claim path and native pane. Parent-side native session entries
+record ownership by UUID and canonical native parent session-file path. Coder
+parents need persistent sessions; in-memory parents are refused before mutation.
+Copied or moved session files do not adopt claims; symlink aliases normalize.
+`/fleet` does not infer ownership from workspace grouping.
+
+Native trust is checked at the resulting cwd. An unresolved decision prevents
+pane creation and task Enter; an already-created Git worktree and claim remain. Human `/ws` sends no input and lets native Pi show its focused trust
 dialog; only explicit `--no-approve` opts out on that path.
-Start Pi interactively in the target directory and choose the trust decision
-yourself, or explicitly decline protected resources with `--no-approve` /
-`noProjectResources`. Saved decisions and native global policy are respected.
+For a recorded claimed pre-pane failure, first release its claim from the
+UUID/file-bound parent with `release_worktree({cwd})` or `/release-worktree <cwd>`.
+Then start Pi interactively in that exact worktree and choose trust yourself;
+exit that Pi before relaunching with exact `cwd`. Alternatively, after release,
+relaunch with exact `cwd` and `--no-approve` / `noProjectResources` to decline
+protected resources. Saved decisions and native global policy are respected.
 If trust becomes unresolved after startup, keep and inspect the returned pane.
 Confirm Pi is running, resolve its native trust prompt yourself, and paste the
 original task only when the Pi editor is ready — never into a shell. Do not
@@ -136,7 +157,21 @@ The launch tool is omitted for headless leaf subagents; the shared boundary also
 rejects their calls. These guards are workflow boundaries, not an OS sandbox.
 Interaction mode grants no additional ship authority. Authority comes from the
 actual owner request, scoped handoff and applicable standing policy.
-Create isolated worktrees yourself for concurrent writers.
+Isolate independent workstreams. Sequence changes that depend on an unsettled
+API or migration.
+
+Claims survive child exit, cancellation and uncertain delivery. Only the
+UUID/file-bound owner can call `release_worktree({cwd})` or `/release-worktree
+<cwd>` for a recorded pre-pane failure, when no child was started. Any pane/start
+attempt or uncertainty keeps the claim: pane absence cannot prove detached
+workers stopped. Completed Coder worktrees cannot be reassigned through the
+launcher yet. Post-start reconciliation/release is deferred.
+
+Release is serialized with admission and removes only the claim, never a branch
+or checkout. It does not reclaim by age, idle status or manual attestation.
+Inspect the receipt's Git state and native pane after a failure; keep partial
+state and never retry blindly. A successful Git add can leave a branch even
+when a later response fails.
 
 ## Fresh machine (mine)
 

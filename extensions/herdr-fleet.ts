@@ -7,9 +7,10 @@
 import { getAgentDir, hasTrustRequiringProjectResources, ProjectTrustStore, SettingsManager, type ExtensionAPI, type ExtensionCommandContext, type ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { normalizeContext, StringEnum } from "@earendil-works/pi-ai";
 import { Type } from "typebox";
-import { createHash } from "node:crypto";
-import { existsSync, readFileSync, statSync, realpathSync } from "node:fs";
-import { resolve, join, isAbsolute } from "node:path";
+import { createHash, randomUUID } from "node:crypto";
+import { closeSync, existsSync, openSync, readFileSync, readSync, statSync, realpathSync } from "node:fs";
+import { resolve, join, isAbsolute, basename, dirname } from "node:path";
+import { claimWriter, createWorktree, gitOutput, readWriterClaim, removeWriterClaim, withWriterOperation, worktreeDestination, worktreeIdentity, writerClaimPath, type Worktree, type WriterClaim } from "./lib/worktree.ts";
 
 // This session's pi-intercom ID — what a child must report to, because names change and IDs do not
 // (pi-subagents src/pi-intercom/index.ts L1284 at the pinned 84614b3: `pi-` + sha256(sessionId).hex[0:32]).
@@ -84,7 +85,7 @@ async function planWorkspace(pi: ExtensionAPI, ctx: ExtensionCommandContext, arg
         // This speculative directory probe may fall back to model-selected repo prose.
       }
     }
-    if (explicit && existsSync(explicit) && statSync(explicit).isDirectory()) dir = realpathSync(explicit);
+    if (explicit && existsSync(explicit) && statSync(explicit).isDirectory()) dir = realpathSync.native(explicit);
   }
   if (dir) hint = restWords.join(" ");
   if (dir && LEGAL_NAME.test(hint)) return { name: hint, dir }; // slug + dir: no model call
@@ -154,15 +155,17 @@ interface FleetAgent {
   focused?: boolean;
   agent_status?: string;
   workspace_id?: string;
+  foreground_cwd?: string;
+  agent_session?: { kind: string; value: string };
 }
 
 async function agentList(pi: ExtensionAPI, signal?: AbortSignal): Promise<FleetAgent[]> {
-  return ((await herdr(pi, ["agent", "list"], signal)) as { agents?: FleetAgent[] }).agents ?? [];
+  const result = await herdr(pi, ["agent", "list"], signal) as { agents?: FleetAgent[] };
+  if (!Array.isArray(result.agents)) throw new Error("Native agent list is unavailable; state is unknown");
+  return result.agents;
 }
 
-// The agent in this pane is me. Ownership is grouping: /delegate opens tabs in my workspace, so
-// herdr's grouped agent view nests children under their spawner and /fleet calls them [mine].
-// Anything in another workspace (ws create, /ws, hand-made) is the user's.
+// Workspace membership selects launch topology, never ownership.
 function myWorkspace(agents: FleetAgent[]): string | undefined {
   const pane = process.env.HERDR_PANE_ID;
   return pane ? agents.find((a) => a.pane_id === pane)?.workspace_id : undefined;
@@ -221,7 +224,85 @@ const CONTRACT = (me: string, name: string) =>
 type Role = "coordinator" | "coder";
 type Mode = "interactive" | "delegated";
 interface RoleProfile { model: string; thinking: string; instructionsFile: string }
-interface LaunchRequest { name: string; task: string; role?: Role; mode?: "delegated"; cwd?: string; noProjectResources?: boolean }
+interface LaunchRequest { name: string; task: string; role?: Role; mode?: "delegated"; cwd?: string; base?: string; noProjectResources?: boolean }
+
+interface LaunchRecord {
+  ownerSessionId: string;
+  ownerSessionFile?: string;
+  childSessionId: string;
+  launchId: string;
+  name: string;
+  role: Role;
+  phase: string;
+  sourceCwd: string;
+  cwd: string;
+  branch?: string | null;
+  base?: string;
+  baseCommit?: string;
+  worktreeKey?: string;
+  claimHash?: string;
+  paneId?: string;
+  error?: string;
+}
+
+function nativeOwnerFile(ctx: ExtensionContext): string | undefined {
+  const path = ctx.sessionManager.getSessionFile();
+  if (path === undefined) return undefined;
+  if (!isAbsolute(path) || hasControls(path)) throw new Error("Native parent session-file path is invalid; use a persistent Pi session");
+  const canonical = existsSync(path) ? realpathSync.native(path) : join(realpathSync.native(dirname(path)), basename(path));
+  if (hasControls(canonical)) throw new Error("Native parent session-file path contains control characters");
+  return canonical;
+}
+
+function ownLaunches(ctx: ExtensionContext): LaunchRecord[] {
+  const records = new Map<string, LaunchRecord>();
+  const ownerFile = nativeOwnerFile(ctx);
+  if (!ownerFile) return [];
+  for (const entry of ctx.sessionManager.getEntries()) {
+    if (entry.type !== "custom" || entry.customType !== "fleet-launch" || !entry.data || typeof entry.data !== "object") continue;
+    const record = entry.data as LaunchRecord;
+    if (record.ownerSessionId === ctx.sessionManager.getSessionId() && record.ownerSessionFile === ownerFile && typeof record.launchId === "string") records.set(record.launchId, record);
+  }
+  return [...records.values()];
+}
+
+function sessionMatches(ref: FleetAgent["agent_session"], childId: string): boolean {
+  return ref?.kind === "id" ? ref.value === childId
+    : ref?.kind === "path" && isAbsolute(ref.value) && basename(ref.value).endsWith(`_${childId}.jsonl`);
+}
+
+function verifySessionHeader(ref: FleetAgent["agent_session"], record: LaunchRecord) {
+  if (!sessionMatches(ref, record.childSessionId)) throw new Error("Native child session identity is missing or mismatched");
+  if (ref?.kind !== "path" || !existsSync(ref.value)) return; // Native files are lazy until the first user message.
+  const fd = openSync(ref.value, "r");
+  const buffer = Buffer.alloc(8192);
+  let header: unknown;
+  try { header = JSON.parse(buffer.subarray(0, readSync(fd, buffer)).toString("utf8").split("\n")[0]); }
+  finally { closeSync(fd); }
+  if (!header || typeof header !== "object") throw new Error("Invalid native child session header");
+  const data = header as Record<string, unknown>;
+  if (data.type !== "session" || data.id !== record.childSessionId || typeof data.cwd !== "string" || realpathSync.native(data.cwd) !== record.cwd) {
+    throw new Error("Native child session header does not match this launch");
+  }
+}
+
+async function sameTreeOccupants(pi: ExtensionAPI, agents: FleetAgent[], worktree: Worktree, signal?: AbortSignal) {
+  const occupants: FleetAgent[] = [];
+  for (const agent of agents) {
+    if (agent.pane_id === process.env.HERDR_PANE_ID) continue;
+    for (const cwd of new Set([agent.cwd, agent.foreground_cwd])) {
+      if (!cwd) continue;
+      let key: string;
+      try { key = realpathSync.native(await gitOutput(pi, cwd, ["rev-parse", "--absolute-git-dir"], signal)); }
+      catch {
+        signal?.throwIfAborted();
+        continue; // Non-Git or vanished paths are not observed same-tree occupancy.
+      }
+      if (key === worktree.key) { occupants.push(agent); break; }
+    }
+  }
+  return occupants;
+}
 
 // eslint-disable-next-line no-control-regex -- Mirrors herdr's control-character rejection at the argv boundary.
 const hasControls = (value: string) => /[\u0000-\u001f\u007f-\u009f]/.test(value);
@@ -277,7 +358,7 @@ function launchDirectory(pi: ExtensionAPI, ctx: ExtensionContext, requested?: st
   const expanded = requested?.replace(/^~(?=$|\/)/, process.env.HOME ?? "~");
   const dir = expanded && isAbsolute(expanded) ? expanded : resolve(executionCwd(pi, ctx), expanded ?? ".");
   if (!statSync(dir).isDirectory()) throw new Error(`not a directory: ${dir}`);
-  const canonical = realpathSync(dir);
+  const canonical = realpathSync.native(dir);
   if (hasControls(canonical)) throw new Error("cwd contains control characters");
   return canonical;
 }
@@ -315,48 +396,102 @@ async function launch(pi: ExtensionAPI, ctx: ExtensionContext, request: LaunchRe
   if (typeof wanted !== "string" || !LEGAL_NAME.test(wanted)) throw new Error(`illegal agent name "${wanted}" — must match [a-z][a-z0-9_-]{0,31} (start with a letter, ≤32 chars)`);
   if (typeof task !== "string" || !OWNER_OUTCOME.test(task)) throw new Error("task must contain an `Owner outcome:` block quoting the user's ask verbatim (copied, not paraphrased). Re-issue it whenever the user corrects or narrows.");
   if (role !== "coder" && role !== "coordinator") throw new Error("role must be coder or coordinator");
-  if (mode !== "delegated") {
-    throw new Error("/delegate and launch_agent are delegated-only; use human /ws for an interactive Coordinator");
-  }
-  if (request.noProjectResources !== undefined && typeof request.noProjectResources !== "boolean") {
-    throw new Error("noProjectResources must be an explicit boolean opt-out");
+  if (mode !== "delegated") throw new Error("/delegate and launch_agent are delegated-only; use human /ws for an interactive Coordinator");
+  if (request.noProjectResources !== undefined && typeof request.noProjectResources !== "boolean") throw new Error("noProjectResources must be an explicit boolean opt-out");
+  if (request.base !== undefined && (role === "coordinator" || request.cwd !== undefined || typeof request.base !== "string" || !request.base.trim() || hasControls(request.base))) {
+    throw new Error("base is only valid for a new Coder worktree, never explicit cwd reuse or a Coordinator");
   }
   const profile = roleProfile(role);
-  const cwd = launchDirectory(pi, ctx, request.cwd);
+  const sourceCwd = launchDirectory(pi, ctx, request.cwd);
+  const ownerSessionFile = nativeOwnerFile(ctx);
+  if (role === "coder" && !ownerSessionFile) throw new Error("Coder launch needs a persistent native parent session. Start Pi without --no-session (or use a persisted SDK SessionManager), then reissue the task. No Git, pane or claim was created.");
+  if (role === "coordinator") projectTrustOptOut(sourceCwd, request.noProjectResources);
   const parent = intercomId(ctx.sessionManager.getSessionId());
-  const optOut = projectTrustOptOut(cwd, request.noProjectResources);
   const agents = await agentList(pi, signal);
   const ws = myWorkspace(agents);
   if (!ws) throw new Error("/delegate needs to run inside a herdr pane");
   const name = finalName(wanted, agents, role);
-  const tabArgs = ["tab", "create", "--workspace", ws, "--cwd", cwd, "--label", name, "--no-focus"];
-  tabArgs.push("--env", `PI_CODING_AGENT_DIR=${getAgentDir()}`, "--env", `PI_SPAWNED_BY=${parent}`);
-  let tab: unknown;
-  try {
-    tab = await herdr(pi, tabArgs, signal);
-  } catch (error) {
-    throw new Error(`${error instanceof Error ? error.message : String(error)} — a tab may exist in ${ws}; inspect before retrying, do not resubmit blindly`);
-  }
-  const paneId = findPaneId(tab);
-  if (!paneId) throw new Error(`tab created but no pane_id in response; inspect tabs in ${ws} before retrying`);
-  const checkCreatedPaneTrust = () => {
+  let record: LaunchRecord = { ownerSessionId: ctx.sessionManager.getSessionId(), ownerSessionFile, childSessionId: randomUUID(), launchId: randomUUID(), name, role, phase: "intent", sourceCwd, cwd: sourceCwd };
+  const save = (phase: string, update: Partial<LaunchRecord> = {}) => {
+    record = { ...record, ...update, phase };
+    pi.appendEntry("fleet-launch", record);
+  };
+  let tabAttempted = false;
+  let claimAttempted = false;
+  const inspect = () => {
+    if (!tabAttempted && record.claimHash && record.worktreeKey) {
+      return `launch ${record.launchId}, cwd ${record.cwd}, branch ${record.branch}, base ${record.baseCommit}. Claim ${join(record.worktreeKey, "pawprint-writer.json")} is retained. No pane was attempted and no task was delivered. First call release_worktree(${JSON.stringify({ cwd: record.cwd })}) or /release-worktree ${JSON.stringify(record.cwd)} from this UUID/file-bound parent; only after successful release, resolve native trust or explicitly opt out. Exit any Pi opened to resolve trust before relaunching with this exact cwd. Do not remove Git state or retry automatically.`;
+    }
+    if (claimAttempted && !record.claimHash && record.worktreeKey) return `Writer claim creation/write/readback was attempted at ${join(record.worktreeKey, "pawprint-writer.json")}; state is uncertain. Keep any file there and inspect it. No pane was attempted or task delivered. Do not delete, release or retry automatically.`;
+    if (!tabAttempted && !record.base) return `No Git worktree, pane or writer claim was created by this attempt. Correct the refusal before relaunching.`;
+    return `launch ${record.launchId}, cwd ${record.cwd}, branch ${record.branch ?? "unchanged"}, base ${record.baseCommit ?? "unchanged"}, Git dir ${record.worktreeKey ?? "not yet known"}${record.paneId ? `, pane ${record.paneId}` : ""}. Inspect \`git -C '${sourceCwd.replace(/'/g, "'\\''")}' worktree list --porcelain\`, destination contents and branch refs${record.paneId ? `; \`herdr agent get ${record.paneId}\` and \`herdr agent read ${record.paneId} --source recent-unwrapped --lines 120\`` : tabAttempted ? `; inspect tabs in ${ws}` : ""}. Keep partial state; do not retry or remove it automatically.`;
+  };
+  const runPane = async () => {
+    const cwd = record.cwd;
+    const optOut = projectTrustOptOut(cwd, request.noProjectResources);
+    save("tab-requested");
+    tabAttempted = true;
+    const tabArgs = ["tab", "create", "--workspace", ws, "--cwd", cwd, "--label", name, "--no-focus", "--env", `PI_CODING_AGENT_DIR=${getAgentDir()}`, "--env", `PI_SPAWNED_BY=${parent}`];
+    const tab = await herdr(pi, tabArgs, signal);
+    const paneId = findPaneId(tab);
+    if (!paneId) throw new Error(`tab created but no pane_id in response; inspect tabs in ${ws} before retrying`);
+    save("tab", { paneId });
+    await agentOp(pi, ["agent", "start", name, "--kind", "pi", "--pane", paneId, "--timeout", "60000", "--", "--session-id", record.childSessionId,
+      ...profileArgs(name, profile, mode, parent), ...(optOut ? ["--no-approve"] : [])], name, paneId, signal);
     try {
-      const currentOptOut = projectTrustOptOut(cwd, request.noProjectResources);
-      if (currentOptOut !== optOut) throw new Error("Native project-trust decision changed during launch");
+      if (projectTrustOptOut(cwd, request.noProjectResources) !== optOut) throw new Error("Native project-trust decision changed during launch");
     } catch (error) {
       throw new Error(`${error instanceof Error ? error.message : String(error)} Keep pane ${paneId}. A human must inspect with \`herdr agent get ${paneId}\` and focus with \`herdr agent focus ${paneId}\`, resolve any native trust prompt, confirm Pi is running and its editor is ready, then paste the original task into the Pi editor, never into a shell. Agents must report this and never answer trust prompts. No task was delivered. Do not retry the launcher.`);
     }
+    const native = await herdr(pi, ["agent", "get", paneId], signal) as { agent?: FleetAgent };
+    verifySessionHeader(native.agent?.agent_session, record);
+    save("started");
+    await agentOp(pi, ["agent", "prompt", paneId, `${task}\n\n${CONTRACT(parent, name)}`, "--wait", "--until", "working", "--timeout", "10000"], name, paneId, signal);
+    verifySessionHeader(native.agent?.agent_session, record);
+    save("prompted");
+    return { name, paneId, role, mode, cwd, sourceCwd, parent, model: profile.model, thinking: profile.thinking,
+      ownerSessionId: record.ownerSessionId, ownerSessionFile: record.ownerSessionFile, childSessionId: record.childSessionId, launchId: record.launchId, branch: record.branch, base: record.base, baseCommit: record.baseCommit,
+      worktreeKey: record.worktreeKey, claimPath: record.worktreeKey ? join(record.worktreeKey, "pawprint-writer.json") : undefined };
   };
-  await agentOp(pi, ["agent", "start", name, "--kind", "pi", "--pane", paneId, "--timeout", "60000", "--",
-    ...profileArgs(name, profile, mode, parent), ...(optOut ? ["--no-approve"] : [])], name, paneId, signal);
-  checkCreatedPaneTrust();
-  // Until working acknowledges delivery without waiting for the child's whole turn.
-  await agentOp(pi, ["agent", "prompt", paneId, `${task}\n\n${CONTRACT(parent, name)}`, "--wait", "--until", "working", "--timeout", "10000"], name, paneId, signal);
-  return { name, paneId, role, mode, cwd, parent, model: profile.model, thinking: profile.thinking };
+  try {
+    if (role === "coordinator") { save("intent"); return await runPane(); }
+    if (!ownerSessionFile) throw new Error("Coder launch needs a persistent native parent session");
+    let tree = await worktreeIdentity(pi, sourceCwd, signal);
+    if (request.cwd !== undefined) {
+      if (tree.key === tree.common) throw new Error("Explicit Coder cwd must be a linked task worktree, not a primary checkout");
+      save("intent", { worktreeKey: tree.key, branch: tree.branch, baseCommit: tree.commit });
+    } else {
+      const base = request.base ?? "HEAD";
+      const commit = await gitOutput(pi, sourceCwd, ["rev-parse", "--verify", "--end-of-options", `${base}^{commit}`], signal);
+      const destination = worktreeDestination(tree, name, record.launchId);
+      save("git-requested", { ...destination, base, baseCommit: commit });
+      tree = await createWorktree(pi, tree, destination, commit, signal);
+      save("worktree", { worktreeKey: tree.key });
+    }
+    return await withWriterOperation(tree, async () => {
+      const current = await worktreeIdentity(pi, record.cwd, signal);
+      if (current.key !== tree.key) throw new Error("Worktree identity changed during admission");
+      const existing = readWriterClaim(tree);
+      if (existing) throw new Error(`Worktree already claimed by session ${existing.claim.ownerSessionId}, launch ${existing.claim.launchId}. Keep and inspect ${writerClaimPath(tree)}.`);
+      if (request.cwd !== undefined) {
+        const occupants = await sameTreeOccupants(pi, await agentList(pi, signal), tree, signal);
+        if (occupants.length) throw new Error(`Worktree is occupied by ${occupants.map((a) => a.name ?? a.pane_id ?? "an unowned session").join(", ")}. Refusing explicit reuse; omit cwd for fresh isolation. Occupancy does not prove writer status.`);
+      }
+      const claim: WriterClaim = { version: 1, ownerSessionId: record.ownerSessionId, ownerSessionFile, childSessionId: record.childSessionId, launchId: record.launchId,
+        worktreeKey: tree.key, cwd: record.cwd, branch: tree.branch, baseCommit: tree.commit };
+      claimAttempted = true;
+      save("claimed", { claimHash: claimWriter(tree, claim) });
+      return runPane();
+    });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    save(tabAttempted ? "uncertain" : "failed-before-pane", { error: message });
+    throw new Error(`${message} — ${inspect()}`);
+  }
 }
 
 function parseDelegate(args: string): LaunchRequest {
-  const options: { role?: Role; mode?: "delegated"; cwd?: string; noProjectResources?: boolean } = {};
+  const options: { role?: Role; mode?: "delegated"; cwd?: string; base?: string; noProjectResources?: boolean } = {};
   let rest = args.trim();
   while (rest.startsWith("--")) {
     if (/^--no-approve(?:\s+|$)/.test(rest)) {
@@ -364,20 +499,48 @@ function parseDelegate(args: string): LaunchRequest {
       rest = rest.replace(/^--no-approve(?:\s+|$)/, "");
       continue;
     }
-    const option = rest.match(/^--(role|mode|cwd)\s+(?:"([^"]+)"|'([^']+)'|(\S+))(?:\s+|$)/);
-    if (!option) throw new Error("Usage: /delegate [--role coder|coordinator] [--cwd <dir>] [--no-approve] <name> <task>");
+    const option = rest.match(/^--(role|mode|cwd|base)\s+(?:"([^"]+)"|'([^']+)'|(\S+))(?:\s+|$)/);
+    if (!option) throw new Error("Usage: /delegate [--role coder|coordinator] [--cwd <existing-worktree> | --base <ref>] [--no-approve] <name> <task>");
     const value = option[2] ?? option[3] ?? option[4];
     if (option[1] === "role") options.role = value as Role;
     else if (option[1] === "mode") {
       if (value !== "delegated") throw new Error("/delegate is delegated-only; use /ws for an interactive Coordinator");
       options.mode = value;
     }
+    else if (option[1] === "base") options.base = value;
     else options.cwd = value;
     rest = rest.slice(option[0].length);
   }
   const parts = rest.match(/^(\S+)\s+([\s\S]+)$/);
   if (!parts) throw new Error("Usage: /delegate <name> <task>");
   return { ...options, name: parts[1], task: parts[2] };
+}
+
+async function releaseWorktree(pi: ExtensionAPI, ctx: ExtensionContext, requested: string, signal?: AbortSignal) {
+  assertPaneLaunch();
+  const cwd = launchDirectory(pi, ctx, requested);
+  const tree = await worktreeIdentity(pi, cwd, signal);
+  if (tree.key === tree.common) throw new Error("Only a linked task worktree can have its writer claim released");
+  return withWriterOperation(tree, async () => {
+    const stored = readWriterClaim(tree);
+    if (!stored) throw new Error(`No writer claim at ${writerClaimPath(tree)}`);
+    const claim = stored.claim;
+    if (claim.ownerSessionId !== ctx.sessionManager.getSessionId() || claim.ownerSessionFile !== nativeOwnerFile(ctx)) throw new Error("Only the UUID and canonical-file-bound owner session may release this claim; copied or moved session files grant no ownership");
+    const record = ownLaunches(ctx).find((r) => r.launchId === claim.launchId && r.childSessionId === claim.childSessionId && r.worktreeKey === tree.key && r.claimHash === stored.hash);
+    if (!record) throw new Error("Native launch ownership is uncertain; keep the claim");
+    if (record.phase !== "failed-before-pane" || record.paneId) throw new Error("Post-start or uncertain writer claims stay held: pane absence cannot prove detached workers stopped. Completed Coder worktrees cannot be reassigned through the launcher yet. Use fresh isolation; do not remove the claim. Post-start reconciliation/release is deferred.");
+    const agents = await agentList(pi, signal);
+    if (agents.some((a) => typeof a.pane_id !== "string")) throw new Error("Native agent identity is incomplete; keep the claim");
+    if (agents.some((a) => sessionMatches(a.agent_session, claim.childSessionId))) throw new Error("An associated child was observed despite the pre-pane failure record; keep the claim");
+    const occupants = await sameTreeOccupants(pi, agents, tree, signal);
+    if (occupants.length) throw new Error(`Worktree still occupied by ${occupants.map((a) => a.name ?? a.pane_id).join(", ")}; keep the claim`);
+    const current = await worktreeIdentity(pi, cwd, signal);
+    if (current.key !== tree.key) throw new Error("Worktree identity changed during release; keep the claim");
+    signal?.throwIfAborted();
+    removeWriterClaim(tree, stored.hash);
+    pi.appendEntry("fleet-launch", { ...record, phase: "released" });
+    return { cwd, launchId: claim.launchId, branch: claim.branch, claimPath: writerClaimPath(tree) };
+  });
 }
 
 export default function herdrFleet(pi: ExtensionAPI) {
@@ -393,11 +556,11 @@ export default function herdrFleet(pi: ExtensionAPI) {
         agents.sort(
           (a, b) => (RANK[a.agent_status ?? ""] ?? 3) - (RANK[b.agent_status ?? ""] ?? 3)
         );
-        const ws = myWorkspace(agents);
+        const launches = ownLaunches(ctx);
         const lines = agents.map((a) => {
           const name = a.name ?? a.cwd?.split("/").pop() ?? a.pane_id ?? "?";
           const cwd = (a.cwd ?? "").replace(process.env.HOME ?? "", "~");
-          const mine = ws !== undefined && a.workspace_id === ws && a.pane_id !== process.env.HERDR_PANE_ID;
+          const mine = launches.some((record) => record.phase !== "released" && record.paneId === a.pane_id && sessionMatches(a.agent_session, record.childSessionId));
           const owner = mine ? "[mine]" : "[yours]";
           return `${a.focused ? "→" : " "} ${ICON[a.agent_status ?? ""] ?? "?"} ${name}  ${cwd}  ${owner}`;
         });
@@ -410,12 +573,12 @@ export default function herdrFleet(pi: ExtensionAPI) {
 
   pi.registerCommand("delegate", {
     description:
-      "Launch a delegated Coder (default) or Coordinator in a no-focus tab: /delegate [--role coder|coordinator] [--cwd <dir>] [--no-approve] <name> <task>. Requires Owner outcome; defaults to effective cwd. /ws starts interactive Coordinators.",
+      "Launch a delegated Coder in a fresh worktree: /delegate [--base <ref> | --cwd <existing-linked-worktree>] [--no-approve] <name> <task>. Requires Owner outcome. --role coordinator keeps directory behavior; /ws is interactive.",
     handler: async (args, ctx) => {
       try {
         const result = await launch(pi, ctx, parseDelegate(args), ctx.signal);
         ctx.ui.notify(
-          `🐑 ${result.name} delegated — ${result.role}/${result.mode}, ${result.model}/${result.thinking} in ${result.cwd}; \`herdr agent focus ${result.name}\` to watch. Fresh Pi uses that directory's resources and project-trust checks.`,
+          `🐑 ${result.name} delegated — ${result.role}/${result.mode}, ${result.model}/${result.thinking} in ${result.cwd}${result.branch ? `; branch ${result.branch}, base ${result.baseCommit}` : ""}; \`herdr agent focus ${result.name}\` to watch. Fresh Pi uses that directory's resources and project-trust checks.`,
           "info"
         );
       } catch (e) {
@@ -428,11 +591,13 @@ export default function herdrFleet(pi: ExtensionAPI) {
   if (process.env.PI_SUBAGENT_CHILD !== "1") pi.registerTool({
     name: "launch_agent",
     label: "Launch Pane Agent",
-    description: "Launch a Coder or Coordinator in a no-focus herdr tab in this workspace.",
+    description: "Launch an isolated Coder or a Coordinator in a no-focus herdr tab.",
     promptSnippet: "Launch an independently owned pane workstream with an explicit role profile",
     promptGuidelines: [
       "Use launch_agent for pane workstreams; delegate runs headless subagents.",
-      "launch_agent is delegated-only, retains parent provenance and requires the verbatim Owner outcome. It defaults to effective cwd. Use an explicit cwd for another worktree. Unresolved project trust requires human action; noProjectResources explicitly opts out.",
+      "Coders default to a fresh linked worktree from the effective repository and committed HEAD. Supply base for repo policy (pawprint: origin/main). Explicit cwd reuses exactly an admitted linked checkout; never combine cwd and base. Coordinators keep directory behavior and reject base.",
+      "launch_agent is delegated-only, retains parent provenance and requires the verbatim Owner outcome. Unresolved project trust requires human action; noProjectResources explicitly opts out.",
+      "Isolate independent workstreams. Sequence work that depends on an unsettled API or migration. Coder parents need persistent native session files. Release only recorded pre-pane failures through release_worktree. Any pane/start attempt or uncertainty keeps the claim; completed Coder worktrees cannot be reassigned through this launcher yet. Post-start reconciliation/release is deferred. Release never cleans Git.",
       "Never retry launch_agent blindly after an uncertain start or delivery; inspect the returned pane first.",
     ],
     parameters: Type.Object({
@@ -440,7 +605,8 @@ export default function herdrFleet(pi: ExtensionAPI) {
       task: Type.String({ minLength: 1, description: "Task containing the verbatim Owner outcome: block" }),
       role: Type.Optional(StringEnum(["coder", "coordinator"] as const)),
       mode: Type.Optional(StringEnum(["delegated"] as const)),
-      cwd: Type.Optional(Type.String({ minLength: 1, description: "Another directory; relative to effective cwd, supports ~" })),
+      cwd: Type.Optional(Type.String({ minLength: 1, description: "Existing linked Coder worktree/subdirectory to reuse exactly; relative to effective cwd, supports ~. Coordinator directory is unchanged." })),
+      base: Type.Optional(Type.String({ minLength: 1, description: "Committed base ref for a new Coder worktree; defaults HEAD. Pawprint callers supply origin/main. Invalid with cwd or Coordinator." })),
       noProjectResources: Type.Optional(Type.Boolean({ description: "Explicitly decline trust-gated project resources for this child (--no-approve)" })),
     }, { additionalProperties: false }),
     constrainedSampling: { type: "json_schema", strict: "prefer" },
@@ -448,9 +614,35 @@ export default function herdrFleet(pi: ExtensionAPI) {
     async execute(_id, params, signal, _onUpdate, ctx) {
       const result = await launch(pi, ctx, params, signal);
       return {
-        content: [{ type: "text", text: `Launched ${result.name}: ${result.role}/${result.mode}, ${result.model}/${result.thinking}, pane ${result.paneId}, cwd ${result.cwd}. Fresh Pi uses that directory's resources and project-trust checks.` }],
+        content: [{ type: "text", text: `Launched ${result.name}: ${result.role}/${result.mode}, ${result.model}/${result.thinking}, pane ${result.paneId}, cwd ${result.cwd}, launch ${result.launchId}${result.branch ? `, branch ${result.branch}, base ${result.baseCommit}` : ""}.${result.base ? " Source edits were not transferred." : ""} Fresh Pi uses the resulting directory's resources and project-trust checks.` }],
         details: result,
       };
+    },
+  });
+
+  pi.registerCommand("release-worktree", {
+    description: "Release only your recorded pre-pane failure claim: /release-worktree <cwd>. Post-start/uncertain claims remain held; leaves worktree and branch intact.",
+    handler: async (args, ctx) => {
+      try {
+        if (!args.trim()) throw new Error("Usage: /release-worktree <cwd>");
+        const cwd = args.trim().replace(/^(["'])(.*)\1$/, "$2");
+        const result = await releaseWorktree(pi, ctx, cwd, ctx.signal);
+        ctx.ui.notify(`Released pre-pane failure claim for ${result.cwd}, launch ${result.launchId}. Worktree and branch remain.`, "info");
+      } catch (error) {
+        ctx.ui.notify(`release-worktree: ${error instanceof Error ? error.message : String(error)}`, "error");
+      }
+    },
+  });
+
+  if (process.env.PI_SUBAGENT_CHILD !== "1") pi.registerTool({
+    name: "release_worktree",
+    label: "Release Worktree Claim",
+    description: "Release only a recorded pre-pane failure claim owned by your native UUID and canonical session file. Any pane/start attempt or uncertainty stays claimed because detached workers may remain. Completed Coder worktrees cannot be reassigned yet; post-start reconciliation/release is deferred. No Git cleanup.",
+    parameters: Type.Object({ cwd: Type.String({ minLength: 1 }) }, { additionalProperties: false }),
+    executionMode: "sequential",
+    async execute(_id, params, signal, _onUpdate, ctx) {
+      const result = await releaseWorktree(pi, ctx, params.cwd, signal);
+      return { content: [{ type: "text", text: `Released pre-pane failure claim for ${result.cwd}, launch ${result.launchId}. Worktree and branch remain.` }], details: result };
     },
   });
 
