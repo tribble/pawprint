@@ -26,7 +26,7 @@
 
 Check assumptions → make the change → verify the result.
 
-1. BEFORE — name the load-bearing assumption and test it: reproduce the bug before fixing it, validate the key/path/flag against the parser before editing the config, prove a file's inertness by checking what actually reads it there. Strongest source wins: parser over docs, behavior over docs, live state over memory; for intended product behavior, our own docs and observed API behavior over another product's convention.
+1. BEFORE — name the load-bearing assumption and test it: reproduce the bug before fixing it, validate the key/path/flag against the parser before editing the config, prove a file's inertness by checking what actually reads it there. Strongest source wins: parser over docs, behavior over docs, live state over memory.
 2. AFTER — verify the end state through a different channel than the one that made the change: exercise the user's actual goal for real (click the link, boot a fresh process, read the file back). The apply-command's own success output is not evidence. If the repo encodes a check (test suite, validate script), run it on the FINAL state — "the edit applied" is never the check.
 3. One passing check does not disprove an intermittent fault, and one sample per side does not show equivalence or cause — report differences as observed, cause undetermined. Before removing a guard, reproduce the failure condition it guards against (dead agent socket, expired token) and show the system survives without it.
 4. If either check isn't possible, say "untested" — never dress it as success.
