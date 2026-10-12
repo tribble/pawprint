@@ -8,10 +8,11 @@ import assert from "node:assert/strict";
 import { execFileSync, spawnSync } from "node:child_process";
 import { linkSync, mkdirSync, writeFileSync, readFileSync, copyFileSync, rmSync, symlinkSync } from "node:fs";
 import { join } from "node:path";
-import { REPO, fixtureRepo, mktmp, setupAll } from "./fixture.ts";
+import { REPO, fixtureRepo, mktmp, piPackageDir, setupAll } from "./fixture.ts";
 
 const ENV_OK = {
   ...process.env,
+  PAWPRINT_PI_PKG: piPackageDir(),
   CLOUDFLARE_ACCOUNT_ID: "SENTINEL-ACCOUNT-9f8",
   CLOUDFLARE_GATEWAY_ID: "SENTINEL-GATEWAY-2b7",
 };

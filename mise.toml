@@ -1,7 +1,3 @@
-# pawprint toolchain — pinned. `mise install` in this dir; tsc then runs the
-# repo typecheck: tsc -p tsconfig.json
+# Node runtime. Development tools and Pi types are pinned in package-lock.json.
 [tools]
 node = "24"
-"npm:typescript" = "7.0.2"
-"npm:oxlint" = "1.87.0"
-"npm:oxlint-tsgolint" = "7.0.2003"

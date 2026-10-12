@@ -3,16 +3,21 @@
 // /packages lists pins vs upstream (read-only) and routes bump/install/remove
 // as queued source-repo tasks; one-off Opus 5.5 watch notifies once Pi's
 // bundled catalog ships the dashed id.
-import { test } from "node:test";
+import { afterEach, beforeEach, test } from "node:test";
 import assert from "node:assert/strict";
 import { execFile } from "node:child_process";
-import { mkdtempSync, writeFileSync, readFileSync, existsSync, mkdirSync, watch } from "node:fs";
+import { mkdtempSync, writeFileSync, readFileSync, existsSync, mkdirSync, symlinkSync, watch } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { setAgentDir } from "./stubs/pi-coding-agent.mjs";
 import { makePi, makeCtx } from "./harness.mjs";
 import { git } from "./fixture.ts";
 import { parseSource, renderTable } from "../extensions/auto-update.ts";
+
+// The test runner is not Pi. Use the synthetic dotted catalog unless the watch is under test.
+const runnerArgv1 = process.argv[1];
+beforeEach(() => { process.argv[1] = fakePiInstall(DOTTED_CATALOG); });
+afterEach(() => { process.argv[1] = runnerArgv1; });
 
 let seq = 0;
 async function freshExtension(agentDir: string) {
@@ -321,7 +326,9 @@ function fakePiInstall(catalog: string | undefined): string {
   if (catalog !== undefined) writeFileSync(join(dataDir, "cloudflare-ai-gateway.json"), catalog);
   const cli = join(root, "bin", "cli.js");
   mkdirSync(dirname(cli));
-  writeFileSync(cli, "// fake pi entry\n");
+  if (catalog !== undefined) writeFileSync(cli, "// fake pi entry\n");
+  // A catalog-free install must resolve outside the worktree's development SDK.
+  else symlinkSync(process.execPath, cli);
   return cli;
 }
 

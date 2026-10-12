@@ -29,7 +29,7 @@ execFileSync("git", ["init", "-q", "--bare", GIT_DIR]);
 function runApply(target: string) {
   return execFileSync("bash", [join(REPO, "setup.sh"), "--apply", "--target", target], {
     encoding: "utf8",
-    env: { ...process.env, GIT_DIR },
+    env: { ...process.env, GIT_DIR, PAWPRINT_PI_PKG: piPackageDir() },
   });
 }
 

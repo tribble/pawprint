@@ -50,10 +50,9 @@ export function fixtureRepo(source = REPO): string {
   return repo;
 }
 
-let piPkg: string | undefined;
-/** The mise-installed pi package dir, resolved once with the test's own real PATH. */
+/** The worktree's development SDK; runtime deployment still resolves the installed Pi. */
 export function piPackageDir(): string {
-  return (piPkg ??= `${execFileSync("mise", ["where", "npm:@earendil-works/pi-coding-agent"], { encoding: "utf8" }).trim()}/node_modules/@earendil-works/pi-coding-agent`);
+  return join(REPO, "node_modules", "@earendil-works", "pi-coding-agent");
 }
 
 /** setup.sh --all --config-only from `repo` onto `<live>/agent`; returns the spawn result. */

@@ -28,7 +28,7 @@ const printFiles: string[] = JSON.parse(readFileSync(join(REPO, "manifest.json")
 // that write to a scratch repo so tests never touch this checkout's .git/config.
 const GIT_DIR = mktmp("gitdir");
 execFileSync("git", ["init", "-q", "--bare", GIT_DIR]);
-const SETUP_ENV = { ...process.env, GIT_DIR };
+const SETUP_ENV = { ...process.env, GIT_DIR, PAWPRINT_PI_PKG: piPackageDir() };
 function runSetup(args: string[]) {
   return execFileSync("bash", [join(REPO, "setup.sh"), ...args], { encoding: "utf8", env: SETUP_ENV });
 }
@@ -176,7 +176,7 @@ test("4. malformed or non-object live JSON: refused, the file is never overwritt
     const live = join(mktmp("w4"), "pi");
     mkdirSync(join(live, "agent"), { recursive: true });
     writeFileSync(join(live, "agent", name), content);
-    const r = spawnSync("bash", [join(repo, "setup.sh"), "--apply", "--target", join(live, "agent")], { encoding: "utf8" });
+    const r = spawnSync("bash", [join(repo, "setup.sh"), "--apply", "--target", join(live, "agent")], { encoding: "utf8", env: SETUP_ENV });
     assert.equal(r.status, 1, name);
     assert.match(r.stderr, /not valid JSON|not a JSON object/);
     assert.match(r.stderr, /not touching it/);
@@ -813,7 +813,7 @@ test("3i. a literal wildcard in --target is never glob-expanded against the chec
   const repo = fixtureRepo();
   const scratch = mktmp("w3i");
   const literal = join(scratch, "a*"); // quoted argv: a directory literally named a*
-  const r = spawnSync("bash", [join(repo, "setup.sh"), "--apply", "--target", join(literal, "agent")], { encoding: "utf8" });
+  const r = spawnSync("bash", [join(repo, "setup.sh"), "--apply", "--target", join(literal, "agent")], { encoding: "utf8", env: SETUP_ENV });
   assert.equal(r.status, 0, r.stderr);
   assert.ok(existsSync(join(literal, "agent", "AGENTS.md")), "files landed in the literal a* dir");
   assert.ok(!existsSync(join(scratch, "agent")), "never expanded to the checkout's agent/ match");
@@ -881,7 +881,7 @@ test("3l. a relative target from a newline-containing cwd is refused — the com
   const scratch = mktmp("w3l");
   const wrongPrefix = join(scratch, "prefix"); // the truncation result: a fully applied live dir
   {
-    const applied = spawnSync("bash", [join(repo, "setup.sh"), "--apply", "--target", wrongPrefix], { encoding: "utf8" });
+    const applied = spawnSync("bash", [join(repo, "setup.sh"), "--apply", "--target", wrongPrefix], { encoding: "utf8", env: SETUP_ENV });
     assert.equal(applied.status, 0, applied.stderr + applied.stdout);
   }
   const prefixAgents = readFileSync(join(wrongPrefix, "AGENTS.md"), "utf8");

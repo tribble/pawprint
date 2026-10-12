@@ -4,7 +4,7 @@
 // (ModelOverrideSchema has no `id`), so a custom model carries the correct
 // request id on the same Anthropic-through-Cloudflare route — and no
 // fallback, so a smoke probe can't silently pass on another model. Durable checks
-// only: config content, composed by the REAL installed pi runtime
+// only: config content, composed by the REAL local Pi SDK
 // (ModelRuntime over ModelConfig.load — schema-validating, credential-blind,
 // no network) in a clean subprocess, because this suite's loader stubs
 // `typebox` and the real parser needs the real one. Nothing here reads git
@@ -16,7 +16,7 @@ import { execFileSync } from "node:child_process";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
-import { REPO } from "./fixture.ts";
+import { REPO, piPackageDir } from "./fixture.ts";
 
 const AGENT = join(REPO, "agent");
 const readJson = (rel: string) => JSON.parse(readFileSync(join(AGENT, rel), "utf8"));
@@ -40,7 +40,7 @@ type ComposedModel = {
 type Composed = { configError?: string; models: ComposedModel[] };
 function compose(): Composed {
   const script = `
-    const base = ${JSON.stringify(pathToFileURL(join(REPO, ".pi-types/@earendil-works/pi-coding-agent/dist/core/")).href)};
+    const base = ${JSON.stringify(pathToFileURL(join(piPackageDir(), "dist/core/")).href)};
     const { ModelRuntime } = await import(base + "model-runtime.js");
     const rt = await ModelRuntime.create({
       authPath: ${JSON.stringify(join(REPO, ".artifacts/nonexistent-auth.json"))},

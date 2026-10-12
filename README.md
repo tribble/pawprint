@@ -5,7 +5,7 @@ The curated print of my pi agent config, in two halves. The repo root is a
 `prompts/`, `themes/` — code pi loads from a package, installed with
 `pi install git:github.com/tribble/pawprint` (floating `main`;
 `pi update --extensions` pulls). Next to it, not pi's: `ghostty/config.ghostty`
-(copied out by `setup.sh`) and `mise.toml` (the typecheck toolchain).
+(copied out by `setup.sh`) and `mise.toml` (the Node runtime).
 `agent/` mirrors `~/.pi/agent`-relative paths and holds exactly the
 reviewed-safe *config* files; on my machine `~/.pi` is a **plain
 runtime/config directory** that `setup.sh --apply` applies the print onto
@@ -183,7 +183,7 @@ git clone git@github.com:tribble/pawprint.git ~/work/pawprint
 ~/work/pawprint/setup.sh --all
 ```
 
-`setup.sh --all` first establishes the runtime the apply needs (mise toolchain
+`setup.sh --all` first establishes the runtime the apply needs (mise Node
 pin; pi via npm if no `pi` exists yet), then applies the print onto
 `~/.pi/agent`, a **plain directory** (never a git worktree), then installs
 every package the applied `settings.json` declares (native `pi install
@@ -213,9 +213,7 @@ prints the plan and writes nothing — it needs no pi installation or bootstrap
 (bash and jq are still required); `--config-only` or a non-default `--target` skips the package installs and the machine machinery.
 
 The machine machinery after the apply (skipped under `--dry-run` / `--config-only` /
-non-default target): agent-browser via npm,
-`.pi-types` symlink (repo root, for the
-typecheck), ghostty config
+non-default target): agent-browser via npm, ghostty config
 copy-out, gh-dash extension. Prereq: `CLOUDFLARE_ACCOUNT_ID` / `CLOUDFLARE_GATEWAY_ID` set in
 `~/.config/fish/conf.d` (see the dotfiles repo's `pi.fish.template`).
 
@@ -316,11 +314,18 @@ The repo has a dev side that never reaches `~/.pi` (only `agent/` content is
 ever applied; `tests/`, `scripts/` and the package dirs stay in the repo).
 
 ```sh
-npm run types       # create/refresh the local .pi-types symlink to the mise-installed Pi types
-npm test            # oxlint --type-aware (no `any` + floating/misused promises; per-line opt-outs need a reason), mise-pinned tsc, then the node suites (extension behavior + imprint matrix)
+npm ci              # in a task worktree: install the locked development dependencies
+npm test            # local oxlint --type-aware, tsc, then the node suites
+npm run typecheck   # local tsc only
 ```
 
-Zero dependencies: Node 24 runs the `.ts` natively; an ESM loader hook
+Mise supplies Node 24. The SDK/types, lint and typecheck tools are pinned in
+`package.json` and `package-lock.json` and resolve from the worktree's
+`node_modules`. Development installs leave the shared Pi runtime and live
+config alone. Pi's package install omits development dependencies and uses
+the optional runtime peers.
+
+Node 24 runs the `.ts` natively; an ESM loader hook
 (`tests/loader.mjs`) redirects pi's runtime packages to stubs in
 `tests/stubs/`, and `tests/harness.mjs` fakes the ExtensionAPI/ctx. The
 imprint matrix (`tests/imprint.test.ts`) drives `setup.sh` against throwaway
