@@ -36,7 +36,7 @@
 #   table on a TTY, JSON otherwise — and exit
 #   --config-only (alias --imprint-only): run ONLY the apply/copy step — skip
 #   package installs and the machine-machinery section (agent-browser, ghostty,
-#   gh-dash, mise types symlink)
+#   gh-dash)
 #   Bare setup.sh (no selector) refuses and points at the three above.
 set -euo pipefail
 ORIGIN=$PWD   # relative --target spellings resolve against the CALLER's cwd
@@ -350,11 +350,6 @@ fi
 : "${CLOUDFLARE_ACCOUNT_ID:?set it in ~/.config/fish/conf.d first — see README}"
 : "${CLOUDFLARE_GATEWAY_ID:?set it in ~/.config/fish/conf.d first — see README}"
 
-# pi and the mise toolchain were installed by the bootstrap above (or existed).
-# toolchain (typecheck): pinned via mise.toml at the repo root; tsconfig resolves
-# pi's types through .pi-types → the mise-installed pi's package store (also has
-# @types/node). `npm run types` refreshes the symlink in any checkout.
-command -v mise >/dev/null 2>&1 && pi_dir="$(mise where npm:@earendil-works/pi-coding-agent)" && ln -sfn "$pi_dir/node_modules/.mise/node_modules" .pi-types || true
 command -v agent-browser >/dev/null 2>&1 || npm install -g agent-browser
 agent-browser install >/dev/null 2>&1 || true   # browser runtime
 

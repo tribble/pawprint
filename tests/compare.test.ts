@@ -22,7 +22,7 @@ import {
 import { join, resolve } from "node:path";
 import test from "node:test";
 import type { TestContext } from "node:test";
-import { REPO, git } from "./fixture.ts";
+import { REPO, git, piPackageDir } from "./fixture.ts";
 
 const COMPARE = join(REPO, "scripts", "compare.ts");
 
@@ -814,32 +814,28 @@ test("shipped examples run end-to-end offline: writing + greptile, controlled pi
   const summeta = JSON.parse(readFileSync(join(wresults, "summary.meta.json"), "utf8"));
   assert.match(summeta.agentConfig.sha256, /^[0-9a-f]{64}$/, "summarizer runs under the same controlled config discipline");
 
-  // the shipped grader argv feeds the REAL installed Pi file processor only
+  // the shipped grader argv feeds the REAL local Pi file processor only
   // identity-free staging paths (offline: file processing, no model call)
-  const processor = join(REPO, ".pi-types", "@earendil-works", "pi-coding-agent", "dist", "cli", "file-processor.js");
-  if (existsSync(processor)) {
-    const probe = join(root, "pi-file-probe.mjs");
-    writeFileSync(
-      probe,
-      `import { processFileArguments } from ${JSON.stringify(`file://${processor}`)};\n` +
-        "const { text } = await processFileArguments(process.argv.slice(2).filter((x) => x.startsWith('@')).map((x) => x.slice(1)));\n" +
-        "console.log(text);\n",
-    );
-    // reconstruct the grade's model-visible argv from the revision's canonical
-    // bytes, staged at neutral paths exactly like the runner stages them
-    // (staging dirs are ephemeral by design; canonical paths carry identity)
-    const ginput = JSON.parse(readFileSync(join(grev, "input.json"), "utf8"));
-    const probeStage = mkdtempSync(join(root, "probe-stage-"));
-    for (const f of ["answer", "prompt.md", "expectations.md", "rubric.md"]) copyFileSync(join(grev, f), join(probeStage, f));
-    copyFileSync(join(grev, "instructions", ginput.protocol.instructions[0].as), join(probeStage, ginput.protocol.instructions[0].as));
-    const staged = ["answer", "prompt.md", "expectations.md", "rubric.md", ginput.protocol.instructions[0].as].map((f) => `@${join(probeStage, f)}`);
-    const seen = spawnSync(process.execPath, [probe, ...staged], { encoding: "utf8" });
-    assert.equal(seen.status, 0, seen.stderr);
-    assert.ok(!seen.stdout.includes("/fable/") && !seen.stdout.includes("/astra/"), "no candidate identity in model-visible file names");
-    assert.match(seen.stdout, /You are grading one agent reply/);
-  } else {
-    t.skip(".pi-types missing (run npm run types) — real-Pi file-processing check skipped");
-  }
+  const processor = join(piPackageDir(), "dist", "cli", "file-processor.js");
+  const probe = join(root, "pi-file-probe.mjs");
+  writeFileSync(
+    probe,
+    `import { processFileArguments } from ${JSON.stringify(`file://${processor}`)};\n` +
+      "const { text } = await processFileArguments(process.argv.slice(2).filter((x) => x.startsWith('@')).map((x) => x.slice(1)));\n" +
+      "console.log(text);\n",
+  );
+  // reconstruct the grade's model-visible argv from the revision's canonical
+  // bytes, staged at neutral paths exactly like the runner stages them
+  // (staging dirs are ephemeral by design; canonical paths carry identity)
+  const ginput = JSON.parse(readFileSync(join(grev, "input.json"), "utf8"));
+  const probeStage = mkdtempSync(join(root, "probe-stage-"));
+  for (const f of ["answer", "prompt.md", "expectations.md", "rubric.md"]) copyFileSync(join(grev, f), join(probeStage, f));
+  copyFileSync(join(grev, "instructions", ginput.protocol.instructions[0].as), join(probeStage, ginput.protocol.instructions[0].as));
+  const staged = ["answer", "prompt.md", "expectations.md", "rubric.md", ginput.protocol.instructions[0].as].map((f) => `@${join(probeStage, f)}`);
+  const seen = spawnSync(process.execPath, [probe, ...staged], { encoding: "utf8" });
+  assert.equal(seen.status, 0, seen.stderr);
+  assert.ok(!seen.stdout.includes("/fable/") && !seen.stdout.includes("/astra/"), "no candidate identity in model-visible file names");
+  assert.match(seen.stdout, /You are grading one agent reply/);
 
   // changed-rubric regrading on the shipped example configs: copy the corpus
   // to scratch (absolute prompt paths), grade, change one case's rubric, and

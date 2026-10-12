@@ -2,14 +2,14 @@
 // Durable desired-state checks only: nothing here
 // reads git HEAD, so the suite stays green once this branch becomes HEAD.
 // agent/mcp.json: all 11 servers with exact URLs, validated by the REAL
-// installed pi parser (validateMcpServerConfig — no connections, no
+// local Pi SDK parser (validateMcpServerConfig — no connections, no
 // header-command execution), Slack's clientId + exact callbackUrl and its
 // public direct-tool selection, horizon/alto publishing endpoint +
 // codemode exposure only (owner decision: no internal tool inventories in
 // tracked files), GitHub's auth as the documented whole-value command header.
 // settings.json: codemode additive. agent/mcp-auth.json
 // stays default-deny ignored; cloak.json masks every persisted native secret
-// field — fake strings only, through the REAL installed pi-cloak.
+// field — fake strings only, through the REAL local pi-cloak.
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
@@ -17,19 +17,18 @@ import { readFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
-import { REPO, fixtureRepo } from "./fixture.ts";
+import { REPO, fixtureRepo, piPackageDir } from "./fixture.ts";
 
 const AGENT = join(REPO, "agent");
 const readJson = (rel: string) => JSON.parse(readFileSync(join(AGENT, rel), "utf8"));
 
-// The real parser of the installed pi, reached through the .pi-types symlink
-// (`npm run types`). It validates only — it never connects or runs `!command`
-// header values, and neither do we.
+// The real parser from the local development SDK. It validates only —
+// it never connects or runs `!command` header values, and neither do we.
 type NativeParser = {
   validateMcpServerConfig: (name: string, raw: unknown) => unknown; // config copy, or error string
   mcpNamespace: (server: string) => string;
 };
-const parser = (await import(pathToFileURL(join(REPO, ".pi-types/@earendil-works/pi-coding-agent/dist/core/mcp-servers.js")).href)) as NativeParser;
+const parser = (await import(pathToFileURL(join(piPackageDir(), "dist/core/mcp-servers.js")).href)) as NativeParser;
 
 const SERVERS: Record<string, string> = {
   "slack-workos": "https://mcp.slack.com/mcp",
@@ -60,7 +59,7 @@ const SLACK_DIRECT_TOOLS = [
   "slack_get_reactions",
 ];
 
-test("agent/mcp.json: exactly the 11 servers with exact URLs, each accepted by the installed native parser", () => {
+test("agent/mcp.json: exactly the 11 servers with exact URLs, each accepted by the local native parser", () => {
   const servers = readJson("mcp.json").mcpServers;
   assert.deepEqual(Object.keys(servers).sort(), Object.keys(SERVERS).sort());
   for (const [name, url] of Object.entries(SERVERS)) {
@@ -127,13 +126,13 @@ test("gitignore policy: agent/mcp-auth.json stays ignored; agent/mcp.json is tra
   assert.equal(run("agent/mcp.json"), false, "native config must be trackable");
 });
 
-test("cloak.json: the REAL installed pi-cloak masks fake native OAuth secrets in mcp-auth.json", async () => {
+test("cloak.json: the REAL local pi-cloak masks fake native OAuth secrets in mcp-auth.json", async () => {
   type CloakModule = {
     loadState: (configPath: string) => unknown;
     cloakText: (text: string, path: string, cwd: string, state: unknown) => string;
   };
   // dist/index.js: node refuses type-stripping for .ts under node_modules.
-  const cloakPath = join(homedir(), ".pi/agent/npm/node_modules/@nicknisi/pi-cloak/dist/index.js");
+  const cloakPath = join(REPO, "node_modules/@nicknisi/pi-cloak/dist/index.js");
   const cloak = (await import(pathToFileURL(cloakPath).href)) as CloakModule;
   const state = cloak.loadState(join(AGENT, "cloak.json"));
 
