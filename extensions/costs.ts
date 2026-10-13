@@ -4,12 +4,15 @@
 // count. The table is a TUI-only entry (pi.appendEntry + renderer), so it never enters the
 // model's context; the agent_costs tool returns the same text for the model on request.
 // Replaces the agent-costs script that used to live in agent/bin.
+// /costs workstream [full] estimates the calling session and recorded descendants once.
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { getAgentDir } from "@earendil-works/pi-coding-agent";
+import { StringEnum } from "@earendil-works/pi-ai";
 import { Text } from "@earendil-works/pi-tui";
 import { globSync, readFileSync, statSync } from "node:fs";
 import { join } from "node:path";
 import { Type } from "typebox";
+import { workstreamCosts, type WorkstreamReport } from "./lib/workstream-costs.ts";
 
 // [cost $, turns, tokens, reasoning/tokens, cacheRead/tokens] per run
 type Run = [number, number, number, number, number];
@@ -67,22 +70,41 @@ export default function costs(pi: ExtensionAPI) {
   pi.registerEntryRenderer<{ text: string }>("costs", (entry, _opts, theme) => new Text(theme.fg("muted", entry.data?.text ?? ""), 1, 1, (t) => theme.bg("customMessageBg", t)));
 
   pi.registerCommand("costs", {
-    description: "Per-model cost of subagent runs (TUI only): /costs [days], default all",
+    description: "Cost estimates: /costs [days] per model; /costs workstream [full] calling session + recorded descendants",
     handler: async (args, ctx) => {
+      if (args.trim().split(/\s+/)[0] === "workstream") {
+        if (!/^workstream(?:\s+full)?$/.test(args.trim())) return ctx.ui.notify("usage: /costs workstream [full]", "warning");
+        const report = await workstreamCosts(pi, ctx, sessions, args.trim().split(/\s+/).length === 2, ctx.signal);
+        pi.appendEntry("costs", { text: report.text });
+        return;
+      }
       const days = args.trim() ? Number(args.trim()) : undefined;
       if (days !== undefined && !(days > 0)) return ctx.ui.notify("usage: /costs [days]", "warning");
       pi.appendEntry("costs", { text: costsTable(sessions, days) });
     },
   });
 
-  pi.registerTool({
+  pi.registerTool<typeof parameters, { report?: WorkstreamReport }>({
     name: "agent_costs",
     label: "Agent costs",
-    description: "Per-model cost of pi subagent runs on this machine (medians per run: $, turns, Mtok, reasoning%, cache%), sorted by run count.",
-    promptSnippet: "Per-model cost table of subagent runs; days limits to recent runs",
-    parameters: Type.Object({ days: Type.Optional(Type.Number({ description: "Only runs from the last N days (default: all)" })) }),
-    async execute(_id, { days }) {
+    description: "Cost estimates: per-model subagent medians, or calling-session workstream with recorded pane/headless descendants counted once.",
+    promptSnippet: "Cost table or whole-workstream estimate; workstream full exposes run details",
+    annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true },
+    parameters,
+    async execute(_id, { days, mode, full }, signal, _onUpdate, ctx) {
+      if (mode === "workstream") {
+        if (days !== undefined) throw new Error("days applies only to per-model costs; omit it for workstream mode");
+        const report = await workstreamCosts(pi, ctx, sessions, full, signal);
+        return { content: [{ type: "text", text: report.text }], details: { report } };
+      }
+      if (full) throw new Error("full requires mode: workstream");
       return { content: [{ type: "text", text: costsTable(sessions, days) }], details: {} };
     },
   });
 }
+
+const parameters = Type.Object({
+  days: Type.Optional(Type.Number({ description: "Per-model only: runs from the last N days (default: all)" })),
+  mode: Type.Optional(StringEnum(["per-model", "workstream"] as const, { description: "Default: per-model. Workstream roots at the calling native session." })),
+  full: Type.Optional(Type.Boolean({ description: "Workstream only: include the full recorded run tree (default: compact)" })),
+});
