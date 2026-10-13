@@ -55,6 +55,17 @@ function compose(): Composed {
 
 test("models.json: parses and composes clean through pi's real runtime", () => {
   assert.equal(compose().configError, undefined);
+  // The pinned 1.1 SDK accepts missing fallback costs; Pi 1.2 requires all four rates.
+  const provider = readJson("models.json").providers["cloudflare-ai-gateway"];
+  for (const model of [...provider.models, ...Object.values(provider.modelOverrides)] as ComposedModel[]) {
+    for (const fallback of model.compat?.allowedFallbackModels ?? []) {
+      const { cost } = fallback as { cost?: ComposedModel["cost"] };
+      for (const rate of ["input", "output", "cacheRead", "cacheWrite"] as const) {
+        assert.equal(typeof cost?.[rate], "number", `fallback cost.${rate} required`);
+        assert.ok(Number.isFinite(cost?.[rate]), `fallback cost.${rate} must be finite`);
+      }
+    }
+  }
 });
 
 test("models.json: claude-opus-5-5 composes on the same gateway anthropic route as claude-opus-5, native Opus 5.5 metadata", () => {
