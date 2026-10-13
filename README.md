@@ -79,6 +79,35 @@ anything. Questions or a broken piece
 Working in this repo itself, not adopting? The root `AGENTS.md` is the
 contributor side.
 
+## Cost reports
+
+`/costs [days]` keeps the per-model subagent medians. `/costs workstream`
+shows the calling session's own estimate, grouped root-owned headless work,
+and each recorded pane's own and subtree estimates. The total counts native
+contributions once across all branches, continuations and folded usage.
+Subtree includes own spend. Do not add them together.
+
+Use `/costs workstream full` for the run tree, run IDs, activity and coverage
+diagnostics. The model-facing counterpart is
+`agent_costs({mode: "workstream", full: true})`; omit `full` for the compact view.
+`agent_costs({days: 7})` retains the per-model table.
+
+Workstream ownership comes from recorded native owner edges, not workspace
+membership. Native sources must stay under the agent's sessions directory.
+Headless sources use the immediate owner's session-file stem directory or
+the standard fork-context layout in that owner's native session directory.
+Forks require a matching filename/native identity and `parentSession` bound
+to the canonical owner file, alongside recorded run and launch ownership.
+Missing launch metadata, copied/moved histories and custom headless directories
+without file-bound ownership appear as unknown coverage.
+Unrecorded legacy launches are not discovered. Unsupported source versions,
+missing usage, unpriced history and running work stay visible. Historical
+prices are never replaced with current model rates.
+
+Herdr activity uses an asynchronous read-only agent list matched to native
+identity and recorded pane. Ready means ready for input, not completed work.
+These are recorded cost estimates. Spending remains uncapped.
+
 ## Pane role profiles
 
 `herdr-fleet` reads `<agent-dir>/configs/session-roles.json` at launch time.
