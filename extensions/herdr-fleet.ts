@@ -14,7 +14,6 @@ import { claimWriter, createWorktree, gitOutput, readWriterClaim, removeWriterCl
 
 // This session's pi-intercom ID — what a child must report to, because names change and IDs do not
 // (pi-subagents src/pi-intercom/index.ts L1284 at the pinned 84614b3: `pi-` + sha256(sessionId).hex[0:32]).
-// Same one line as in pr-review.ts on purpose: not worth a shared module.
 const intercomId = (sessionId: string) => `pi-${createHash("sha256").update(sessionId).digest("hex").slice(0, 32)}`;
 
 // The herdr skill forbids inspect/control from outside Herdr; every command's execs route through herdr().
