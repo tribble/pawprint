@@ -128,6 +128,22 @@ use `role: "coordinator"` for a nested Coordinator. Routine delegation needs no
 raw herdr construction or slash-command typing. The separate `delegate` tool
 runs headless subagents.
 
+After apply, reload extensions in the launching parent or start a fresh parent session and verify its effective depth limit before selecting the trial.
+
+The managed supervisor trial is opt-in: select `managed-coder-trial` through
+the managed `delegate` tool. It uses Astra/high to supervise Sol implementation
+and fresh independent Opus review. Its depth ceiling is two; ordinary workers
+and reviewers remain leaves. `/delegate` still launches the default pane workflow.
+Child owner decisions require a separately saved supervisor question and an
+authoritative saved answer returned to the original child question.
+`extensions/subagent/config.json` is source-owned and copied wholesale on apply.
+Before deploying, check for unrelated live keys and preserve them in source.
+With no explicit parent trust flag, child runs inherit native hook/store/default
+trust policy. Unknown headless projects can start with protected project resources
+skipped; AGENTS.md and CLAUDE.md still load. Explicit parent trust flags propagate.
+Existing argv and saved continuation policies remain in effect; use fresh runs
+after refreshing the launching parent.
+
 Human shortcuts:
 
 ```text

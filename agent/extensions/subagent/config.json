@@ -1,0 +1,6 @@
+{
+  "maxSubagentDepth": 2,
+  "projectTrust": {
+    "childRuns": "inherit"
+  }
+}

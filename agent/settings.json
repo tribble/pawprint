@@ -151,9 +151,6 @@
       "writer": {
         "model": "cloudflare-ai-gateway/claude-fable-5-1"
       }
-    },
-    "projectTrust": {
-      "childRuns": "inherit"
     }
   },
   "theme": "calm-tribble",
