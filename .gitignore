@@ -51,4 +51,7 @@
 !agent/agents/**
 !agent/configs/
 !agent/configs/**
+!agent/extensions/
+!agent/extensions/subagent/
+!agent/extensions/subagent/config.json
 *.bak-pawprint-*

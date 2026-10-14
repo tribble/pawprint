@@ -2,6 +2,7 @@
   "schemaVersion": 1,
   "files": [
     "AGENTS.md",
+    "agents/managed-coder-trial.md",
     "agents/reviewer-fable.md",
     "agents/reviewer-kimi.md",
     "agents/scout-kimi.md",
@@ -14,9 +15,20 @@
     "configs/ws.json",
     "configs/session-roles.json",
     "configs/session-role-coordinator.md",
-    "configs/session-role-coder.md"
+    "configs/session-role-coder.md",
+    "extensions/subagent/config.json"
   ],
   "about": {
+    "agents/managed-coder-trial.md": {
+      "does": "Opt-in managed Coder trial: implementation and independent-review supervisor",
+      "needs": ["pi-subagents", "cloudflare-ai-gateway", "models.json"],
+      "personal": true
+    },
+    "extensions/subagent/config.json": {
+      "does": "Managed child depth 2 and native project-trust inheritance",
+      "needs": ["pi-subagents"],
+      "personal": true
+    },
     "AGENTS.md": {
       "does": "pi's global instructions — the rules every session on this machine follows",
       "needs": ["herdr", "pi-subagents", "pr-watch"],
