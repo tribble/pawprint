@@ -15,6 +15,11 @@ piece"). This file is for changing this repo.
   Just before native removal, freshly match the exact recorded workspace ID to recorded canonical `checkout_path`/`repo_key`/`is_linked_worktree: true`.
   Inspect the Git admin dir for `pawprint-writer.json` or `pawprint-writer.lock` and canonical visible herdr agent
   `cwd`/`foreground_cwd` occupants. Any claim/lock/occupant, mismatch or unknown inspection means keep the tree.
+  If a visible agent path no longer exists, canonicalize its existing parent and use `lstat` to prove the final
+  entry absent (not a dangling symlink). Compare canonical-parent-plus-final-name against the canonical task tree:
+  known absence outside that tree is not an occupant. Missing ancestors, unresolved links,
+  permission errors or unknown identity still block. Actor completion, claims and deletion authority
+  remain independent requirements.
   Herdr does not account for detached headless writers. Keep unknown/running actors' trees; never force or auto-remove.
   Non-force removal deletes ignored files too; preserve needed artifacts first. Authorized direct-tree cleanup uses
   `git -C ~/work/pawprint worktree remove ~/work/pawprint-<branch>` after the same actor/claim/artifact checks.
@@ -24,8 +29,15 @@ piece"). This file is for changing this repo.
   config lands there only via `setup.sh --apply`, never by hand-editing managed files.
   Run `npm ci` in task worktrees, never in `~/work/pawprint` or `~/.pi`.
 - The gate is `npm test`: `oxlint` (type-aware via tsgolint; no `any`, no floating/misused promises; opt out per line with a reason), `tsc`, then the node tests. Red = not done.
+  Under process limits, count the runner, test-file processes and nested helpers. Run the same pinned components
+  sequentially with `--test-concurrency=1` for Node tests.
+  Preserve every test file, the register import, all enabled tests, component order and fail-fast behavior.
+  Record actual commands; do not call an equivalent serial gate a literal `npm test` run.
 - Mise supplies Node 24. `npm ci` installs the pinned development tools and Pi SDK into this worktree's
   `node_modules`; `npm test` and `npm run typecheck` use them. Never `npx`.
+  Resolve the pinned runtime before applying test-only `HOME`/`TMPDIR` overrides so tool setup does not
+  relocate or reinstall it inside the fixture. Keep test `TMPDIR` short enough for Unix socket filenames
+  to fit platform path limits.
   Read `node_modules/@earendil-works/pi-coding-agent/docs/` and `dist/` instead of guessing Pi's behaviour.
   Keep host-provided packages in optional runtime peers and development dependencies, not `dependencies`.
 - This repo *is* the package: source string `git:github.com/tribble/pawprint`, clone
@@ -40,3 +52,4 @@ piece"). This file is for changing this repo.
 - Tests: `tests/harness.mjs` fakes the extension API and `pi.exec`; fixture repos come from `tests/fixture.ts`.
   Copy an existing suite. Red first.
 - Deploy is the owner's agent's, not yours: PR, `reviewer` clean, report.
+  For read-only reviews, consume saved run results instead of asking reviewers to write report files.
