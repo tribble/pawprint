@@ -6,8 +6,8 @@
 # Docs: ghostty +show-config --default --docs | less
 
 # --- Appearance ---
-# Alternates: "Catppuccin Mocha", "Gruvbox Dark Hard", "Gruvbox Material Dark".
-theme = Gruvbox Dark
+# Alternates: "Gruvbox Dark", "Catppuccin Mocha", "Gruvbox Material Dark".
+theme = Gruvbox Dark Hard
 font-family = "JetBrainsMono Nerd Font Mono"
 font-family = "Hack Nerd Font"
 font-thicken = true
