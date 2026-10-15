@@ -36,7 +36,7 @@ export function tildePath(abs: string, home: string): string {
   return abs === home || abs.startsWith(`${home}/`) ? `~${abs.slice(home.length)}` : abs;
 }
 
-// Read the file and append the TUI-only md-view entry (or notify why not). Also the doc opener for /artifacts.
+// Read the file and append the TUI-only md-view entry (or notify why not).
 export function viewMarkdown(pi: ExtensionAPI, ctx: ExtensionContext, raw: string): void {
   const home = homedir();
   const abs = expandPath(raw, home, ctx.cwd);
