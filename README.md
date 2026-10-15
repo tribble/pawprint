@@ -108,6 +108,74 @@ Herdr activity uses an asynchronous read-only agent list matched to native
 identity and recorded pane. Ready means ready for input, not completed work.
 These are recorded cost estimates. Spending remains uncapped.
 
+## Managed PR workstreams
+
+Coordinator-led PR work uses a fresh native herdr worktree/workspace, then
+`managed-coder-trial` through the public `delegate` tool. The managed Coder
+supervises sequential Sol implementation and fresh independent Opus review.
+It uses Astra/high with a depth ceiling of two. Ordinary workers and reviewers
+remain leaves. Keep a persistent saved Coordinator session for run/question recovery.
+After apply, refresh the launching parent and verify its effective depth limit
+before launching managed work.
+
+For pawprint, preflight an unused branch and absent sibling path, including
+dangling symlinks and registered worktrees. Resolve and record `origin/main`
+immediately before creation; herdr does not fetch.
+
+```sh
+herdr worktree create --cwd /Users/pantera/work/pawprint --branch <branch> \
+  --base origin/main --path /Users/pantera/work/pawprint-<branch> \
+  --label <branch> --no-focus
+```
+
+Read `.result.worktree.path` and `.result.workspace.workspace_id`. Independently
+verify the returned path, branch, HEAD/base and Git common directory against
+the requested path/branch/base and source repository. Keep the canonical path,
+`repo_key`, base commit, exact `workspace_id` and every run/continuation ID in the plan.
+
+```text
+delegate({agent:"managed-coder-trial",cwd:<returned path>,async:true,
+  task:<verbatim Owner outcome + scoped brief with assigned absolute path>})
+```
+
+Do not set `worktree:true` or attach another workstream or pane Coder to this tree.
+Preserve legacy/uncertain pawprint claims. Reconcile uncertain creation/launch
+receipts against native/Git readback and saved runs before recovery; never retry blindly.
+The shell and installed diff-review plugin provide workspace access without a Coder pane.
+
+Child owner decisions travel through a separately saved managed-Coder supervisor
+question to the same human-facing Coordinator. Recover `agent_runs` questions
+in that same saved session. Return the authoritative saved answer to the exact
+Coder question; the Coder answers the original child run/question.
+PR context grants children no publication authority.
+
+Only an authorized Coordinator removes the workspace after merge or authorized
+abandonment, every recorded task agent/command has finished and no decision or
+answer delivery remains pending. Include nested runs, continuations and command
+descendants in that check. Herdr does not account for detached headless writers.
+A terminal run, Stop receipt or idle/absent pane is insufficient.
+Just before removal, freshly match the exact recorded `workspace_id` row in
+`herdr workspace list` to the recorded canonical `checkout_path`, `repo_key` and
+`is_linked_worktree: true`. Never use list positions or workspace numbers.
+Inspect the Git admin directory for `pawprint-writer.json` or `pawprint-writer.lock`,
+including symlinks. Freshly check `herdr agent list` entries' canonical `cwd` and
+`foreground_cwd` for occupants at or below the task path. Any claim, lock, occupant,
+identity mismatch or unknown/unreadable inspection means keep the tree. Never
+remove, release or bypass claims. Visible agents do not prove detached writers finished.
+
+Non-force removal deletes ignored files too. Preserve needed artifacts and delivery
+evidence first. Use `herdr worktree remove --workspace <recorded workspace_id>`
+without force, then verify native/Git readback. Dirty refusal means keep and inspect
+the tree. Removal leaves the branch. Only after verified merge and successful
+verified tree removal, explicit branch deletion authority permits
+`git -C ~/work/pawprint branch -d <branch>`. Keep abandoned/unmerged branches unless
+separately authorized. Never force or auto-remove.
+
+The full Coordinator recipe is in
+[`agent/configs/session-role-coordinator.md`](agent/configs/session-role-coordinator.md).
+`launch_agent`, human `/delegate`, `/ws` and `release_worktree` remain explicit
+pane workflows. Human `/delegate` is not managed `delegate`.
+
 ## Pane role profiles
 
 `herdr-fleet` reads `<agent-dir>/configs/session-roles.json` at launch time.
@@ -124,18 +192,9 @@ in your role instruction files.
 Agents invoke the native `launch_agent` tool with `name` and `task` (including
 the owner's verbatim `Owner outcome:` block). Optional fields are `role`, `cwd`,
 `base` and `noProjectResources` (explicit native trust opt-out). It defaults to Coder;
-use `role: "coordinator"` for a nested Coordinator. Routine delegation needs no
-raw herdr construction or slash-command typing. The separate `delegate` tool
-runs headless subagents.
+use `role: "coordinator"` for a nested Coordinator. This is the explicit pane
+workflow. The separate `delegate` tool runs managed headless subagents.
 
-After apply, reload extensions in the launching parent or start a fresh parent session and verify its effective depth limit before selecting the trial.
-
-The managed supervisor trial is opt-in: select `managed-coder-trial` through
-the managed `delegate` tool. It uses Astra/high to supervise Sol implementation
-and fresh independent Opus review. Its depth ceiling is two; ordinary workers
-and reviewers remain leaves. `/delegate` still launches the default pane workflow.
-Child owner decisions require a separately saved supervisor question and an
-authoritative saved answer returned to the original child question.
 `extensions/subagent/config.json` is source-owned and copied wholesale on apply.
 Before deploying, check for unrelated live keys and preserve them in source.
 With no explicit parent trust flag, child runs inherit native hook/store/default
@@ -161,7 +220,7 @@ workspace. Coordinator names reserve the role marker and collision suffix
 before purpose truncation. A name such as `coordinator-3d-print` keeps its
 leading role marker so its numeric purpose remains legal.
 
-Delegation opens a no-focus tab in the current workspace and delivers the task
+Pane delegation opens a no-focus tab in the current workspace and delivers the task
 to the returned pane ID. A Coder without `cwd` gets a fresh sibling linked
 worktree from the effective repository, including `change_dir`. It starts from
 committed `HEAD`, or the immutable commit resolved from `base`. Pawprint callers
@@ -380,9 +439,17 @@ fixture repos and mktemp targets only — never this checkout's git, never
 ## Changing config
 
 The source of truth is the repo, never the live dir. Start every change in its
-own worktree (`git -C ~/work/pawprint worktree add ~/work/pawprint-<branch> -b <branch> origin/main`;
-the base checkout is never edited or checked out on a branch; after merge
-`git -C ~/work/pawprint worktree remove ~/work/pawprint-<branch> && git branch -d <branch>`),
+fresh task worktree. Direct worker/fixer/manual paths use
+`git -C ~/work/pawprint worktree add ~/work/pawprint-<branch> -b <branch> origin/main`.
+Coordinator-led PR work follows [Managed PR workstreams](#managed-pr-workstreams)
+with the explicit sibling path and `origin/main` base. The base checkout is
+never edited or checked out on a branch. Authorized direct-tree cleanup uses
+`git -C ~/work/pawprint worktree remove ~/work/pawprint-<branch>` after the same
+actor/decision/claim/occupant/artifact checks described above. Native trees also
+require the exact workspace identity check. Only after verified merge and successful
+verified tree removal, explicit branch deletion authority permits
+`git -C ~/work/pawprint branch -d <branch>`. Keep abandoned/unmerged branches unless
+separately authorized. In the task worktree,
 edit, `npm test`, commit, merge, then deploy (the base checkout stays detached
 — the retired worktree metadata keeps `main` reserved — so refresh it with an
 explicit fetch + fast-forward, not `pull`):
