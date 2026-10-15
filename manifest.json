@@ -71,7 +71,7 @@
     },
     "settings.json": {
       "does": "pi's main settings — tribble's: model routing, packages, subagent models",
-      "needs": ["cloudflare-ai-gateway", "models.json", "pawprint package (themes/calm-tribble.json)"],
+      "needs": ["cloudflare-ai-gateway", "models.json", "pawprint package (themes/gruvbox-tribble.json)"],
       "personal": true
     },
     "cloak.json": {
