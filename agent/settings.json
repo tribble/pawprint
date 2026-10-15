@@ -153,6 +153,6 @@
       }
     }
   },
-  "theme": "calm-tribble",
+  "theme": "gruvbox-tribble",
   "defaultProjectTrust": "ask"
 }

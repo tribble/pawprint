@@ -6,8 +6,8 @@
 # Docs: ghostty +show-config --default --docs | less
 
 # --- Appearance ---
-# Alternates if Catppuccin ever palls: "Kanagawa Wave", "Gruvbox Dark", "Tokyo Night".
-theme = Catppuccin Mocha
+# Alternates: "Catppuccin Mocha", "Gruvbox Dark Hard", "Gruvbox Material Dark".
+theme = Gruvbox Dark
 font-family = "JetBrainsMono Nerd Font Mono"
 font-family = "Hack Nerd Font"
 font-thicken = true
