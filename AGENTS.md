@@ -3,8 +3,24 @@
 Visiting to adopt a piece for your own pi? That's the README ("Adopt a
 piece"). This file is for changing this repo.
 
-- One worktree per change: `git -C ~/work/pawprint worktree add ~/work/pawprint-<branch> -b <branch> origin/main`;
-  remove it after merge. `~/work/pawprint` is never edited; `~/.pi` is a plain runtime/config dir — managed
+- Every pawprint change uses a fresh task worktree. Direct worker/fixer/manual paths use
+  `git -C ~/work/pawprint worktree add ~/work/pawprint-<branch> -b <branch> origin/main`.
+  Coordinator-led PR work uses
+  `herdr worktree create --cwd /Users/pantera/work/pawprint --branch <branch> --base origin/main --path /Users/pantera/work/pawprint-<branch> --label <branch> --no-focus`,
+  then managed `delegate` at the actual returned path. Follow
+  `agent/configs/session-role-coordinator.md` for preflight, identity checks and run tracking.
+  Preserve legacy/uncertain pawprint claims. Never attach another workstream or pane Coder to a managed tree.
+  Only the authorized Coordinator removes it with `herdr worktree remove --workspace <returned workspace_id>`.
+  Require merge/authorized abandonment, every recorded task agent/command finished and no pending decision.
+  Just before native removal, freshly match the exact recorded workspace ID to recorded canonical `checkout_path`/`repo_key`/`is_linked_worktree: true`.
+  Inspect the Git admin dir for `pawprint-writer.json` or `pawprint-writer.lock` and canonical visible herdr agent
+  `cwd`/`foreground_cwd` occupants. Any claim/lock/occupant, mismatch or unknown inspection means keep the tree.
+  Herdr does not account for detached headless writers. Keep unknown/running actors' trees; never force or auto-remove.
+  Non-force removal deletes ignored files too; preserve needed artifacts first. Authorized direct-tree cleanup uses
+  `git -C ~/work/pawprint worktree remove ~/work/pawprint-<branch>` after the same actor/claim/artifact checks.
+  Only after verified merge and successful verified removal, explicit branch deletion authority permits
+  `git -C ~/work/pawprint branch -d <branch>`. Keep abandoned/unmerged branches unless separately authorized.
+  Explicit pane APIs remain unchanged. `~/work/pawprint` is never edited; `~/.pi` is a plain runtime/config dir — managed
   config lands there only via `setup.sh --apply`, never by hand-editing managed files.
   Run `npm ci` in task worktrees, never in `~/work/pawprint` or `~/.pi`.
 - The gate is `npm test`: `oxlint` (type-aware via tsgolint; no `any`, no floating/misused promises; opt out per line with a reason), `tsc`, then the node tests. Red = not done.

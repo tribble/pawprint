@@ -20,7 +20,7 @@
   ],
   "about": {
     "agents/managed-coder-trial.md": {
-      "does": "Opt-in managed Coder trial: implementation and independent-review supervisor",
+      "does": "Managed PR workstreams: implementation and independent-review supervisor",
       "needs": ["pi-subagents", "cloudflare-ai-gateway", "models.json"],
       "personal": true
     },
