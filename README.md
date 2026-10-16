@@ -29,9 +29,11 @@ The package half: `pi install git:github.com/tribble/pawprint`, then
 under the package entry in `settings.json`). Each extension's header comment
 says what it does and what it needs (`herdr`, `pr-watch`, …).
 
-My default Pi theme is `gruvbox-tribble`, matched to herdr's dark Gruvbox
-palette and Ghostty's built-in `Gruvbox Dark Hard`. Both `gruvbox-tribble` and
-`calm-tribble` ship in the package; switch back through `/settings` → Theme.
+My default Pi theme is `system`, generated from Ghostty's built-in
+`Modus Vivendi Tinted` palette. Herdr's custom chrome uses Pi's generated
+semantic colors.
+`gruvbox-tribble` and `calm-tribble` remain available in the package through
+`/settings` → Theme.
 
 The config half is one person's choices, but pieces of it stand alone. The
 catalog is `manifest.json`'s `about` map — one entry per shipped file:
