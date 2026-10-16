@@ -152,6 +152,6 @@
       }
     }
   },
-  "theme": "gruvbox-tribble",
+  "theme": "system",
   "defaultProjectTrust": "ask"
 }
