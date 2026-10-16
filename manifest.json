@@ -14,13 +14,14 @@
     "cloak.json",
     "configs/ws.json",
     "configs/session-roles.json",
+    "configs/managed-code-workflow.md",
     "configs/session-role-coordinator.md",
     "configs/session-role-coder.md",
     "extensions/subagent/config.json"
   ],
   "about": {
     "agents/managed-coder-trial.md": {
-      "does": "Managed PR workstreams: implementation and independent-review supervisor",
+      "does": "Managed deliverables: implementation and independent-review supervisor",
       "needs": ["pi-subagents", "cloudflare-ai-gateway", "models.json"],
       "personal": true
     },
@@ -78,14 +79,19 @@
       "does": "pi-cloak config: masks .env, auth.json and token-shaped strings before the model",
       "needs": ["pi-cloak"]
     },
+    "configs/managed-code-workflow.md": {
+      "does": "Any full session's code flow: native worktree, managed Coder and safe lifecycle",
+      "needs": ["herdr", "pi-subagents", "agents/managed-coder-trial.md"],
+      "personal": true
+    },
     "configs/session-role-coordinator.md": {
       "does": "Coordinator pane instructions: integration, acceptance and escalation",
-      "needs": ["configs/session-roles.json"],
+      "needs": ["configs/session-roles.json", "configs/managed-code-workflow.md"],
       "personal": true
     },
     "configs/session-role-coder.md": {
-      "does": "Coder pane instructions: delegation, verification and bounded independent review",
-      "needs": ["configs/session-roles.json"],
+      "does": "Full workstream owner instructions: managed delivery, acceptance and escalation",
+      "needs": ["configs/session-roles.json", "configs/managed-code-workflow.md"],
       "personal": true
     },
     "configs/session-roles.json": {
