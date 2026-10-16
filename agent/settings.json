@@ -34,7 +34,7 @@
   "packages": [
     "git:github.com/tribble/pawprint",
     {
-      "source": "git:github.com/fitchmultz/pi-fitch-kit@c3f38283898e489facd9d951fdd124ff51a4004b",
+      "source": "git:github.com/fitchmultz/pi-fitch-kit@e79bbfeb8fe740cb9394c25c30ea474db3f74d31",
       "extensions": [
         "extensions/anthropic-image-guard.ts",
         "extensions/paged-reader.ts",
@@ -55,11 +55,11 @@
     "git:github.com/fitchmultz/pi-edit-session-in-place@1b9a4d9b83757725a736f66f5c1a58557420b5c1",
     "git:github.com/fitchmultz/pi-stash@d1db56e3597018c6d9c6c0b85d1ceb3782bd6bb9",
     "git:github.com/fitchmultz/pi-copy-message@9b3aaf2de125180cf1fe199b0606c6c432d98cb0",
-    "git:github.com/fitchmultz/pi-calculator@35e2fb931691b833d363460fae6cf2e576826d24",
-    "git:github.com/fitchmultz/pi-agent-skills@0b6141b4459b66a86d55e0aff9c0e02504f761b0",
-    "git:github.com/DietrichGebert/ponytail@2961b52fc1fe6a5a87c7a959a79512e5c2f3ffe5",
-    "git:github.com/fitchmultz/pi-agent-browser-native@7cae1d5b0258c50459960a9de2e147ad29f27e7e",
-    "git:github.com/fitchmultz/pi-subagents@d6a614c194bdbc14f49d5e0f52e2e4329a01ae0e",
+    "git:github.com/fitchmultz/pi-calculator@4cb51c16ed9e47772ac4123f57e234eedd268ed0",
+    "git:github.com/fitchmultz/pi-agent-skills@b286c88e3ef164a5c37b8196ab7be0070e53e927",
+    "git:github.com/DietrichGebert/ponytail@84740e3d344b69b4a133201fa519eb37a62a2b2a",
+    "git:github.com/fitchmultz/pi-agent-browser-native@cb4052d818d7af895b12e28b72f705e918d3b4e2",
+    "git:github.com/fitchmultz/pi-subagents@f757ed054e7d819fd590a3da346be8a03aefe2d4",
     "npm:@nicknisi/pi-cloak@0.1.2",
     "npm:@nicknisi/pi-answer@0.2.4"
   ],
