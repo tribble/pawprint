@@ -3,29 +3,48 @@
 Visiting to adopt a piece for your own pi? That's the README ("Adopt a
 piece"). This file is for changing this repo.
 
-- Every pawprint change uses a fresh task worktree. Direct worker/fixer/manual paths use
+- Every pawprint change uses a fresh task worktree. Any full Pi session routes
+  code changes of any size through fresh native herdr worktree → `managed-coder-trial`
+  → worker and independent review. Small fixes and renames are included. Only
+  trivial configuration can bypass the code flow and use fixer; if unsure, use the full flow.
+  Non-code authoring and small prose edits use the existing writer outside the code flow.
+  Read-only work keeps its appropriate delegation.
+  The recipe source is `agent/configs/managed-code-workflow.md`. When executing the flow,
+  read the applied `<agent-dir>/configs/managed-code-workflow.md`: Pi's `getAgentDir()` uses
+  nonempty `PI_CODING_AGENT_DIR` with Pi's path expansion, otherwise `~/.pi/agent`.
+  Do not substitute repository source for a missing applied recipe. The recipe covers
+  preflight, canonical repository/path/base checks, persistent parent identity,
+  saved questions/continuations, acceptance, actor closure, claims, occupants,
+  artifact preservation and authorized non-force cleanup. Pawprint's native creation is
+  `herdr worktree create --cwd /Users/pantera/work/pawprint --branch <branch> --base origin/main --path /Users/pantera/work/pawprint-<branch> --label <branch> --no-focus`.
+  Delegate at the actual verified returned path. A Coordinator owns a broad project;
+  additional full sessions own substantial independent scope across deliveries,
+  not routine per-PR wrappers. Every full session uses the same code flow.
+  Existing managed participants execute their assigned roles without recursive wrapping.
+  Leaves and narrowly scoped agents receiving code outside this flow stop and ask a
+  capable parent for routing. Never create a tree through shell, raise depth or edit inline to bypass it.
+  There is no legacy pane-Coder exception. A claimed or narrowly assigned pane tree
+  cannot become a managed tree. Escalate an assignment that cannot enter the flow
+  within its authority and scope to its launching parent. Do not bypass claims or
+  create an unauthorized second scope. Existing pane APIs and legacy claims stay intact.
+  The launching parent owns final acceptance, authorized publication and native lifecycle.
+  Delegated full sessions publish or deploy only when assigned in their scoped handoff
+  under applicable owner authorization; otherwise return evidence for launching-parent acceptance.
+  Already assigned and authorized actions do not need repeat approval prompts.
+  Original parent-saved native receipts and managed run/question/continuation records
+  are authoritative for cleanup. Cross-check the task-local plan against those originals;
+  child-editable plans cannot replace or overwrite identity or actor evidence.
+  Managed questions return to that parent; full workstream owners can explicitly
+  relay through Intercom, not automatic ancestor forwarding.
+  Only trivial configuration or non-code work outside the code flow can use direct
   `git -C ~/work/pawprint worktree add ~/work/pawprint-<branch> -b <branch> origin/main`.
-  Coordinator-led PR work uses
-  `herdr worktree create --cwd /Users/pantera/work/pawprint --branch <branch> --base origin/main --path /Users/pantera/work/pawprint-<branch> --label <branch> --no-focus`,
-  then managed `delegate` at the actual returned path. Follow
-  `agent/configs/session-role-coordinator.md` for preflight, identity checks and run tracking.
-  Preserve legacy/uncertain pawprint claims. Never attach another workstream or pane Coder to a managed tree.
-  Only the authorized Coordinator removes it with `herdr worktree remove --workspace <returned workspace_id>`.
-  Require merge/authorized abandonment, every recorded task agent/command finished and no pending decision.
-  Just before native removal, freshly match the exact recorded workspace ID to recorded canonical `checkout_path`/`repo_key`/`is_linked_worktree: true`.
-  Inspect the Git admin dir for `pawprint-writer.json` or `pawprint-writer.lock` and canonical visible herdr agent
-  `cwd`/`foreground_cwd` occupants. Any claim/lock/occupant, mismatch or unknown inspection means keep the tree.
-  If a visible agent path no longer exists, canonicalize its existing parent and use `lstat` to prove the final
-  entry absent (not a dangling symlink). Compare canonical-parent-plus-final-name against the canonical task tree:
-  known absence outside that tree is not an occupant. Missing ancestors, unresolved links,
-  permission errors or unknown identity still block. Actor completion, claims and deletion authority
-  remain independent requirements.
-  Herdr does not account for detached headless writers. Keep unknown/running actors' trees; never force or auto-remove.
-  Non-force removal deletes ignored files too; preserve needed artifacts first. Authorized direct-tree cleanup uses
-  `git -C ~/work/pawprint worktree remove ~/work/pawprint-<branch>` after the same actor/claim/artifact checks.
-  Only after verified merge and successful verified removal, explicit branch deletion authority permits
-  `git -C ~/work/pawprint branch -d <branch>`. Keep abandoned/unmerged branches unless separately authorized.
-  Explicit pane APIs remain unchanged. `~/work/pawprint` is never edited; `~/.pi` is a plain runtime/config dir — managed
+  Authorized direct-tree cleanup uses `git -C ~/work/pawprint worktree remove ~/work/pawprint-<branch>`
+  after the same actor/decision/claim/occupant/artifact checks in the shared recipe.
+  Native cleanup also requires its fresh exact workspace identity check.
+  Never force or auto-remove. Preserve needed ignored artifacts before removal.
+  Branch deletion requires verified merge, successful verified tree removal and
+  explicit authority. Keep abandoned/unmerged branches unless separately authorized.
+  `~/work/pawprint` is never edited; `~/.pi` is a plain runtime/config dir — managed
   config lands there only via `setup.sh --apply`, never by hand-editing managed files.
   Run `npm ci` in task worktrees, never in `~/work/pawprint` or `~/.pi`.
 - The gate is `npm test`: `oxlint` (type-aware via tsgolint; no `any`, no floating/misused promises; opt out per line with a reason), `tsc`, then the node tests. Red = not done.
