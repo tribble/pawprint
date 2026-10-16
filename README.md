@@ -83,6 +83,13 @@ anything. Questions or a broken piece
 Working in this repo itself, not adopting? The root `AGENTS.md` is the
 contributor side.
 
+## Session recap
+
+`/recap` summarizes the session with the selected model in a detached request.
+The recap stays readable in the transcript after resume without entering the
+main model's context. It uses stored context, without request-time extension
+annotations. Run it while the agent is idle; `/recap cancel` stops only the recap.
+
 ## Cost reports
 
 `/costs [days]` keeps the per-model subagent medians. `/costs workstream`
