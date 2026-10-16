@@ -37,7 +37,6 @@
       "source": "git:github.com/fitchmultz/pi-fitch-kit@e79bbfeb8fe740cb9394c25c30ea474db3f74d31",
       "extensions": [
         "extensions/anthropic-image-guard.ts",
-        "extensions/paged-reader.ts",
         "extensions/session-name.ts"
       ],
       "prompts": [
