@@ -1,7 +1,7 @@
 // Behavioral tests for scripts/compare.ts — the five-stage comparison CLI.
 // Each stage runs as a real subprocess against PATH-stub fixture executables
 // (fake pi / greptile / grader / summarizer); no paid or live model calls.
-// Scratch stays in this worktree (.cmp-scratch/, invisible to git via the
+// Scratch stays in this worktree (.scratch/compare/, invisible to git via the
 // default-deny .gitignore and excluded from fixtureRepo copies), never /tmp.
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
@@ -26,7 +26,8 @@ import { REPO, git, piPackageDir } from "./fixture.ts";
 
 const COMPARE = join(REPO, "scripts", "compare.ts");
 
-const SCRATCH = join(REPO, ".cmp-scratch");
+const SCRATCH = join(REPO, ".scratch", "compare");
+const LONG_ARG = "a long argument with spaces, café, and a newline\n".repeat(30);
 
 function mkroot(t: TestContext): string {
   mkdirSync(SCRATCH, { recursive: true });
@@ -61,7 +62,7 @@ function stubBin(root: string): string {
   w("pi", PI_STUB);
   // Realistic 3.6.1 --json renderer shape: summary/confidence/comments, no runId.
   w("greptile", "#!/bin/sh\n" + trace + "echo '{\"summary\":\"synthetic review\",\"confidence\":null,\"securitySummary\":null,\"comments\":[]}'\n");
-  w("grader", "#!/bin/sh\n" + trace + "echo '```json'\necho '{\"criteria\":{\"answer-first\":2,\"facts\":1},\"notes\":\"g1 stub grade\"}'\necho '```'\n");
+  w("grader", "#!/bin/sh\n" + trace + "printf '%s\\n' \"$@\"\necho '```json'\necho '{\"criteria\":{\"answer-first\":2,\"facts\":1},\"notes\":\"g1 stub grade\"}'\necho '```'\n");
   w("grader2", "#!/bin/sh\n" + trace + "echo '```json'\necho '{\"criteria\":{\"answer-first\":1,\"facts\":2},\"notes\":\"g2 stub grade\"}'\necho '```'\n");
   w("badgrader", "#!/bin/sh\n" + trace + "echo 'no structured block here'\n");
   // A valid block followed by a malformed FINAL block: only the last block counts.
@@ -98,7 +99,7 @@ function stubBin(root: string): string {
   // saved snapshot must be the pre-spawn bytes, not the mutation.
   w("mutsum", "#!/bin/sh\n" + trace + '[ -n "${MUTATE_TABLES:-}" ] && echo "REPLACED WHILE RUNNING" > "$MUTATE_TABLES"\n' + "echo MUTSUM-RAN\n");
   w("pwdgrader", "#!/bin/sh\n" + trace + "printf '```json\\n{\"criteria\":{\"answer-first\":2,\"facts\":2},\"notes\":\"cwd=%s\"}\\n```\\n' \"$(pwd)\"\n");
-  w("summarizer", "#!/bin/sh\n" + trace + "pwd\n" + 'for a in "$@"; do case "$a" in @*) cat "${a#@}" ;; esac; done\n');
+  w("summarizer", "#!/bin/sh\n" + trace + "pwd\n" + 'for a in "$@"; do case "$a" in @*) cat "${a#@}" ;; *) printf \'%s\\n\' "$a" ;; esac; done\n');
   w("failsum", "#!/bin/sh\n" + trace + "echo partial garbage\nexit 7\n");
   return bin;
 }
@@ -279,7 +280,7 @@ test("case input frozen across candidate arms: mid-run mutation, new-candidate-o
   assert.equal(readFileSync(join(resultsB, "hello", "alpha", "rep-1", "stdout"), "utf8"), readFileSync(join(resultsB, "hello", "beta", "rep-1", "stdout"), "utf8"), "one case, one input");
 });
 
-test("generate failures: nonzero exit, bounded process-group lifecycle on every exit path, argv limit", (t) => {
+test("generate: nonzero exit, bounded process-group lifecycle, long argv delivered unchanged", (t) => {
   const root = mkroot(t);
   const bin = stubBin(root);
   const corpus = writingCorpus(root);
@@ -294,13 +295,17 @@ test("generate failures: nonzero exit, bounded process-group lifecycle on every 
     { id: "bg", argv: ["backgrounds", bgPgidFile] },
     { id: "coop", argv: ["coopleader", coopPidFile] },
     { id: "orphan", argv: ["fastorphan", orphanPidFile] },
-    { id: "long", argv: ["pi", "x".repeat(900)] },
+    { id: "long", argv: [process.execPath, "-e", "process.stdout.write(process.argv[1])", LONG_ARG] },
   ]);
   const results = join(root, "results");
   const args = ["generate", "--corpus", corpus, "--candidates", candidates, "--results", results, "--timeout-ms", "800"];
   const r = runCli(root, bin, args);
   assert.equal(r.status, 0, r.stderr);
-  assert.match(r.stdout, /generate done: 4 ok, 8 failed, 0 skipped/);
+  const longDir = join(results, "hello", "long", "rep-1");
+  const long = readMeta(longDir);
+  assert.equal(long.status, "ok", JSON.stringify(long));
+  assert.equal(readFileSync(join(longDir, "stdout"), "utf8"), LONG_ARG);
+  assert.match(r.stdout, /generate done: 6 ok, 6 failed, 0 skipped/);
   const bad = readMeta(join(results, "hello", "bad", "rep-1"));
   assert.equal(bad.status, "failed");
   assert.equal(bad.reason, "nonzero-exit");
@@ -328,9 +333,6 @@ test("generate failures: nonzero exit, bounded process-group lifecycle on every 
   const bg = readMeta(join(results, "hello", "bg", "rep-1"));
   assert.equal(bg.status, "ok");
   assert.ok(groupGone(bgPgidFile), "backgrounded grandchild's process group reaped after success");
-  const long = readMeta(join(results, "hello", "long", "rep-1"));
-  assert.equal(long.reason, "argv-limit");
-  assert.match(long.message, /@file/);
   const before = readFileSync(join(results, "hello", "bad", "rep-1", "meta.json"), "utf8");
   const r2 = runCli(root, bin, args);
   assert.match(r2.stdout, /0 ok, 0 failed, 12 skipped/);
@@ -468,7 +470,7 @@ test("grade: protocol revisions, instruction bytes, unique neutral staging, prov
   mkdirSync(sub);
   const graders = join(root, "graders.json");
   const g0argv = ["pi", "@{configDir}/note.md", "@{output}", "@{expectations}", "@{rubric}"];
-  const g1argv = ["grader", "@{output}", "@{expectations}"];
+  const g1argv = ["grader", LONG_ARG, "@{output}", "@{expectations}"];
   writeJson(graders, [
     { id: "g0", argv: g0argv },
     { id: "g1", argv: g1argv },
@@ -484,9 +486,11 @@ test("grade: protocol revisions, instruction bytes, unique neutral staging, prov
   const gargs = ["grade", "--corpus", corpus, "--graders", graders, "--results", results];
   const r = runCli(root, bin, gargs);
   assert.equal(r.status, 0, r.stderr);
+  const rev1 = join(results, "hello", "alpha", "rep-1", "grades", "g1", "rev-1");
+  assert.equal(readMeta(rev1).status, "ok", JSON.stringify(readMeta(rev1)));
+  assert.ok(readFileSync(join(rev1, "stdout"), "utf8").startsWith(`${LONG_ARG}\n`), "grader received the long argument unchanged");
   // g0,g1,g2,g3 ok (4×4), bad+late+open+wrong+range+g4 fail (4×6)
   assert.match(r.stdout, /grade done: 16 ok, 24 failed, 0 skipped/);
-  const rev1 = join(results, "hello", "alpha", "rep-1", "grades", "g1", "rev-1");
   assert.deepEqual(JSON.parse(readFileSync(join(rev1, "parsed.json"), "utf8")).criteria, { "answer-first": 2, facts: 1 });
   assert.match(readFileSync(join(rev1, "stdout"), "utf8"), /g1 stub grade/, "raw grader response kept");
   // {configDir} camelCase resolves; the grader executed the SNAPSHOT bytes
@@ -696,10 +700,11 @@ test("blind: fenced samples, honor-system note, deterministic key; summarize sna
   const cmdDir = join(root, "sumdir");
   mkdirSync(cmdDir);
   const cmd = join(root, "summarizer.json");
-  writeJson(cmd, { argv: ["summarizer", "@{tables}"], cwd: "sumdir" });
+  writeJson(cmd, { argv: ["summarizer", "@{tables}", LONG_ARG], cwd: "sumdir" });
   const rs = runCli(root, bin, ["summarize", "--results", results, "--cmd", cmd]);
   assert.equal(rs.status, 0, rs.stderr);
   const good = readFileSync(join(results, "summary.md"), "utf8");
+  assert.ok(good.endsWith(`${LONG_ARG}\n`), "summarizer received the long argument unchanged");
   assert.match(good, /# Comparison tables/);
   assert.ok(good.startsWith(`${cmdDir}\n`), "summarizer cwd honored");
   const smeta = JSON.parse(readFileSync(join(results, "summary.meta.json"), "utf8"));

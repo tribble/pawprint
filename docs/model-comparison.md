@@ -89,8 +89,8 @@ pinned base→replay diff, snapshotted before the candidate runs).
   frozen prompt bytes, resolved argv/cwd, controlled-config hash) with the
   current ones and **refuses to run** when they differ. Extending `--reps`
   with unchanged inputs is fine.
-- Failures (nonzero exit, timeout, signal, missing executable, guard, argv
-  over 800 bytes) are saved results, not errors: generate exits 0 and they
+- Failures (nonzero exit, timeout, signal, missing executable, guard)
+  are saved results, not errors: generate exits 0 and they
   appear in the tables' Failures list. A run killed mid-spawn leaves a dir
   with partial `stdout`/`stderr` but no `meta.json` (written last) and shows
   as `interrupted`.
@@ -103,9 +103,6 @@ pinned base→replay diff, snapshotted before the candidate runs).
   keeps spending past it. Streams go straight to files, so interrupting the
   runner (Ctrl-C also kills the child's group) never loses already-emitted
   output.
-- Every argv element must stay ≤ 800 bytes — longer ones get SIGKILLed on
-  this machine with no log. Pass long text via files (`@file` for pi);
-  `greptile --instructions` has no file form, keep it short.
 - A missing executable is an actionable saved failure, never auto-installed.
 
 ## Stage 3 — grade

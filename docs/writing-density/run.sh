@@ -1,5 +1,5 @@
 #!/bin/bash
-# 3 arms × 8 prompts × 2 gens, sequential. Every argv element < 800 B (EDR kills longer ones): prompts via @file.
+# 3 arms × 8 prompts × 2 gens, sequential. Prompts via @file.
 # Paths point at ~/.pi/agent/tmp/density-exp (scratch). To re-run: copy prompt-*.md → prompts/<name>.md, cue-v1-live.md → cue.md,
 # build prompts-c/<name>.md = prompt + blank line + cue, then run. Arm C is the shipped placement.
 set -u

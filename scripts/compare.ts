@@ -67,9 +67,6 @@ import {
 import { basename, dirname, join, relative, resolve } from "node:path";
 import { parseArgs } from "node:util";
 
-// Longer argv elements get SIGKILLed on this machine with no log (EDR); long
-// text goes via files (@file for pi) or stays short (greptile --instructions).
-const ARGV_BYTE_LIMIT = 800;
 const ID_RE = /^[A-Za-z0-9][A-Za-z0-9._-]*$/; // ids become directory names
 const SHA_RE = /^[0-9a-f]{40}$/; // pins are immutable full SHAs, never refs
 const CRITERION_RE = /^[a-z0-9][a-z0-9-]*$/; // criteria become table columns
@@ -227,15 +224,6 @@ function subst(argv: string[], map: Record<string, string>, ctx: string): string
       return v;
     }),
   );
-}
-
-function checkArgvBytes(argv: string[]): string | null {
-  for (let i = 0; i < argv.length; i++) {
-    const n = Buffer.byteLength(argv[i]);
-    if (n > ARGV_BYTE_LIMIT)
-      return `argv[${i}] is ${n} bytes (limit ${ARGV_BYTE_LIMIT}): pass long text via a file instead (pi: @file; greptile --instructions has no file form — keep it short)`;
-  }
-  return null;
 }
 
 // --- bounded subprocess execution ---------------------------------------------
@@ -687,8 +675,6 @@ async function runAttempt(
     `${JSON.stringify({ case: visibleCase(c), candidate: cand, ...(agentConfig ? { agentConfig } : {}) }, null, 2)}\n`,
   );
   if (frozenPrompt) copyFileSync(frozenPrompt, join(dir, "prompt.md"));
-  const tooLong = checkArgvBytes(argv);
-  if (tooLong) return finish({ reason: "argv-limit", message: tooLong });
   if (c.repo) {
     // The guard binds the pinned base→replay pair to the directory the
     // candidate actually runs in — not to a repo path that is only on paper.
@@ -999,13 +985,6 @@ async function cmdGrade(args: string[]): Promise<void> {
             2,
           )}\n`,
         );
-        const tooLong = checkArgvBytes(argv);
-        if (tooLong) {
-          finish({ reason: "argv-limit", message: tooLong });
-          failed++;
-          console.log(`FAILED grade ${label}: argv-limit — ${tooLong}`);
-          continue;
-        }
         if (!existsSync(cwd)) {
           finish({ reason: "spawn-error", message: `cwd does not exist: ${cwd}` });
           failed++;
@@ -1255,8 +1234,6 @@ async function cmdSummarize(args: string[]): Promise<void> {
     map.blind = attemptBlind;
   }
   const argv = subst(raw.argv as string[], map, "summarizer");
-  const tooLong = checkArgvBytes(argv);
-  if (tooLong) die(tooLong);
   const cwd = typeof raw.cwd === "string" ? resolve(configDir, subst([raw.cwd], map, "summarizer cwd")[0]) : process.cwd();
   if (!existsSync(cwd)) die(`summarizer cwd does not exist: ${cwd}`);
   const start = Date.now();
