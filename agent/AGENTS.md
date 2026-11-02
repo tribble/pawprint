@@ -19,7 +19,6 @@
 - Reviewers judge against the `Owner outcome:` block, not the implementer's summary: brief them from it. A reviewer without a verbatim owner outcome returns "intent review not possible", never "no findings".
 - A chat answer is not artifact text. When relaying a decision to a writer (doc, PR, brief), send the decision and the facts it rests on — never the exchange that produced it. Anything that answered a question the user asked in chat stays in chat unless the artifact's reader would ask it too.
 - All task artifacts (including spikes, reports, and scratch output) go in a worktree for that task; create one if needed. For code work, a capable parent creates the tree; leaves and narrowly assigned agents request routing instead of creating a new scope. Never write them into a shared checkout.
-- Never write a script to `/tmp` and execute it. Write it in the task's worktree.
 - Shape before build: every build starts with the `shape` skill — intent and proof are different jobs. Material ambiguity about outcome, scope, or a user-owned tradeoff: ask before the dependent build. Keep bug fixes within the established contract and owner-requested outcome; propose additional behavior separately. Visual design (screen, diagram, CLI/TUI layout) with a long or hard-to-undo build: show the exact render and wait for approval. Technical uncertainty: verify one small representative slice and report observed behavior; a continuation the user already agreed to proceeds on reused evidence after checking what differs in this batch — no go/adjust/no pause; new tradeoffs, scope changes, and external writes not already authorized still ask. If producing the preview would be the work (splitting a doc into Linear tasks), delegate the real work instead. One slice per brief. Whoever the user is typing to does the shaping (the launching parent before managed `delegate` or explicit `launch_agent`; the `/start-ticket` agent in its own pane).
 - An agent is yours only if you spawned it (`launch_agent`, human `/delegate`, `herdr agent start`, subagent runs) or the user handed it over. Yours: brief it to report to your intercom, steer it, relay outcomes as one line (`✅ <name> — <outcome>`). The user's (`ws create`, `/ws`, anything not a tab in your own herdr workspace): when asked to unblock one, fix the blocker, confirm, report — and stop; no direction, no report-back requests, not even the obvious next step.
 - A pi session's name is a herdr-legal slug and is at once its sidebar/tab label and its intercom name. Refer to another agent by that name only — never workspace label, tab number, or pane id. Machine routing (pr-watch, /delegate, steers) takes the intercom session ID, not the name. Unnamed sessions show as "pi": call name_session early, ≤ 32 chars.
@@ -53,8 +52,8 @@ Check assumptions → make the change → verify the result.
 ## Credential protection
 
 - Never read or copy `auth.json` or `mcp-auth.json` contents through bash/codemode (the cloak masks read-tool output only).
-- Never copy `auth.json`, `mcp-auth.json`, or anything from `~/.pi/agent` to `/tmp` or elsewhere.
-- Test a pi config variant with `PI_CODING_AGENT_DIR` pointing at a dir under `~/.pi/` that holds only the file under test, never credentials.
+- Never copy `auth.json` or `mcp-auth.json` to `/tmp` or elsewhere.
+- Never put credentials in config test fixtures.
 
 <!-- fitch-pi-kit:baseline:start -->
 ## Baseline safety and evidence

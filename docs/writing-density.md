@@ -12,7 +12,7 @@ The trigger example was **not** a writer failure: a coordinator relayed the owne
 
 ## Experiments (all `pi -p --no-tools --thinking high`, 8 prompts from real failures, blind-graded)
 
-Prompts: `writing-density/prompt-*.md` (6 failures F1–F6, 2 controls C1 recovery-steps, C2 warning-first). Harness: `run.sh` (argv elements must stay < ~800 B — longer ones get SIGKILLed on this machine with no log; `@file` avoids it).
+Prompts: `writing-density/prompt-*.md` (6 failures F1–F6, 2 controls C1 recovery-steps, C2 warning-first). Harness: `writing-density/run.sh`.
 
 **1. Cue placement** (fable-5.1; grader GPT) — `scores-1-*`
 
