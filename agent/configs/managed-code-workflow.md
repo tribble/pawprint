@@ -8,7 +8,7 @@ Additional full workstream sessions are for substantial independent ownership ac
 
 ## Native launch
 
-Use Pi 1.5.0 or later with pi-subagents 0.52.14. Restart the Pi process to change SDK versions; `/reload` does not upgrade the host. Verify the actual child SDK, not merely CLI version. Use a persistent saved native parent session. If delegation or native launch fails, preserve the exact error and identities and stop; do not implement inline or retry blindly.
+Use Pi 1.5.0 or later with the pi-subagents source pin in `settings.json` that provides `delegate.thinking` (the tribble fork, 0.52.16 plus the child-thinking commit). Restart the Pi process to change SDK versions; `/reload` does not upgrade the host. Verify the actual child SDK, not merely CLI version. Use a persistent saved native parent session. If delegation or native launch fails, preserve the exact error and identities and stop; do not implement inline or retry blindly.
 
 1. Inspect source status and the repository's authorized base/path policy. Refresh relevant Git state and resolve the immutable base immediately before creation. Confirm the branch is unused and the sibling path absent, including dangling symlinks and registered worktrees. Herdr does not fetch. Pawprint uses:
 
@@ -35,7 +35,7 @@ Use Pi 1.5.0 or later with pi-subagents 0.52.14. Restart the Pi process to chang
 
    Save launch, native child session and pane IDs from the receipt. Verify the returned native session identity and directory. Do not infer ownership from a name or workspace group. The new Coder must be a real main: neither Intercom lineage variable may be set. Never strip flags or environment variables to pass that check.
 
-4. The Coder reads `configs/managed-coder.md` and delegates sequentially using `delegate({prompt,name,cwd,model,context:"fresh"})`. Roles are complete prompt contracts from `configs/delegation.md`, not loaded profiles. Worker model is `cloudflare-ai-gateway/gpt-6.1-sol`; independent reviewer and security-reviewer model is `cloudflare-ai-gateway/claude-opus-5-5`. Thinking is inherited. No effort setter, suffix workaround, fallback catalog or tool masks. Allow at most three implementation/review rounds.
+4. The Coder reads `configs/managed-coder.md` and delegates sequentially using `delegate({prompt,name,cwd,model,thinking,context:"fresh"})`. Roles are complete prompt contracts from `configs/delegation.md`, not loaded profiles. Worker model is `cloudflare-ai-gateway/gpt-6.1-sol` with `thinking:"high"`; independent reviewer and security-reviewer model is `cloudflare-ai-gateway/claude-opus-5-5` with `thinking:"xhigh"`. Every launch supplies the role contract's explicit thinking; only a quick small low-risk review uses `medium`. No parent effort changes, suffix workaround, fallback catalog or tool masks. Allow at most three implementation/review rounds.
 
 5. End turns after asynchronous launches. Ordinary Intercom send/ask/reply carries decisions. No answer or an expired ask leaves dependent work blocked; the parent handles continuation manually. There is no durable question ledger, automatic restart or historical claim cleanup. `agent_runs` supports list, inspect, continue and stop in the owning native main. Preserve original and successor IDs and command exits. Never assume ancestor forwarding or substitute a model answer for human approval.
 

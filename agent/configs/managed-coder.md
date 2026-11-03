@@ -12,7 +12,7 @@ The launching parent owns scope, decisions, final acceptance, authorized publica
 
 ## Sequential implementation and review
 
-Use `delegate({prompt, name, cwd, model, context:"fresh"})`. Include the role contract from `configs/delegation.md` in the prompt, not a profile name. Select `cloudflare-ai-gateway/gpt-6.1-sol` for implementation and `cloudflare-ai-gateway/claude-opus-5-5` for independent review. Children inherit thinking. Do not set effort, append a thinking suffix, invent fallbacks or restrict reviewer tools.
+Use `delegate({prompt, name, cwd, model, thinking, context:"fresh"})`. Include the role contract from `configs/delegation.md` in the prompt, not a profile name. Select `cloudflare-ai-gateway/gpt-6.1-sol` with `thinking:"high"` for workers and `cloudflare-ai-gateway/claude-opus-5-5` with `thinking:"xhigh"` for independent review. Supply the role's explicit `thinking` field on every launch; only a quick small low-risk review uses `medium`. Saved continuations retain child effort. Do not change parent thinking, append a thinking suffix, invent fallbacks or restrict reviewer tools.
 
 Delegate a worker. End the turn after the launch receipt and resume on completion. Inspect its result and command evidence. Stop the finished actor with `agent_runs({action:"stop",id})` and verify actor and owned-command closure before starting the next actor. A result, idle state or Stop receipt alone is not closure.
 

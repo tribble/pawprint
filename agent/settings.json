@@ -58,7 +58,7 @@
     "git:github.com/fitchmultz/pi-agent-skills@b286c88e3ef164a5c37b8196ab7be0070e53e927",
     "git:github.com/DietrichGebert/ponytail@84740e3d344b69b4a133201fa519eb37a62a2b2a",
     "git:github.com/fitchmultz/pi-agent-browser-native@cb4052d818d7af895b12e28b72f705e918d3b4e2",
-    "git:github.com/fitchmultz/pi-subagents@5ce25caecf0328a7f67f46792bfad3a7fdb108cf",
+    "git:github.com/tribble/pi-subagents@438e2b055f2d84c6229dc4fe9b9458ec97392a12",
     "npm:@nicknisi/pi-cloak@0.1.2",
     "npm:@nicknisi/pi-answer@0.2.4"
   ],
