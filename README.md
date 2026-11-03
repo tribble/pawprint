@@ -273,9 +273,11 @@ tokens land in the ignored `~/.pi/agent/mcp-auth.json`) · `/trust` per project.
 ## Retiring the worktree
 
 `~/.pi` used to be a locked sparse worktree of this repo. Retiring that is a
-metadata-only rename — every file stays in place, and rollback is the same
-rename back. The locked worktree's admin entry in the clone survives
-`git worktree prune`, so rollback keeps working.
+metadata-only rename — every file stays in place. Keep the locked admin entry
+only for a temporary rollback window. During that window it reserves `main`,
+so the source clone remains detached. Complete the cleanup below before
+routine deployment: the steady state is `~/work/pawprint` on `main` and
+`~/.pi` a plain directory.
 
 ```sh
 LIVE=~/.pi; CLONE=~/work/pawprint
@@ -297,18 +299,7 @@ mv "$LIVE/.git" "$LIVE/.git-pawprint-retired"
 if git -C "$LIVE" status >/dev/null 2>&1; then echo "unexpected: still a repo — stop"; exit 1; fi
 ```
 
-Then refresh the source checkout to the approved revision and apply. The clone
-stays **detached**: the retired locked entry keeps `main` reserved, so never
-`switch main` — refresh with an explicit fetch + fast-forward:
-
-```sh
-git -C "$CLONE" fetch origin main
-git -C "$CLONE" merge --ff-only FETCH_HEAD
-"$CLONE"/setup.sh --apply
-cd "$CLONE" && scripts/validate.sh      # → VALID
-```
-
-Rollback — metadata only, any time while the locked admin entry is kept
+Rollback during the temporary window — metadata only, while the locked admin entry is kept
 (re-applying settings is a separate forward step, not part of rollback):
 
 ```sh
@@ -321,11 +312,49 @@ mv "$LIVE/.git-pawprint-retired" "$LIVE/.git"
 git -C "$LIVE" status --porcelain        # worktree again, on main
 ```
 
-Deferred cleanup, only once rollback is no longer wanted: `git -C
-~/work/pawprint worktree unlock ~/.pi && git -C ~/work/pawprint worktree
-prune`. Afterwards the rename-back does not relink (`git worktree repair`
-cannot recreate a pruned entry) — the retired gitfile is then just a file to
-delete.
+Complete the migration only once rollback is no longer wanted and the
+retired worktree has no running actors, unresolved decisions or writer claims.
+Pruning ends metadata-only rollback: renaming the retired gitfile back no
+longer relinks, and `git worktree repair` cannot recreate the pruned entry.
+Verify that `.git-pawprint-retired` still names this clone's exact retired
+admin entry, that its `gitdir` points to `$LIVE/.git`, and that its `HEAD`
+names `refs/heads/main`. Check that the source checkout is clean.
+Do not remove live files or use `git worktree remove` on `$LIVE`.
+If cleanup stops for any reason after unlocking but before pruning, relock
+the retired entry before leaving it:
+`git -C "$CLONE" worktree lock --reason "live pi config" "$LIVE"`.
+
+```sh
+set -e
+git -C "$CLONE" worktree unlock "$LIVE"
+git -C "$CLONE" worktree prune --dry-run --verbose --expire now
+```
+
+Inspect the dry-run output. Continue only if it lists exactly the retired
+admin entry and no other worktree. If it lists another entry, stop without
+pruning. Recheck the dry-run immediately before the next block.
+
+```sh
+set -e
+git -C "$CLONE" worktree prune --verbose --expire now
+git -C "$CLONE" switch main
+test "$(git -C "$CLONE" symbolic-ref --quiet HEAD)" = refs/heads/main
+```
+
+The retired gitfile can then be deleted. Leave every live config file in place.
+
+Refresh and apply only from `main`. This guard refuses a detached HEAD or
+another branch before fetch, merge or apply:
+
+```sh
+set -e
+test "$(git -C "$CLONE" symbolic-ref --quiet HEAD)" = refs/heads/main
+git -C "$CLONE" fetch origin main
+git -C "$CLONE" merge --ff-only FETCH_HEAD
+"$CLONE"/setup.sh --apply
+cd "$CLONE" && scripts/validate.sh      # → VALID
+```
+
 ## Drift repair
 
 ```sh
@@ -387,18 +416,18 @@ fresh task worktree. Code changes of any size follow the
 [managed code workflow](#managed-code-workflow) with the explicit sibling path
 and `origin/main` base. Only trivial configuration or non-code work outside the
 code flow can use the direct
-`git -C ~/work/pawprint worktree add ~/work/pawprint-<branch> -b <branch> origin/main` path. The base checkout is
-never edited or checked out on a branch. Authorized direct-tree cleanup uses
+`git -C ~/work/pawprint worktree add ~/work/pawprint-<branch> -b <branch> origin/main` path.
+Keep the base checkout on `main`; never detach it or author changes there.
+Authorized direct-tree cleanup uses
 `git -C ~/work/pawprint worktree remove ~/work/pawprint-<branch>` after the same
 actor/decision/claim/occupant/artifact checks described above. Native trees also
 require the exact workspace identity check. Only after verified merge and successful
 verified tree removal, explicit branch deletion authority permits
 `git -C ~/work/pawprint branch -d <branch>`. Keep abandoned/unmerged branches unless
 separately authorized. In the task worktree,
-edit, `npm test`, commit, merge, then deploy (the base checkout stays detached
-— the retired worktree metadata keeps `main` reserved — so refresh it with an
-explicit fetch + fast-forward, not `pull`):
-`git -C ~/work/pawprint fetch origin main && git -C ~/work/pawprint merge --ff-only FETCH_HEAD && ~/work/pawprint/setup.sh --apply`
+edit, `npm test`, commit, merge, then deploy. Refuse a non-`main` base before
+fetching, fast-forwarding or applying:
+`test "$(git -C ~/work/pawprint symbolic-ref --quiet HEAD)" = refs/heads/main && git -C ~/work/pawprint fetch origin main && git -C ~/work/pawprint merge --ff-only FETCH_HEAD && ~/work/pawprint/setup.sh --apply`
 — the apply's install step also pulls the floating pawprint clone to origin's
 latest, so no separate self-update step. For package content (`extensions/`,
 `skills/`, `prompts/`, `themes/`) the live copy is pi's clone under
