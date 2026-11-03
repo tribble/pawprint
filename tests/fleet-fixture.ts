@@ -20,10 +20,12 @@ export function fleetRepo(dir = mktmp("fleet")) {
 
 export function fleetParent(cwd: string, sessionId = "fleet-owner") {
   const roster: Record<string, unknown>[] = [{ name: "parent", pane_id: "wT:p1", workspace_id: "wT", cwd }];
+  const workspaces: Record<string, unknown>[] = [];
   let childId: string | undefined;
   const children = mktmp("native-children");
   let childFile = "";
   let childCwd = cwd;
+  let childWorkspace = "wT";
   const pi = makePi({ execImpl: async (cmd: string, args: string[]) => {
     if (cmd === "git") {
       const r = spawnSync(cmd, args, { encoding: "utf8", env: { ...process.env, GIT_OPTIONAL_LOCKS: "0" } });
@@ -32,15 +34,17 @@ export function fleetParent(cwd: string, sessionId = "fleet-owner") {
     let result: unknown = {};
     if (args[0] === "tab") {
       childCwd = args[args.indexOf("--cwd") + 1];
-      result = { root_pane: { pane_id: "wT:p2" } };
+      childWorkspace = args[args.indexOf("--workspace") + 1];
+      result = { root_pane: { pane_id: `${childWorkspace}:p2` } };
     }
+    else if (args[0] === "workspace" && args[1] === "list") result = { workspaces };
     else if (args[1] === "list") result = { agents: roster };
     else if (args[1] === "start") {
       childId = args[args.indexOf("--session-id") + 1];
       childFile = join(children, `2026-01-01T00-00-00-000Z_${childId}.jsonl`);
-      roster.push({ name: args[2], pane_id: "wT:p2", workspace_id: "wT", cwd: childCwd, agent_status: "working", agent_session: { kind: "path", value: childFile } });
+      roster.push({ name: args[2], pane_id: `${childWorkspace}:p2`, workspace_id: childWorkspace, cwd: childCwd, agent_status: "working", agent_session: { kind: "path", value: childFile } });
     }
-    else if (args[1] === "get") result = { agent: { pane_id: "wT:p2", agent_session: { kind: "path", value: childFile } } };
+    else if (args[1] === "get") result = { agent: { pane_id: `${childWorkspace}:p2`, agent_session: { kind: "path", value: childFile } } };
     else if (args[1] === "prompt") writeFileSync(childFile, JSON.stringify({ type: "session", id: childId, cwd: realpathSync.native(childCwd) }) + "\n");
     else if (args[0] === "pane") result = { process_info: { pane_id: "wT:p2", shell_pid: 123, foreground_processes: [{ name: "zsh", pid: 123 }] } };
     return { code: 0, stdout: JSON.stringify({ result }), stderr: "", killed: false };
@@ -51,5 +55,5 @@ export function fleetParent(cwd: string, sessionId = "fleet-owner") {
   ctx.sessionManager.getEntries = () => pi.state.entries.map((e: { type: string; data: unknown }) => ({
     type: "custom", customType: e.type, data: e.data,
   }));
-  return { pi, ctx, roster };
+  return { pi, ctx, roster, workspaces };
 }

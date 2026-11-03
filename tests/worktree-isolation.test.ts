@@ -29,11 +29,29 @@ function linked() {
 const paneMutations = (parent: ReturnType<typeof fleetParent>) => parent.pi.execCalls.filter((call: string[]) =>
   call[0] === "herdr" && (call[1] === "tab" || ["start", "prompt"].includes(call[2])));
 
+function managedParent(source: string, cwd: string) {
+  const parent = fleetParent(source);
+  parent.workspaces.push({ workspace_id: "wT" }, {
+    workspace_id: "wN",
+    worktree: {
+      checkout_path: cwd, repo_key: git(cwd, "rev-parse", "--path-format=absolute", "--git-common-dir"),
+      repo_root: source, repo_name: "source", is_linked_worktree: true,
+    },
+  });
+  return parent;
+}
+
 test("managed Coder uses the supplied native tree without a second worktree or persistent claim", async () => {
   const { source, cwd } = linked();
-  const parent = fleetParent(source);
+  const parent = managedParent(source, cwd);
+  parent.roster.push({ name: "neighbor", pane_id: "wN:p9", workspace_id: "wN", cwd: source });
   herdrFleet(parent.pi);
   const result = await launch(parent, { role: "managed-coder", cwd });
+  const tab = parent.pi.execCalls.find((call: string[]) => call[0] === "herdr" && call[1] === "tab");
+  assert.equal(tab[tab.indexOf("--workspace") + 1], "wN");
+  assert.equal(result.details.paneId, "wN:p2");
+  assert.equal(parent.roster.at(-1)?.workspace_id, "wN");
+  assert.equal(parent.pi.execCalls.some((call: string[]) => call[1] === "workspace" && call[2] !== "list"), false);
   assert.equal(result.details.cwd, cwd);
   assert.equal(result.details.claimPath, undefined);
   const key = git(cwd, "rev-parse", "--absolute-git-dir");
@@ -47,16 +65,113 @@ test("managed Coder uses the supplied native tree without a second worktree or p
   assert.ok(prompt.startsWith(task));
   assert.match(prompt, /parent owns.*closure/i);
   assert.doesNotMatch(prompt, /herdr tab close/);
+  await parent.pi.commands.fleet.handler("", parent.ctx);
+  assert.match(parent.ctx.notes.at(-1).msg, /lead.*\[mine\]/);
+  assert.match(parent.ctx.notes.at(-1).msg, /neighbor.*\[yours\]/);
   parent.roster.length = 1;
   const before = paneMutations(parent).length;
   await assert.rejects(() => launch(parent, { role: "managed-coder", cwd }), /already has a recorded managed Coder launch/);
   assert.equal(paneMutations(parent).length, before);
 });
 
+test("managed destination refuses missing, ambiguous or inconsistent native identity before pane mutation", async (t) => {
+  for (const refusal of ["missing", "ambiguous", "repository", "linked", "missing-repository", "missing-id", "duplicate-id", "relative-checkout", "relative-repository", "stale-checkout", "stale-repository", "stale-unrelated-checkout", "wrong-checkout"]) {
+    await t.test(refusal, async () => {
+      const { source, cwd, dir } = linked();
+      const parent = managedParent(source, cwd);
+      const metadata = parent.workspaces[1].worktree as Record<string, unknown>;
+      switch (refusal) {
+        case "missing": parent.workspaces.length = 1; break;
+        case "ambiguous": parent.workspaces.push({ ...parent.workspaces[1], workspace_id: "wOther" }); break;
+        case "repository": metadata.repo_key = git(cwd, "rev-parse", "--absolute-git-dir"); break;
+        case "linked": metadata.is_linked_worktree = false; break;
+        case "missing-repository": delete metadata.repo_key; break;
+        case "missing-id": delete parent.workspaces[1].workspace_id; break;
+        case "duplicate-id": parent.workspaces[1].workspace_id = "wT"; break;
+        case "relative-checkout": metadata.checkout_path = "existing"; break;
+        case "relative-repository": metadata.repo_key = ".git"; break;
+        case "stale-checkout": metadata.checkout_path = join(dir, "gone"); break;
+        case "stale-repository": metadata.repo_key = join(dir, "gone.git"); break;
+        case "stale-unrelated-checkout": parent.workspaces.push({ workspace_id: "wStale", worktree: { ...metadata, checkout_path: join(dir, "gone") } }); break;
+        case "wrong-checkout": metadata.checkout_path = source; break;
+      }
+      herdrFleet(parent.pi);
+      await assert.rejects(() => launch(parent, { role: "managed-coder", cwd }), (error: Error) => {
+        if (refusal.startsWith("stale-")) {
+          const field = refusal === "stale-repository" ? "repo_key" : "checkout_path";
+          assert.ok(error.message.includes(`workspace ${refusal === "stale-unrelated-checkout" ? "wStale" : "wN"}`));
+          assert.ok(error.message.includes(field));
+          assert.ok(error.message.includes(join(dir, field === "repo_key" ? "gone.git" : "gone")));
+          assert.match(error.message, /ENOENT/);
+          assert.match(error.message, /herdr workspace list/);
+        } else assert.match(error.message, /workspace/);
+        return true;
+      });
+      assert.equal(paneMutations(parent).length, 0);
+      assert.equal(parent.pi.state.entries.at(-1).data.phase, "failed-before-pane");
+      const key = git(cwd, "rev-parse", "--absolute-git-dir");
+      assert.equal(existsSync(join(key, "pawprint-writer.json")), false);
+      assert.equal(existsSync(join(key, "pawprint-writer.lock")), false);
+    });
+  }
+});
+
+test("managed destination canonicalizes checkout and repository aliases without changing requested cwd", async () => {
+  const { source, cwd, dir } = linked();
+  const alias = join(dir, "checkout-alias");
+  const repoAlias = join(dir, "repo-alias");
+  symlinkSync(cwd, alias);
+  symlinkSync(join(source, ".git"), repoAlias);
+  mkdirSync(join(cwd, "nested"));
+  const parent = managedParent(source, alias);
+  const metadata = parent.workspaces[1].worktree as Record<string, unknown>;
+  metadata.repo_key = repoAlias;
+  herdrFleet(parent.pi);
+  const result = await launch(parent, { role: "managed-coder", cwd: join(alias, "nested") });
+  assert.equal(result.details.cwd, join(cwd, "nested"));
+  assert.equal(result.details.paneId, "wN:p2");
+});
+
+test("managed destination fails closed on unreadable metadata and cancellation", async (t) => {
+  for (const refusal of ["shape", "command", "cancel"]) {
+    await t.test(refusal, async () => {
+      const { source, cwd } = linked();
+      const parent = managedParent(source, cwd);
+      const exec = parent.pi.execImpl;
+      const controller = new AbortController();
+      parent.pi.execImpl = async (cmd: string, args: string[]) => {
+        if (cmd === "herdr" && args[0] === "workspace") {
+          if (refusal === "cancel") controller.abort();
+          return { code: refusal === "command" ? 1 : 0, stdout: refusal === "shape" ? '{"result":{}}' : JSON.stringify({ result: { workspaces: parent.workspaces } }), stderr: "workspace metadata unavailable", killed: false };
+        }
+        return exec(cmd, args);
+      };
+      herdrFleet(parent.pi);
+      await assert.rejects(() => parent.pi.tools.launch_agent.execute("refusal", { name: "lead", task, role: "managed-coder", cwd }, controller.signal, undefined, parent.ctx),
+        refusal === "cancel" ? /abort/i : /workspace/);
+      assert.equal(paneMutations(parent).length, 0);
+      assert.equal(parent.pi.state.entries.at(-1).data.phase, "failed-before-pane");
+    });
+  }
+});
+
+test("legacy Coder and Coordinator keep parent placement without native workspace metadata", async () => {
+  for (const role of ["coder", "coordinator"]) {
+    const { source, cwd } = linked();
+    const parent = fleetParent(source);
+    herdrFleet(parent.pi);
+    const result = await launch(parent, { role, cwd });
+    assert.equal(result.details.cwd, cwd);
+    assert.equal(result.details.paneId, "wT:p2");
+    assert.equal(parent.pi.execCalls.some((call: string[]) => call[1] === "workspace"), false);
+    assert.equal(Boolean(result.details.claimPath), role === "coder");
+  }
+});
+
 test("managed Coder readmits after a proved pre-pane occupancy or trust refusal", async () => {
   for (const refusal of ["occupancy", "trust"]) {
     const { source, cwd } = linked();
-    const parent = fleetParent(source);
+    const parent = managedParent(source, cwd);
     herdrFleet(parent.pi);
     if (refusal === "occupancy") {
       parent.roster.push({ name: "neighbor", pane_id: "wU:p9", cwd });
@@ -79,7 +194,7 @@ test("managed Coder readmits after a proved pre-pane occupancy or trust refusal"
 
 test("managed Coder retains the replay block after an uncertain tab attempt without a pane ID", async () => {
   const { source, cwd } = linked();
-  const parent = fleetParent(source);
+  const parent = managedParent(source, cwd);
   const exec = parent.pi.execImpl;
   parent.pi.execImpl = (cmd: string, args: string[]) => {
     if (cmd === "herdr" && args[0] === "tab") return Promise.resolve({

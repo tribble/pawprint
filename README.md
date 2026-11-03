@@ -181,7 +181,10 @@ are passed through native `--append-system-prompt`; this does not change default
 Explicit append flags replace native APPEND_SYSTEM.md discovery.
 
 `managed-coder` requires an existing native linked cwd and rejects base. It creates
-no worktree or persistent writer claim. The existing admission gate prevents
+its no-focus tab in the unique native workspace whose canonical checkout and
+repository identity match that tree. Missing, ambiguous or inconsistent workspace
+metadata stops launch before any tab is created. It creates no worktree or
+persistent writer claim. The existing admission gate prevents
 concurrent admission and rejects legacy claims and observed same-tree occupants.
 A prior recorded same-parent managed launch prevents replay into that tree.
 Herdr owns creation/removal. Never repurpose a claimed or narrowly assigned pane tree.
@@ -204,7 +207,8 @@ Human shortcuts:
 /ws [--no-approve] [repo|dir] <purpose>
 ```
 
-Pane delegation is delegated-only and opens a no-focus tab in the current workspace.
+Pane delegation is delegated-only. Legacy Coder and Coordinator open a no-focus tab
+in the current workspace. Managed Coder uses the native worktree workspace above.
 It retains parent provenance and delivers to the returned native pane. Human /ws
 starts a focused interactive Coordinator. Children inherit the configured agent
 directory. Both new Intercom lineage variables and the old child marker block pane
