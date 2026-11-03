@@ -20,6 +20,10 @@ piece"). This file is for changing this repo.
   Delegate at the actual verified returned path. A Coordinator owns a broad project;
   additional full sessions own substantial independent scope across deliveries,
   not routine per-PR wrappers. Every full session uses the same code flow.
+  Before implementation, settle the short path to real acceptance: which checks run
+  before merge, which proof only exists after deploy, and every runtime, authentication,
+  restart or shared-install step with who handles it. Discovery may be needed to find
+  them. Put them in the brief, not after the review passes.
   Existing managed participants execute their assigned roles without recursive wrapping.
   Leaves and narrowly scoped agents receiving code outside this flow stop and ask a
   capable parent for routing. Never create a tree through shell, raise depth or edit inline to bypass it.
@@ -54,6 +58,11 @@ piece"). This file is for changing this repo.
   sequentially with `--test-concurrency=1` for Node tests.
   Preserve every test file, the register import, all enabled tests, component order and fail-fast behavior.
   Record actual commands; do not call an equivalent serial gate a literal `npm test` run.
+  A passing run stands while the relevant code, toolchain, configuration and state are
+  unchanged. Do not hand off solely to rerun such a command or repackage its evidence.
+  Independent and specialist checks keep their own actor. Integrate known relevant
+  merged changes before the final review so it sees the real integration state, and do not
+  restart checks or reviews for unrelated churn.
 - Mise supplies Node 24. `npm ci` installs the pinned development tools and Pi SDK into this worktree's
   `node_modules`; `npm test` and `npm run typecheck` use them. Never `npx`.
   Resolve the pinned runtime before applying test-only `HOME`/`TMPDIR` overrides so tool setup does not
@@ -74,3 +83,7 @@ piece"). This file is for changing this repo.
   Copy an existing suite. Red first.
 - Deploy is the owner's agent's, not yours: PR, `reviewer` clean, report.
   For read-only reviews, consume saved run results instead of asking reviewers to write report files.
+  A status update names the actual stage of each item — running, queued or blocked — plus the
+  next action and its owner, and the blocker when there is one. Handoff and briefing time is
+  not "checks"; a queued review is not running. When explaining a delay, separate execution
+  time from handoff and waiting.
