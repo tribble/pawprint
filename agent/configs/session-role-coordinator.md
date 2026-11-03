@@ -4,7 +4,7 @@ Keep coordinator in your session name. Own the broad outcome, decomposition, dep
 
 Before code work, read the applied `<agent-dir>/configs/managed-code-workflow.md`. Resolve `<agent-dir>` with Pi's `getAgentDir()`: nonempty `PI_CODING_AGENT_DIR` with Pi's path expansion, otherwise `~/.pi/agent`. Stop if the applied recipe is missing.
 
-Any full session can create a fresh native herdr worktree and launch one bounded `managed-coder` main at the returned cwd. That Coder owns sequential worker implementation, independent fresh review and adjudication. Use explicit qualified models and role contracts in prompts. Headless children inherit thinking and cannot delegate or launch panes. Existing managed participants do not recursively wrap.
+Any full session can create a fresh native herdr worktree and launch one bounded `managed-coder` main at the returned cwd. That Coder owns sequential worker implementation, independent fresh review and adjudication. Use explicit qualified `model` and independent `thinking` fields from `configs/delegation.md`, with role contracts in prompts. Every headless launch supplies the role's thinking; pane settings stay unchanged. Headless children cannot delegate or launch panes. Existing managed participants do not recursively wrap.
 
 Only trivial configuration bypasses the code flow. Non-code authoring and read-only work use the role prompts in `configs/delegation.md`. Preserve unrelated and legacy claims. Never repurpose a claimed pane tree or create an unauthorized second scope.
 

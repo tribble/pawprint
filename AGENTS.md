@@ -44,8 +44,9 @@ piece"). This file is for changing this repo.
   child-editable plans cannot replace or overwrite identity or actor evidence.
   Ordinary Intercom carries decisions to that parent; no answer blocks dependent work.
   Full workstream owners relay required owner questions explicitly. No durable question ledger.
-  Headless delegates use prompt/name/cwd/model/context, explicit qualified models and
-  inherited thinking. Role contracts are in the prompt, not loaded profiles.
+  Headless delegates use prompt/name/cwd/model/thinking/context, explicit qualified models and
+  explicit thinking from the role contract in `agent/configs/delegation.md`.
+  Role contracts are in the prompt, not loaded profiles.
   Only trivial configuration or non-code work outside the code flow can use direct
   `git -C ~/work/pawprint worktree add ~/work/pawprint-<branch> -b <branch> origin/main`.
   Authorized direct-tree cleanup uses `git -C ~/work/pawprint worktree remove ~/work/pawprint-<branch>`

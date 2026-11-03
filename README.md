@@ -123,7 +123,10 @@ These are recorded cost estimates. Spending remains uncapped.
 
 ## Managed code workflow
 
-Pi >=1.5.0 and pi-subagents 0.52.14 are required. Restart Pi to change SDK versions;
+Pi >=1.5.0 and the `tribble/pi-subagents` source pin in
+[`agent/settings.json`](agent/settings.json) are required for explicit child thinking.
+The fork is 0.52.16 plus the child-thinking commit; released 0.52.16 lacks this field.
+Restart Pi to change SDK versions;
 `/reload` does not upgrade the host. A CLI version alone does not prove child SDK identity.
 
 Any full session can own a delivery. The parent creates a fresh native herdr worktree,
@@ -152,10 +155,16 @@ It allows at most three implementation/review rounds. Existing participants do n
 recursively wrap. Only trivial configuration bypasses the code flow; read-only and
 non-code work use the role contracts in [delegation.md](agent/configs/delegation.md).
 
-Headless calls use `delegate({prompt,name,cwd,model,context:"fresh"})`. Put the
-complete role and every verbatim Owner outcome in the prompt, with a qualified model
-in the actual model argument. Names do not load profiles. Thinking is inherited.
-There are no per-child effort controls, fallback catalogs or reviewer tool masks.
+Headless calls use `delegate({prompt,name,cwd,model,thinking,context:"fresh"})`. Put the
+complete role and every verbatim Owner outcome in the prompt. Pass a qualified model
+in `model` and explicit role effort in the independent `thinking` field:
+worker/oracle/debugger `high`; fixer `low`; reviewer/security reviewer `xhigh`;
+quick small low-risk review `medium`; scout/context-builder/writer `medium`.
+Names do not load profiles. Omitting `thinking` still inherits parent effort upstream,
+so our calls must supply it. Saved continuations retain child effort.
+Do not change parent thinking or append model suffixes to set child effort.
+Pi clamps effort to model capabilities; a requested value is not proof of effective effort.
+There are no fallback catalogs or reviewer tool masks.
 Read-only review is a prompt contract, not a sandbox.
 
 Delegation is async. End the turn after launch and resume on completion.

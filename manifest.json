@@ -76,7 +76,7 @@
       "personal": true
     },
     "configs/delegation.md": {
-      "does": "Headless role prompts with explicit models and inherited thinking",
+      "does": "Headless role prompts with explicit models and per-child thinking",
       "needs": ["pi-subagents"],
       "personal": true
     }
