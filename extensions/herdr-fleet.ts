@@ -1,6 +1,6 @@
 // herdr-fleet.ts — herdr-native fleet UX.
 //   /fleet                  compact status surface: named agents + live state + owner [mine]/[yours] (zero-token)
-//   /delegate <name> <task> spawn a named pi in a new tab of THIS workspace, hand it the task; refuses without an `Owner outcome:` block
+//   /delegate <name> <task> spawn a named pi in a new tab (managed Coder: native worktree workspace; otherwise THIS workspace); requires `Owner outcome:`
 //   /ws [repo|dir] <purpose> new focused workspace: dir from identifier or the model's read of the purpose; name from purpose; repo ids from `configs/ws.json`
 // Delegated pane agents are first-class: they join intercom under their herdr name,
 // and you talk to them by focusing their pane (herdr agent focus <name>).
@@ -368,6 +368,38 @@ function launchDirectory(pi: ExtensionAPI, ctx: ExtensionContext, requested?: st
   return canonical;
 }
 
+async function managedWorkspace(pi: ExtensionAPI, tree: Worktree, signal?: AbortSignal): Promise<string> {
+  const result = await herdr(pi, ["workspace", "list"], signal);
+  signal?.throwIfAborted();
+  const workspaces = result && typeof result === "object" && "workspaces" in result ? result.workspaces : undefined;
+  if (!Array.isArray(workspaces)) throw new Error("Native workspace list is missing; inspect `herdr workspace list`");
+  const ids = new Set<string>();
+  const matches: string[] = [];
+  for (const entry of workspaces as unknown[]) {
+    if (!entry || typeof entry !== "object") throw new Error("Invalid native workspace metadata; inspect `herdr workspace list`");
+    const { workspace_id: id, worktree } = entry as Record<string, unknown>;
+    if (typeof id !== "string" || !id.trim() || hasControls(id) || ids.has(id)) throw new Error("Missing or duplicate native workspace identity; inspect `herdr workspace list`");
+    ids.add(id);
+    if (worktree === undefined) continue;
+    if (!worktree || typeof worktree !== "object") throw new Error("Invalid native workspace worktree metadata; inspect `herdr workspace list`");
+    const { checkout_path: checkout, repo_key: repo, is_linked_worktree: linked } = worktree as Record<string, unknown>;
+    const canonicalPath = (field: "checkout_path" | "repo_key", path: string) => {
+      try { return realpathSync.native(path); }
+      catch (error) {
+        throw new Error(`Cannot resolve native workspace ${id} ${field} ${JSON.stringify(path)}: ${error instanceof Error ? error.message : String(error)}. Inspect \`herdr workspace list\``);
+      }
+    };
+    if (typeof checkout !== "string" || !isAbsolute(checkout) || hasControls(checkout)) throw new Error("Invalid native workspace checkout_path; inspect `herdr workspace list`");
+    if (canonicalPath("checkout_path", checkout) !== tree.root) continue;
+    if (linked !== true || typeof repo !== "string" || !isAbsolute(repo) || hasControls(repo) || canonicalPath("repo_key", repo) !== tree.common) {
+      throw new Error(`Inconsistent native workspace repository/linked identity for ${tree.root}; inspect \`herdr workspace list\``);
+    }
+    matches.push(id);
+  }
+  if (matches.length !== 1) throw new Error(`Expected exactly one native workspace for checkout ${tree.root} and repository ${tree.common}; found ${matches.length}. Inspect \`herdr workspace list\` before launching`);
+  return matches[0];
+}
+
 // Never send task Enter into a fresh Pi's unresolved startup trust selector.
 // Native saved decisions and global policy are read, not changed.
 function projectTrustOptOut(cwd: string, explicitOptOut = false): boolean {
@@ -414,8 +446,9 @@ async function launch(pi: ExtensionAPI, ctx: ExtensionContext, request: LaunchRe
   if (role === "coordinator") projectTrustOptOut(sourceCwd, request.noProjectResources);
   const parent = intercomId(ctx.sessionManager.getSessionId());
   const agents = await agentList(pi, signal);
-  const ws = myWorkspace(agents);
-  if (!ws) throw new Error("/delegate needs to run inside a herdr pane");
+  const parentWorkspace = myWorkspace(agents);
+  if (!parentWorkspace) throw new Error("/delegate needs to run inside a herdr pane");
+  let ws = parentWorkspace;
   const name = finalName(wanted, agents, role);
   let record: LaunchRecord = { ownerSessionId: ctx.sessionManager.getSessionId(), ownerSessionFile, childSessionId: randomUUID(), launchId: randomUUID(), name, role, phase: "intent", sourceCwd, cwd: sourceCwd };
   const save = (phase: string, update: Partial<LaunchRecord> = {}) => {
@@ -488,6 +521,7 @@ async function launch(pi: ExtensionAPI, ctx: ExtensionContext, request: LaunchRe
           throw new Error("This tree already has a recorded managed Coder launch; inspect its actors before using fresh isolation");
         }
         // Herdr owns this tree; reuse the admission gate without adding a persistent claim.
+        ws = await managedWorkspace(pi, current, signal);
         return runPane();
       }
       const claim: WriterClaim = { version: 1, ownerSessionId: record.ownerSessionId, ownerSessionFile, childSessionId: record.childSessionId, launchId: record.launchId,
