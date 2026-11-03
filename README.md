@@ -223,7 +223,8 @@ Legacy claims survive child exit, cancellation and uncertain delivery. Only the
 UUID/file-bound owner may release a recorded pre-pane failure through release_worktree.
 Any pane/start attempt or uncertain identity keeps the claim. Post-start reconciliation
 is not added here. Release is serialized with admission and removes only the claim,
-never a checkout or branch. No age-based reclaim, manual attestation or automatic cleanup.
+never a checkout or branch. No age-based reclaim, manual attestation or launcher-driven
+cleanup; the parent still runs verified completion cleanup itself.
 
 ## Fresh machine (mine)
 
@@ -425,10 +426,14 @@ Keep the base checkout on `main`; never detach it or author changes there.
 Authorized direct-tree cleanup uses
 `git -C ~/work/pawprint worktree remove ~/work/pawprint-<branch>` after the same
 actor/decision/claim/occupant/artifact checks described above. Native trees also
-require the exact workspace identity check. Only after verified merge and successful
-verified tree removal, explicit branch deletion authority permits
-`git -C ~/work/pawprint branch -d <branch>`. Keep abandoned/unmerged branches unless
-separately authorized. In the task worktree,
+require the exact workspace identity check. After verified merge and successful
+verified tree removal, delete the delivery's merged task branch locally and remotely
+as part of the authorized delivery; no separate approval is needed. Follow the
+[recipe's merged-branch deletion steps](agent/configs/managed-code-workflow.md#merged-branch-deletion):
+exact recorded merged head, `git -C ~/work/pawprint branch -d <branch>` first, `-D`
+only for missing squash/rebase ancestry, fresh `ls-remote` equality before
+`git -C ~/work/pawprint push origin --delete <branch>`. Keep abandoned/unmerged
+branches unless separately authorized. In the task worktree,
 edit, `npm test`, commit, merge, then deploy. Refuse a non-`main` base before
 fetching, fast-forwarding or applying:
 `test "$(git -C ~/work/pawprint symbolic-ref --quiet HEAD)" = refs/heads/main && git -C ~/work/pawprint fetch origin main && git -C ~/work/pawprint merge --ff-only FETCH_HEAD && ~/work/pawprint/setup.sh --apply`

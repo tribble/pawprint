@@ -48,8 +48,12 @@ piece"). This file is for changing this repo.
   after the same actor/decision/claim/occupant/artifact checks in the shared recipe.
   Native cleanup also requires its fresh exact workspace identity check.
   Never force or auto-remove. Preserve needed ignored artifacts before removal.
-  Branch deletion requires verified merge, successful verified tree removal and
-  explicit authority. Keep abandoned/unmerged branches unless separately authorized.
+  After verified merge and successful verified tree removal, the parent deletes the
+  delivery's merged local and remote task branch as part of the authorized delivery;
+  no separate approval is needed. Follow the recipe's merged-branch deletion steps:
+  exact recorded merged head, `branch -d` first, `-D` only for missing squash/rebase
+  ancestry, fresh `ls-remote` equality before `push origin --delete`. Keep
+  abandoned/unmerged branches unless separately authorized.
   Keep `~/work/pawprint` attached to `main`; never detach it or author changes there.
   Routine deploy must verify `symbolic-ref --quiet HEAD` is `refs/heads/main`
   before fetch, fast-forward-only merge or apply. A failed check stops deployment;

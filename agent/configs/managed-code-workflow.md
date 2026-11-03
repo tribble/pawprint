@@ -57,6 +57,14 @@ Preserve needed ignored artifacts and delivery evidence before non-force removal
 herdr worktree remove --workspace <recorded workspace_id>
 ```
 
-Verify native and Git readback afterward. A dirty refusal means keep and inspect, never force. Native removal leaves the branch. Only after verified merge and successful tree removal, explicit branch-deletion authority permits `git -C <source repo> branch -d <branch>`. Keep abandoned/unmerged branches unless separately authorized. No automatic cleanup.
+Verify native and Git readback afterward. A dirty refusal means keep and inspect, never force. Native removal leaves the branch. No tool performs cleanup on its own; the parent runs it after the checks above.
+
+### Merged-branch deletion
+
+Deleting the delivery's merged task branch is part of the authorized delivery; no separate approval is needed. Keep abandoned/unmerged branches unless separately authorized. Prerequisites: verified merge, every actor/claim/occupant check above, and successful verified tree removal. Record the reviewed PR's merged head SHA and its publication remote at merge time; every deletion check below compares against that recorded head.
+
+Local: confirm the PR is merged and the local branch tip equals the recorded head (`git -C <source repo> rev-parse refs/heads/<branch>`). Run `git -C <source repo> branch -d <branch>`. If `-d` refuses only because a squash or rebase merge left no ancestry, `git -C <source repo> branch -D <branch>` is permitted after those exact-head and merged-PR checks. Any other refusal, an unknown tip or a mismatched tip means keep the branch. This permission is narrow: it never covers force-removing worktrees or rewriting shared history.
+
+Remote: only where the parent already holds publication authority for the repository. Immediately before deletion, read the published tip with `git -C <source repo> ls-remote <recorded remote> refs/heads/<branch>`. A failed or unreadable lookup means keep the branch. A successful lookup that finds no ref needs no deletion. A tip that differs from the recorded head means keep it. On equality run `git -C <source repo> push <recorded remote> --delete <branch>`; add no force flags.
 
 Legacy `release_worktree` still releases only its UUID/file-bound owner's recorded pre-pane failure claim. Post-start or uncertain claims stay held. It never removes a worktree or branch. The managed Coder has no authority to close its pane or remove native resources merely because review finished.
