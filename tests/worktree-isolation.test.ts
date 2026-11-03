@@ -2,7 +2,7 @@ import { mock, test } from "node:test";
 import fs from "node:fs";
 import { syncBuiltinESMExports } from "node:module";
 import assert from "node:assert/strict";
-import { existsSync, mkdirSync, readFileSync, renameSync, symlinkSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, realpathSync, renameSync, symlinkSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import herdrFleet from "../extensions/herdr-fleet.ts";
 import { fleetParent, fleetRepo } from "./fleet-fixture.ts";
@@ -41,6 +41,43 @@ function managedParent(source: string, cwd: string) {
   return parent;
 }
 
+// Decision cases supply Git identity at pi.exec; paths, sessions and admission locks stay real.
+function identityLinked() {
+  const dir = mktmp("fleet-identity");
+  const source = join(dir, "source");
+  const cwd = join(dir, "existing");
+  const common = join(source, ".git");
+  const key = join(common, "worktrees", "existing");
+  for (const path of [source, cwd, key]) mkdirSync(path, { recursive: true });
+  const parent = fleetParent(source);
+  const exec = parent.pi.execImpl;
+  const identities: Record<string, { root: string; key: string; branch: string }> = {
+    [source]: { root: source, key: common, branch: "main" },
+    [cwd]: { root: cwd, key, branch: "existing" },
+  };
+  parent.pi.execImpl = (cmd: string, args: string[]) => {
+    if (cmd !== "git") return exec(cmd, args);
+    const identity = identities[realpathSync.native(args[1])];
+    assert.ok(identity, `unconfigured Git identity: ${args[1]}`);
+    const outputs: Record<string, string> = {
+      "rev-parse --is-inside-work-tree": "true",
+      "rev-parse --show-toplevel": identity.root,
+      "rev-parse --absolute-git-dir": identity.key,
+      "rev-parse --path-format=absolute --git-common-dir": common,
+      "branch --show-current": identity.branch,
+      "rev-parse --verify HEAD^{commit}": "0123456789abcdef0123456789abcdef01234567",
+    };
+    const stdout = outputs[args.slice(2).join(" ")];
+    assert.notEqual(stdout, undefined, `unconfigured Git response: ${args.join(" ")}`);
+    return Promise.resolve({ code: 0, stdout, stderr: "", killed: false });
+  };
+  parent.workspaces.push({ workspace_id: "wT" }, {
+    workspace_id: "wN",
+    worktree: { checkout_path: cwd, repo_key: common, repo_root: source, repo_name: "source", is_linked_worktree: true },
+  });
+  return { dir, source, cwd, key, common, parent };
+}
+
 test("managed Coder uses the supplied native tree without a second worktree or persistent claim", async () => {
   const { source, cwd } = linked();
   const parent = managedParent(source, cwd);
@@ -75,15 +112,28 @@ test("managed Coder uses the supplied native tree without a second worktree or p
 });
 
 test("managed destination refuses missing, ambiguous or inconsistent native identity before pane mutation", async (t) => {
-  for (const refusal of ["missing", "ambiguous", "repository", "linked", "missing-repository", "missing-id", "duplicate-id", "relative-checkout", "relative-repository", "stale-checkout", "stale-repository", "stale-unrelated-checkout", "wrong-checkout"]) {
+  for (const [refusal, expected] of [
+    ["missing", /Expected exactly one native workspace/],
+    ["ambiguous", /Expected exactly one native workspace/],
+    ["repository", /Inconsistent native workspace repository\/linked identity/],
+    ["linked", /Inconsistent native workspace repository\/linked identity/],
+    ["missing-repository", /Inconsistent native workspace repository\/linked identity/],
+    ["missing-id", /Missing or duplicate native workspace identity/],
+    ["duplicate-id", /Missing or duplicate native workspace identity/],
+    ["relative-checkout", /Invalid native workspace checkout_path/],
+    ["relative-repository", /Inconsistent native workspace repository\/linked identity/],
+    ["stale-checkout", /Cannot resolve native workspace/],
+    ["stale-repository", /Cannot resolve native workspace/],
+    ["stale-unrelated-checkout", /Cannot resolve native workspace/],
+    ["wrong-checkout", /Expected exactly one native workspace/],
+  ] as const) {
     await t.test(refusal, async () => {
-      const { source, cwd, dir } = linked();
-      const parent = managedParent(source, cwd);
+      const { source, cwd, dir, key, parent } = identityLinked();
       const metadata = parent.workspaces[1].worktree as Record<string, unknown>;
       switch (refusal) {
         case "missing": parent.workspaces.length = 1; break;
         case "ambiguous": parent.workspaces.push({ ...parent.workspaces[1], workspace_id: "wOther" }); break;
-        case "repository": metadata.repo_key = git(cwd, "rev-parse", "--absolute-git-dir"); break;
+        case "repository": metadata.repo_key = key; break;
         case "linked": metadata.is_linked_worktree = false; break;
         case "missing-repository": delete metadata.repo_key; break;
         case "missing-id": delete parent.workspaces[1].workspace_id; break;
@@ -97,6 +147,7 @@ test("managed destination refuses missing, ambiguous or inconsistent native iden
       }
       herdrFleet(parent.pi);
       await assert.rejects(() => launch(parent, { role: "managed-coder", cwd }), (error: Error) => {
+        assert.match(error.message, expected);
         if (refusal.startsWith("stale-")) {
           const field = refusal === "stale-repository" ? "repo_key" : "checkout_path";
           assert.ok(error.message.includes(`workspace ${refusal === "stale-unrelated-checkout" ? "wStale" : "wN"}`));
@@ -104,12 +155,11 @@ test("managed destination refuses missing, ambiguous or inconsistent native iden
           assert.ok(error.message.includes(join(dir, field === "repo_key" ? "gone.git" : "gone")));
           assert.match(error.message, /ENOENT/);
           assert.match(error.message, /herdr workspace list/);
-        } else assert.match(error.message, /workspace/);
+        }
         return true;
       });
       assert.equal(paneMutations(parent).length, 0);
       assert.equal(parent.pi.state.entries.at(-1).data.phase, "failed-before-pane");
-      const key = git(cwd, "rev-parse", "--absolute-git-dir");
       assert.equal(existsSync(join(key, "pawprint-writer.json")), false);
       assert.equal(existsSync(join(key, "pawprint-writer.lock")), false);
     });
@@ -135,8 +185,7 @@ test("managed destination canonicalizes checkout and repository aliases without 
 test("managed destination fails closed on unreadable metadata and cancellation", async (t) => {
   for (const refusal of ["shape", "command", "cancel"]) {
     await t.test(refusal, async () => {
-      const { source, cwd } = linked();
-      const parent = managedParent(source, cwd);
+      const { cwd, parent } = identityLinked();
       const exec = parent.pi.execImpl;
       const controller = new AbortController();
       parent.pi.execImpl = async (cmd: string, args: string[]) => {
@@ -157,8 +206,8 @@ test("managed destination fails closed on unreadable metadata and cancellation",
 
 test("legacy Coder and Coordinator keep parent placement without native workspace metadata", async () => {
   for (const role of ["coder", "coordinator"]) {
-    const { source, cwd } = linked();
-    const parent = fleetParent(source);
+    const { cwd, parent } = identityLinked();
+    parent.workspaces.length = 0;
     herdrFleet(parent.pi);
     const result = await launch(parent, { role, cwd });
     assert.equal(result.details.cwd, cwd);
@@ -170,8 +219,7 @@ test("legacy Coder and Coordinator keep parent placement without native workspac
 
 test("managed Coder readmits after a proved pre-pane occupancy or trust refusal", async () => {
   for (const refusal of ["occupancy", "trust"]) {
-    const { source, cwd } = linked();
-    const parent = managedParent(source, cwd);
+    const { cwd, parent } = identityLinked();
     herdrFleet(parent.pi);
     if (refusal === "occupancy") {
       parent.roster.push({ name: "neighbor", pane_id: "wU:p9", cwd });
@@ -193,8 +241,7 @@ test("managed Coder readmits after a proved pre-pane occupancy or trust refusal"
 });
 
 test("managed Coder retains the replay block after an uncertain tab attempt without a pane ID", async () => {
-  const { source, cwd } = linked();
-  const parent = managedParent(source, cwd);
+  const { cwd, parent } = identityLinked();
   const exec = parent.pi.execImpl;
   parent.pi.execImpl = (cmd: string, args: string[]) => {
     if (cmd === "herdr" && args[0] === "tab") return Promise.resolve({
@@ -258,7 +305,7 @@ test("base is rejected for explicit reuse and for Coordinators before any pane m
   const { pi, ctx } = fleetParent(source);
   herdrFleet(pi);
   for (const params of [{ cwd: source }, { role: "coordinator" }]) {
-    await assert.rejects(() => pi.tools.launch_agent.execute("bad", { name: "lead", task, base: "HEAD", ...params }, undefined, undefined, ctx), /base/i);
+    await assert.rejects(() => pi.tools.launch_agent.execute("bad", { name: "lead", task, base: "HEAD", ...params }, undefined, undefined, ctx), /base is only valid/);
   }
   assert.equal(pi.execCalls.filter((call: string[]) => call[0] === "herdr").length, 0);
 });
@@ -413,8 +460,9 @@ test("post-start, altered claim bytes and an orphaned native record all fail clo
 });
 
 test("in-memory Coder parents are refused before any exec; Coordinator directory behavior remains", async () => {
-  const { source } = fleetRepo();
+  const source = mktmp("in-memory");
   const parent = fleetParent(source);
+  writeFileSync(join(source, ".git"), `gitdir: ${join(source, "missing")}\n`);
   parent.ctx.sessionManager.getSessionFile = () => undefined;
   herdrFleet(parent.pi);
   await assert.rejects(() => launch(parent), /persistent native parent.*without --no-session/);

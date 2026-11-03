@@ -1,6 +1,5 @@
-// A throwaway copy of this checkout as a git repo on `main` with a bare
-// `origin`, for setup.sh --all / validate.sh tests: the live dir they create
-// is a plain directory — never a worktree, never ~/.pi. All scratch lives in
+// Throwaway source copies; Git-dependent tests also get main and a bare origin.
+// The live dir setup creates is plain — never a worktree, never ~/.pi. Scratch lives in
 // git-ignored `.setup-scratch-*` dirs under this checkout (never /tmp, so test
 // fixtures never leave the task worktree) and is removed at process exit.
 import { execFileSync, spawnSync } from "node:child_process";
@@ -27,7 +26,7 @@ export function git(dir: string, ...args: string[]): string {
   return execFileSync("git", ["-C", dir, "-c", "user.name=t", "-c", "user.email=t@t", "-c", "maintenance.auto=false", ...args], { encoding: "utf8" }).trim();
 }
 
-export function fixtureRepo(source = REPO): string {
+export function fixtureFiles(source = REPO): string {
   const dir = mktmp("fx");
   const repo = join(dir, "repo");
   // Include legitimate uncommitted source, but never ignored scratch or .git.
@@ -40,6 +39,12 @@ export function fixtureRepo(source = REPO): string {
     mkdirSync(dirname(destination), { recursive: true });
     cpSync(join(source, file), destination);
   }
+  return repo;
+}
+
+export function fixtureRepo(source = REPO): string {
+  const repo = fixtureFiles(source);
+  const dir = dirname(repo);
   git(repo, "init", "-q", "-b", "main");
   git(repo, "add", "-A");   // the copied default-deny .gitignore decides what is tracked
   git(repo, "commit", "-q", "--no-verify", "-m", "fixture");
