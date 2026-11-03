@@ -123,157 +123,103 @@ These are recorded cost estimates. Spending remains uncapped.
 
 ## Managed code workflow
 
-Any full Pi session routes code changes of any size through a fresh native herdr
-worktree/workspace → `managed-coder-trial` through public `delegate` → worker and
-independent review. Small fixes, renames and mechanical code edits are included.
-Only trivial configuration changes can bypass this flow and use `fixer`. If unsure,
-use the full flow. Non-code authoring and small prose edits use the existing `writer`
-outside the code flow. Read-only work keeps its appropriate delegation.
+Pi >=1.5.0 and pi-subagents 0.52.14 are required. Restart Pi to change SDK versions;
+`/reload` does not upgrade the host. A CLI version alone does not prove child SDK identity.
 
-The launching parent owns scope, decisions, final acceptance, authorized publication
-and native lifecycle. Delegated full sessions publish or deploy only when assigned
-in their scoped handoff under applicable owner authorization. Otherwise they return
-evidence for launching-parent acceptance. Already assigned and authorized actions
-do not need repeat approval prompts. A Coordinator owns a broad project. Add full workstream-owner
-sessions for substantial independent ownership across deliveries, not routine per-PR
-wrappers. Each uses the same managed flow. The managed Coder supervises one bounded
-deliverable, usually one PR, through sequential Sol implementation, fresh independent
-Opus review and fixes. It uses Astra/high with a depth ceiling of two. Workers and
-reviewers remain leaves. Existing managed participants keep their assigned roles
-without recursively wrapping themselves.
+Any full session can own a delivery. The parent creates a fresh native herdr worktree,
+verifies the returned repository/path/base, then launches a bounded **main** Coder:
 
-Read the applied `<agent-dir>/configs/managed-code-workflow.md` before launching.
-Pi's `getAgentDir()` uses nonempty `PI_CODING_AGENT_DIR` with Pi's path expansion,
+```js
+launch_agent({
+  name: "delivery-coder",
+  role: "managed-coder",
+  cwd: "/verified/path/from/native/herdr/receipt",
+  task: "Owner outcome:\n<verbatim ask>\n\n<bounded delivery and assigned cwd>"
+});
+```
+
+Read the applied `<agent-dir>/configs/managed-code-workflow.md` first. Pi's
+`getAgentDir()` uses nonempty `PI_CODING_AGENT_DIR` with Pi's path expansion,
 otherwise `~/.pi/agent`. The [repository recipe](agent/configs/managed-code-workflow.md)
-is its source, not a substitute for a missing applied recipe. It covers source/base/path preflight, native receipt verification,
-persistent parent identity, saved runs/questions/continuations, acceptance and
-safe cleanup. Original parent-saved native receipts and managed records are
-authoritative; cross-check the task-local plan against them before cleanup. Keep a persistent saved parent session. After apply, refresh that
-parent and verify its effective depth limit before launching managed work.
-Pawprint uses `origin/main` and `/Users/pantera/work/pawprint-<branch>`; other
-repositories use their own authorized base and path policy. Herdr does not fetch.
-The native shell and installed diff-review plugin provide access without a Coder pane.
+is the source, not a substitute for a missing applied recipe. Pawprint uses
+`origin/main` and `/Users/pantera/work/pawprint-<branch>`; Herdr does not fetch.
 
-Managed questions return to the session that launched that Coder. A full workstream
-owner can explicitly relay a decision request to its own parent through Intercom.
-There is no automatic ancestor forwarding. PR context grants children no publication authority.
+The bounded Coder delegates sequential implementation to
+`cloudflare-ai-gateway/gpt-6.1-sol`, then independent fresh review to
+`cloudflare-ai-gateway/claude-opus-5-5`. Risky changes also get fresh security review.
+Adjudication stays in that Coder, outside the human-facing parent's context.
+It allows at most three implementation/review rounds. Existing participants do not
+recursively wrap. Only trivial configuration bypasses the code flow; read-only and
+non-code work use the role contracts in [delegation.md](agent/configs/delegation.md).
 
-A leaf or narrowly scoped agent receiving code work outside this flow stops and
-requests routing from a capable parent. It must not create a tree through shell,
-raise depth or edit inline to bypass the rule. There is no legacy pane-Coder
-exception. A claimed or narrowly assigned pane tree cannot become a managed tree.
-If that assignment cannot enter the flow within its authority and scope, escalate
-to its launching parent. Never bypass claims or create an unauthorized second scope.
+Headless calls use `delegate({prompt,name,cwd,model,context:"fresh"})`. Put the
+complete role and every verbatim Owner outcome in the prompt, with a qualified model
+in the actual model argument. Names do not load profiles. Thinking is inherited.
+There are no per-child effort controls, fallback catalogs or reviewer tool masks.
+Read-only review is a prompt contract, not a sandbox.
 
-Only the authorized launching parent removes the native workspace after merge or
-authorized abandonment and the recipe's actor, decision, identity, claim and
-occupant checks. Unknown actors or inspection mean keep the tree. Preserve artifacts
-before non-force removal. No automatic cleanup. Existing pane APIs and legacy claims
-remain intact. `launch_agent`, human `/delegate`, `/ws` and `release_worktree` are
-not alternative code-authoring routes. Human `/delegate` is not managed `delegate`.
+Delegation is async. End the turn after launch and resume on completion.
+`agent_runs` supports list, inspect, continue and stop in the owning native main.
+Ordinary Intercom send/ask/reply handles decisions. No answer means blocked work.
+The parent handles continuation manually; there is no durable question ledger or
+automatic restart. Keep returned run/successor IDs and command exit evidence.
 
-## Pane role profiles
+The launching parent owns scope, decisions, integrated acceptance, authorized
+publication and native cleanup. The bounded Coder reports owned actor/command
+closure and remains idle for parent shutdown. Review completion, an idle pane,
+a terminal result or a Stop receipt does not prove detached descendants closed.
+Unknown actors or identities mean keep the tree. Preserve ignored evidence before
+authorized non-force native removal. Native receipt and process/run records are
+authoritative; a child-editable plan only indexes them.
 
-`herdr-fleet` reads `<agent-dir>/configs/session-roles.json` at launch time.
-Each Coordinator/Coder profile selects `model` (qualified `provider/id`, including
-multi-segment IDs), `thinking`, and `instructionsFile` (relative to the config
-directory). Both ship with Astra/high. The source-managed Markdown instruction
-files preserve their full contents through native `--append-system-prompt` file
-input. A second append argument supplies the one-line interaction contract.
-Apply the config, both instruction files, and `configs/managed-code-workflow.md`
-with the extension. Profile selection never changes `defaultModel`. Explicit append
-flags replace native `APPEND_SYSTEM.md` discovery; include any instructions you need from that file
-in your role instruction files.
+## Native pane roles and legacy claims
 
-Agents invoke the native `launch_agent` tool with `name` and `task` (including
-the owner's verbatim `Owner outcome:` block). Optional fields are `role`, `cwd`,
-`base` and `noProjectResources` (explicit native trust opt-out). It defaults to Coder;
-use `role: "coordinator"` for a nested Coordinator. This is the explicit pane
-API. Use full sessions for substantial independent ownership, not routine per-PR
-wrappers. All code still follows the managed code recipe above. The separate
-`delegate` tool runs managed headless subagents.
+`herdr-fleet` reads `configs/session-roles.json` at launch time. Coordinator,
+full-workstream Coder and bounded managed Coder select a qualified model, native
+thinking and prompt instruction file. All currently use Astra/high. Role contents
+are passed through native `--append-system-prompt`; this does not change defaultModel.
+Explicit append flags replace native APPEND_SYSTEM.md discovery.
 
-`extensions/subagent/config.json` is source-owned and copied wholesale on apply.
-Before deploying, check for unrelated live keys and preserve them in source.
-With no explicit parent trust flag, child runs inherit native hook/store/default
-trust policy. Unknown headless projects can start with protected project resources
-skipped; AGENTS.md and CLAUDE.md still load. Explicit parent trust flags propagate.
-Existing argv and saved continuation policies remain in effect; use fresh runs
-after refreshing the launching parent.
+`managed-coder` requires an existing native linked cwd and rejects base. It creates
+no worktree or persistent writer claim. The existing admission gate prevents
+concurrent admission and rejects legacy claims and observed same-tree occupants.
+A prior recorded same-parent managed launch prevents replay into that tree.
+Herdr owns creation/removal. Never repurpose a claimed or narrowly assigned pane tree.
+
+Existing `role:"coder"` and `role:"coordinator"` pane APIs remain available for
+substantial independent workstream ownership. Legacy Coder defaults to a fresh linked
+checkout from committed HEAD, or base; explicit cwd admits exactly a linked tree.
+Never combine cwd/base. Coordinator keeps directory behavior and rejects base.
+The direct unclaimed parent may plan beside its single Coder. Claims bind canonical
+Git admin directory, native UUID and canonical parent session-file path. Copied or
+moved sessions do not adopt ownership. Workspace grouping does not imply ownership.
 
 Human shortcuts:
 
 ```text
-/delegate <name> <task>
-/delegate --base origin/main <name> <task>
+/delegate --role managed-coder --cwd "/native/task/tree" <name> <task>
+/delegate [--base origin/main | --cwd "/linked/tree"] <name> <task>
 /delegate --role coordinator <name> <task>
-/delegate --cwd "/path/to/worktree" --no-approve <name> <task>
-/release-worktree "/path/to/worktree"
+/release-worktree "/path/to/legacy/pre-pane-failure"
 /ws [--no-approve] [repo|dir] <purpose>
 ```
 
-`launch_agent` and human `/delegate` are delegated-only and retain parent
-Intercom provenance. Human `/ws` starts an interactive Coordinator in a focused
-workspace. Coordinator names reserve the role marker and collision suffix
-before purpose truncation. A name such as `coordinator-3d-print` keeps its
-leading role marker so its numeric purpose remains legal.
+Pane delegation is delegated-only and opens a no-focus tab in the current workspace.
+It retains parent provenance and delivers to the returned native pane. Human /ws
+starts a focused interactive Coordinator. Children inherit the configured agent
+directory. Both new Intercom lineage variables and the old child marker block pane
+launches, including cached tools and command paths; no lineage is cleared.
 
-Pane delegation opens a no-focus tab in the current workspace and delivers the task
-to the returned pane ID. A Coder without `cwd` gets a fresh sibling linked
-worktree from the effective repository, including `change_dir`. It starts from
-committed `HEAD`, or the immutable commit resolved from `base`. Pawprint callers
-supply `base: "origin/main"`. The launcher does not fetch or transfer dirty edits.
+Native unresolved project trust stops delivery. A human must choose trust, or the
+caller explicitly opts out with noProjectResources/--no-approve. Never answer trust
+or auth prompts automatically. An uncertain start or task submission may already
+have taken effect: inspect the returned pane and saved identity, never retry blindly.
 
-Explicit Coder `cwd` reuses exactly that existing linked checkout/subdirectory;
-primary checkouts, non-Git paths, existing claims and observed same-tree unowned
-sessions are refused. The unclaimed launching parent may plan alongside its
-single Coder. Claims use canonical Git administrative directories, so symlink
-and subdirectory aliases cannot admit a second writer. Never combine `cwd` and
-`base`. Coordinators keep directory behavior and reject `base`.
-
-Relative cwd uses the effective directory; explicit absolute directories and
-known repo-map paths can recover after the old directory disappears. Children
-receive the caller's `PI_CODING_AGENT_DIR` so profile and trust sources match.
-Launch receipts include the source/final directories, branch, base commit,
-launch/child IDs, claim path and native pane. Parent-side native session entries
-record ownership by UUID and canonical native parent session-file path. Coder
-parents need persistent sessions; in-memory parents are refused before mutation.
-Copied or moved session files do not adopt claims; symlink aliases normalize.
-`/fleet` does not infer ownership from workspace grouping.
-
-Native trust is checked at the resulting cwd. An unresolved decision prevents
-pane creation and task Enter; an already-created Git worktree and claim remain. Human `/ws` sends no input and lets native Pi show its focused trust
-dialog; only explicit `--no-approve` opts out on that path.
-For a recorded claimed pre-pane failure, first release its claim from the
-UUID/file-bound parent with `release_worktree({cwd})` or `/release-worktree <cwd>`.
-Then start Pi interactively in that exact worktree and choose trust yourself;
-exit that Pi before relaunching with exact `cwd`. Alternatively, after release,
-relaunch with exact `cwd` and `--no-approve` / `noProjectResources` to decline
-protected resources. Saved decisions and native global policy are respected.
-If trust becomes unresolved after startup, keep and inspect the returned pane.
-Confirm Pi is running, resolve its native trust prompt yourself, and paste the
-original task only when the Pi editor is ready — never into a shell. Do not
-retry the launcher. Never retry an uncertain start or delivery blindly.
-
-The launch tool is omitted for headless leaf subagents; the shared boundary also
-rejects their calls. These guards are workflow boundaries, not an OS sandbox.
-Interaction mode grants no additional ship authority. Authority comes from the
-actual owner request, scoped handoff and applicable standing policy.
-Isolate independent workstreams. Sequence changes that depend on an unsettled
-API or migration.
-
-Claims survive child exit, cancellation and uncertain delivery. Only the
-UUID/file-bound owner can call `release_worktree({cwd})` or `/release-worktree
-<cwd>` for a recorded pre-pane failure, when no child was started. Any pane/start
-attempt or uncertainty keeps the claim: pane absence cannot prove detached
-workers stopped. Completed Coder worktrees cannot be reassigned through the
-launcher yet. Post-start reconciliation/release is deferred.
-
-Release is serialized with admission and removes only the claim, never a branch
-or checkout. It does not reclaim by age, idle status or manual attestation.
-Inspect the receipt's Git state and native pane after a failure; keep partial
-state and never retry blindly. A successful Git add can leave a branch even
-when a later response fails.
+Legacy claims survive child exit, cancellation and uncertain delivery. Only the
+UUID/file-bound owner may release a recorded pre-pane failure through release_worktree.
+Any pane/start attempt or uncertain identity keeps the claim. Post-start reconciliation
+is not added here. Release is serialized with admission and removes only the claim,
+never a checkout or branch. No age-based reclaim, manual attestation or automatic cleanup.
 
 ## Fresh machine (mine)
 

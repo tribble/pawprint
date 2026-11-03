@@ -69,6 +69,8 @@ const agentsReply = (agents: unknown) => ({
 process.env.HERDR_PANE_ID = "wH:p1";
 process.env.HERDR_ENV = "1";
 delete process.env.PI_SUBAGENT_CHILD; // Exercise the interactive parent boundary unless a case selects a leaf.
+delete process.env.PI_INTERCOM_ROOT_SESSION_ID;
+delete process.env.PI_INTERCOM_PARENT_SESSION_ID;
 const ME = { name: "coordinator-test", agent_status: "idle", cwd: "/tmp/me", pane_id: "wH:p1", workspace_id: "wH" };
 // Children are addressed to my intercom ID (pi-<sha256(session id)[0:32]>), never my name, which can change.
 // sha256("fleet-sess").hex[0:32], precomputed so the test does not share the implementation's formula.
@@ -807,26 +809,44 @@ test("unresolved native project trust prevents creation and delivery; explicit o
   }
 });
 
-test("leaf marker omits pane tool and refuses the shared command boundary; only /ws is interactive", async () => {
+test("legacy and new child lineage block cached tools and every pane-launch command", async () => {
   const registeredParent = makePi({ execImpl: delegateExec([ME]) });
   herdrFleet(registeredParent);
-  process.env.PI_SUBAGENT_CHILD = "1";
-  try {
-    await assert.rejects(
-      () => registeredParent.tools.launch_agent.execute("cached-tool", { name: "lead", task: "Owner outcome: go" }, undefined, undefined, fleetCtx()),
-      /leaf.*subagent/i,
-    );
-    assert.equal(registeredParent.execCalls.length, 0);
-    const pi = makePi({ execImpl: delegateExec([ME]) });
-    herdrFleet(pi);
-    assert.equal(pi.tools.launch_agent, undefined);
-    const ctx = fleetCtx();
-    await pi.commands.delegate.handler("lead Owner outcome: go", ctx);
-    assert.match(ctx.notes.at(-1).msg, /leaf|subagent/i);
-    assert.equal(pi.execCalls.length, 0);
-  } finally {
-    delete process.env.PI_SUBAGENT_CHILD;
+  for (const lineage of [
+    { PI_SUBAGENT_CHILD: "1" },
+    { PI_INTERCOM_ROOT_SESSION_ID: "native-parent" },
+    { PI_INTERCOM_PARENT_SESSION_ID: "native-parent" },
+    { PI_INTERCOM_ROOT_SESSION_ID: "native-parent", PI_INTERCOM_PARENT_SESSION_ID: "native-parent" },
+    { PI_INTERCOM_ROOT_SESSION_ID: "" },
+  ]) {
+    Object.assign(process.env, lineage);
+    try {
+      await assert.rejects(
+        () => registeredParent.tools.launch_agent.execute("cached-tool", { name: "lead", task: "Owner outcome: go" }, undefined, undefined, fleetCtx()),
+        /leaf.*subagent/i,
+      );
+      await assert.rejects(
+        () => registeredParent.tools.release_worktree.execute("cached-release", { cwd: testSource }, undefined, undefined, fleetCtx()),
+        /leaf.*subagent/i,
+      );
+      assert.equal(registeredParent.execCalls.length, 0);
+      const pi = makePi({ execImpl: delegateExec([ME]) });
+      herdrFleet(pi);
+      assert.equal(pi.tools.launch_agent, undefined);
+      assert.equal(pi.tools.release_worktree, undefined);
+      const ctx = fleetCtx();
+      for (const [command, args] of [["delegate", "lead Owner outcome: go"], ["ws", ""], ["release-worktree", testSource]]) {
+        await pi.commands[command].handler(args, ctx);
+        assert.match(ctx.notes.at(-1).msg, /leaf.*subagent/i);
+      }
+      assert.equal(pi.execCalls.length, 0);
+    } finally {
+      for (const key of Object.keys(lineage)) delete process.env[key];
+    }
   }
+});
+
+test("only /ws is interactive", async () => {
   for (const human of [true, false]) {
     const pi = makePi({ execImpl: delegateExec([ME]) });
     herdrFleet(pi);

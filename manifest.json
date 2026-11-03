@@ -2,11 +2,6 @@
   "schemaVersion": 1,
   "files": [
     "AGENTS.md",
-    "agents/managed-coder-trial.md",
-    "agents/reviewer-fable.md",
-    "agents/reviewer-kimi.md",
-    "agents/scout-kimi.md",
-    "agents/worker-kimi.md",
     "mcp.json",
     "models.json",
     "presets.json",
@@ -17,42 +12,13 @@
     "configs/managed-code-workflow.md",
     "configs/session-role-coordinator.md",
     "configs/session-role-coder.md",
-    "extensions/subagent/config.json"
+    "configs/managed-coder.md",
+    "configs/delegation.md"
   ],
   "about": {
-    "agents/managed-coder-trial.md": {
-      "does": "Managed deliverables: implementation and independent-review supervisor",
-      "needs": ["pi-subagents", "cloudflare-ai-gateway", "models.json"],
-      "personal": true
-    },
-    "extensions/subagent/config.json": {
-      "does": "Managed child depth 2 and native project-trust inheritance",
-      "needs": ["pi-subagents"],
-      "personal": true
-    },
     "AGENTS.md": {
       "does": "pi's global instructions — the rules every session on this machine follows",
       "needs": ["herdr", "pi-subagents", "pr-watch"],
-      "personal": true
-    },
-    "agents/reviewer-fable.md": {
-      "does": "`reviewer-fable`: legacy-name Opus 5.5 compatibility profile; use `reviewer`",
-      "needs": ["pi-subagents", "cloudflare-ai-gateway", "models.json"],
-      "personal": true
-    },
-    "agents/reviewer-kimi.md": {
-      "does": "`reviewer-kimi` subagent: read-only code reviewer pinned to kimi-k3 (Fireworks)",
-      "needs": ["pi-subagents", "cloudflare-ai-gateway", "models.json"],
-      "personal": true
-    },
-    "agents/scout-kimi.md": {
-      "does": "`scout-kimi` subagent: read-only recon, writes context.md for handoff",
-      "needs": ["pi-subagents", "cloudflare-ai-gateway", "models.json"],
-      "personal": true
-    },
-    "agents/worker-kimi.md": {
-      "does": "`worker-kimi` subagent: end-to-end implementer for bounded tasks, on kimi-k3",
-      "needs": ["pi-subagents", "cloudflare-ai-gateway", "models.json"],
       "personal": true
     },
     "mcp.json": {
@@ -71,7 +37,7 @@
       "personal": true
     },
     "settings.json": {
-      "does": "pi's main settings — tribble's: model routing, packages, subagent models",
+      "does": "pi settings: model selection and pinned packages",
       "needs": ["cloudflare-ai-gateway", "models.json"],
       "personal": true
     },
@@ -81,7 +47,7 @@
     },
     "configs/managed-code-workflow.md": {
       "does": "Any full session's code flow: native worktree, managed Coder and safe lifecycle",
-      "needs": ["herdr", "pi-subagents", "agents/managed-coder-trial.md"],
+      "needs": ["herdr", "pi-subagents", "configs/managed-coder.md"],
       "personal": true
     },
     "configs/session-role-coordinator.md": {
@@ -95,13 +61,23 @@
       "personal": true
     },
     "configs/session-roles.json": {
-      "does": "Coordinator/Coder pane profiles: qualified model, thinking and instruction file",
+      "does": "Native pane roles: qualified model, thinking and prompt instructions",
       "needs": ["pawprint package (extensions/herdr-fleet.ts)"],
       "personal": true
     },
     "configs/ws.json": {
       "does": "tribble's repo map for `/ws`: short id → local checkout path (workos, infra)",
       "needs": ["pawprint package (extensions/herdr-fleet.ts)"],
+      "personal": true
+    },
+    "configs/managed-coder.md": {
+      "does": "Bounded main Coder: sequential worker, fresh review and parent closeout",
+      "needs": ["herdr", "pi-subagents", "configs/delegation.md"],
+      "personal": true
+    },
+    "configs/delegation.md": {
+      "does": "Headless role prompts with explicit models and inherited thinking",
+      "needs": ["pi-subagents"],
       "personal": true
     }
   },
