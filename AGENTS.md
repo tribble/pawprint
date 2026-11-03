@@ -76,6 +76,10 @@ piece"). This file is for changing this repo.
   Independent and specialist checks keep their own actor. Integrate known relevant
   merged changes before the final review so it sees the real integration state, and do not
   restart checks or reviews for unrelated churn.
+  Before optimizing the gate, time the full run at normal concurrency and find its critical path:
+  per-file durations do not sum to wall time. Delete needless test work before adding concurrency
+  machinery. Compare before/after on one base and runtime, excluding install time, and report
+  per-file gains separately from full-gate wall time. Keep coverage and runner settings intact.
 - Mise supplies Node 24. `npm ci` installs the pinned development tools and Pi SDK into this worktree's
   `node_modules`; `npm test` and `npm run typecheck` use them. Never `npx`.
   Resolve the pinned runtime before applying test-only `HOME`/`TMPDIR` overrides so tool setup does not
@@ -93,7 +97,10 @@ piece"). This file is for changing this repo.
   `git ls-files agent/ | sed 's#^agent/##'` (`scripts/validate.sh` checks).
   Extensions/skills/prompts/themes live at the repo root and ship as the package.
 - Tests: `tests/harness.mjs` fakes the extension API and `pi.exec`; fixture repos come from `tests/fixture.ts`.
-  Copy an existing suite. Red first.
+  Copy the suite whose contract matches, with the least-integrated fixture that proves it:
+  plain files for file/config cases, controlled inputs at an existing boundary for pure decisions,
+  real Git or processes only for integration contracts. Refusal tests stay isolated from the real
+  checkout even when the guard under test fails. Red first.
 - Deploy is the owner's agent's, not yours: PR, `reviewer` clean, report.
   For read-only reviews, consume saved run results instead of asking reviewers to write report files.
   A status update names the actual stage of each item — running, queued or blocked — plus the
