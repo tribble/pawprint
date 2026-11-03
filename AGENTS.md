@@ -7,6 +7,12 @@ piece"). This file is for changing this repo.
   code changes of any size through fresh native herdr worktree → bounded main Coder
   (`launch_agent` role `managed-coder`) → worker and independent fresh review. Small fixes and renames are included. Only
   trivial configuration can bypass the code flow and use fixer; if unsure, use the full flow.
+  Adopting an already reviewed and tested immutable dependency revision, with its aligned
+  prose, is trivial configuration when it needs no consuming-repo code change, migration or
+  unresolved compatibility work: fixer/writer plus independent review, and this repo's
+  required checks still run. Unqualified dependency upgrades stay in the code flow.
+  An owner-authorized personal-environment rollout does not wait on upstream merge, release
+  or hosted-only CI; this repo's required checks and pin verification still gate it.
   Non-code authoring and small prose edits use the existing writer outside the code flow.
   Read-only work keeps its appropriate delegation.
   The recipe source is `agent/configs/managed-code-workflow.md`. When executing the flow,
