@@ -32,6 +32,10 @@ piece"). This file is for changing this repo.
   within its authority and scope to its launching parent. Do not bypass claims or
   create an unauthorized second scope. Existing pane APIs and legacy claims stay intact.
   The launching parent owns final acceptance, authorized publication and native lifecycle.
+  Before declaring a task complete, the parent accounts for every agent it itself launched for
+  that task, including superseded implementers and diagnostic helpers, and shuts each down once
+  its children and commands have verifiably exited. Preserving a worktree or evidence never
+  requires keeping its agent alive.
   Delegated full sessions publish or deploy only when assigned in their scoped handoff
   under applicable owner authorization; otherwise return evidence for launching-parent acceptance.
   Already assigned and authorized actions do not need repeat approval prompts.
