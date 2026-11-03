@@ -283,7 +283,12 @@ test("case input frozen across candidate arms: mid-run mutation, new-candidate-o
 test("generate: nonzero exit, bounded process-group lifecycle, long argv delivered unchanged", (t) => {
   const root = mkroot(t);
   const bin = stubBin(root);
-  const corpus = writingCorpus(root);
+  const corpus = join(root, "corpus");
+  mkdirSync(corpus);
+  writeFileSync(join(corpus, "hello.md"), "Write one line about teaspoons.\n");
+  writeJson(join(corpus, "cases.json"), [
+    { id: "hello", promptFile: "hello.md", expectations: "EXPECTSECRET-1: must mention teaspoons", rubric: RUBRIC },
+  ]);
   const candidates = join(root, "candidates.json");
   const pgidFile = join(root, "sleeper.pgid");
   const bgPgidFile = join(root, "bg.pgid");
@@ -305,7 +310,7 @@ test("generate: nonzero exit, bounded process-group lifecycle, long argv deliver
   const long = readMeta(longDir);
   assert.equal(long.status, "ok", JSON.stringify(long));
   assert.equal(readFileSync(join(longDir, "stdout"), "utf8"), LONG_ARG);
-  assert.match(r.stdout, /generate done: 6 ok, 6 failed, 0 skipped/);
+  assert.match(r.stdout, /generate done: 3 ok, 3 failed, 0 skipped/);
   const bad = readMeta(join(results, "hello", "bad", "rep-1"));
   assert.equal(bad.status, "failed");
   assert.equal(bad.reason, "nonzero-exit");
@@ -335,7 +340,7 @@ test("generate: nonzero exit, bounded process-group lifecycle, long argv deliver
   assert.ok(groupGone(bgPgidFile), "backgrounded grandchild's process group reaped after success");
   const before = readFileSync(join(results, "hello", "bad", "rep-1", "meta.json"), "utf8");
   const r2 = runCli(root, bin, args);
-  assert.match(r2.stdout, /0 ok, 0 failed, 12 skipped/);
+  assert.match(r2.stdout, /0 ok, 0 failed, 6 skipped/);
   assert.equal(readFileSync(join(results, "hello", "bad", "rep-1", "meta.json"), "utf8"), before, "failures preserved verbatim");
 });
 

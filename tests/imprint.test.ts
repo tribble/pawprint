@@ -5,9 +5,8 @@
 // settings.json/mcp.json get the same field-aware merge. Path entrypoints
 // refuse any '..' component, a newline, or an empty target outright, never
 // glob wildcard characters, and never resolve a symlinked path for the
-// caller. Every run
-// uses a throwaway fixture repo (tests/fixture.ts): nothing here touches this
-// checkout's git or ~/.pi.
+// caller. Writable sources are fresh file copies; only Git contracts get repositories.
+// Nothing here touches this checkout's git or ~/.pi.
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { execFileSync, spawnSync } from "node:child_process";
@@ -17,7 +16,7 @@ import {
 } from "node:fs";
 import { join, relative } from "node:path";
 import { createHash } from "node:crypto";
-import { fixtureRepo, git, mktmp, piPackageDir, setupAll } from "./fixture.ts";
+import { fixtureFiles, fixtureRepo, git, mktmp, piPackageDir, setupAll } from "./fixture.ts";
 
 const REPO = join(import.meta.dirname, "..");
 const PRINT = join(REPO, "agent");
@@ -80,7 +79,7 @@ test("1. fresh target: plain live dir with every manifest file applied, no git a
 });
 
 test("2. existing live with runtime state: applied around it, no backups, sentinels byte-identical; repeated run writes nothing", () => {
-  const repo = fixtureRepo();
+  const repo = fixtureFiles();
   const live = join(mktmp("w2"), "pi");
   mkdirSync(join(live, "agent", "sessions"), { recursive: true });
   const auth = JSON.stringify({ junk: "SECRET-DECOY" });
@@ -117,7 +116,7 @@ test("2. existing live with runtime state: applied around it, no backups, sentin
 });
 
 test("3. a git-linked live dir is refused (migrate metadata first), nothing written", () => {
-  const repo = fixtureRepo();
+  const repo = fixtureFiles();
   const live = join(mktmp("w3"), "pi");
   mkdirSync(join(live, "agent"), { recursive: true });
   writeFileSync(join(live, "agent", "auth.json"), "SENTINEL");
@@ -132,7 +131,7 @@ test("3. a git-linked live dir is refused (migrate metadata first), nothing writ
 });
 
 test("3b. symlinks are refused, never followed — copy side and field-aware side", () => {
-  const repo = fixtureRepo();
+  const repo = fixtureFiles();
   {
     // a symlink where a source-only file belongs: do not write through it
     const live = join(mktmp("w3b"), "pi");
@@ -171,7 +170,7 @@ test("3b. symlinks are refused, never followed — copy side and field-aware sid
 });
 
 test("4. malformed or non-object live JSON: refused, the file is never overwritten", () => {
-  const repo = fixtureRepo();
+  const repo = fixtureFiles();
   for (const [name, content] of [["settings.json", "{ not json"], ["mcp.json", "[1,2]"]] as const) {
     const live = join(mktmp("w4"), "pi");
     mkdirSync(join(live, "agent"), { recursive: true });
@@ -185,7 +184,7 @@ test("4. malformed or non-object live JSON: refused, the file is never overwritt
 });
 
 test("5. --dry-run on a fresh target writes nothing; --all needs an agent/ target", () => {
-  const repo = fixtureRepo();
+  const repo = fixtureFiles();
   const live = join(mktmp("w5"), "pi");
   const dry = setupAll(repo, live, ["--dry-run"]);
   assert.equal(dry.status, 0, dry.stderr);
@@ -197,7 +196,7 @@ test("5. --dry-run on a fresh target writes nothing; --all needs an agent/ targe
 });
 
 test("6. machinery installs from the LIVE settings.json: a package added to source is applied and installed on re-run", () => {
-  const repo = fixtureRepo();
+  const repo = fixtureFiles();
   const home = mktmp("w7home");
   const live = join(home, ".pi");
   const bin = mktmp("w7bin");
@@ -339,7 +338,6 @@ test("13. no selector: bare setup.sh refuses (exit 2, pointer on stderr, target 
 });
 
 test("3c. --apply refuses symlinked PARENT directories and writes nothing through them", () => {
-  const repo = fixtureRepo();
   const live = join(mktmp("w3c"), "pi");
   mkdirSync(live, { recursive: true });
   const elsewhere = join(mktmp("w3c-out"), "elsewhere");
@@ -351,13 +349,12 @@ test("3c. --apply refuses symlinked PARENT directories and writes nothing throug
   assert.deepEqual(readdirSync(elsewhere), [], "nothing written through the link");
   assert.equal(
     readFileSync(join(live, "AGENTS.md"), "utf8"),
-    readFileSync(join(repo, "agent", "AGENTS.md"), "utf8"),
+    readFileSync(join(PRINT, "AGENTS.md"), "utf8"),
     "earlier files still applied (per-file fail-closed, non-transactional)",
   );
 });
 
 test("3d. --apply refuses a hardlinked destination without touching the linked file", () => {
-  const repo = fixtureRepo();
   const live = join(mktmp("w3d"), "pi");
   mkdirSync(live, { recursive: true });
   const sentinel = join(mktmp("w3d-sentinel"), "sentinel.txt");
@@ -370,7 +367,6 @@ test("3d. --apply refuses a hardlinked destination without touching the linked f
 });
 
 test("3e. --apply refuses a directory where a managed file belongs (no copy INTO the collision)", () => {
-  const repo = fixtureRepo();
   const live = join(mktmp("w3e"), "pi");
   mkdirSync(join(live, "AGENTS.md"), { recursive: true });
   const r = spawnSetup(["--apply", "--target", live]);
@@ -380,7 +376,7 @@ test("3e. --apply refuses a directory where a managed file belongs (no copy INTO
 });
 
 test("5b. --all --dry-run needs no pi/mise/npm installation and writes nothing", () => {
-  const repo = fixtureRepo();
+  const repo = fixtureFiles();
   const live = join(mktmp("w5b"), "pi");
   // a PATH with no mise/npm/pi: only node (symlinked real binary), jq and git
   const realbin = mktmp("w5b-realbin");
@@ -398,7 +394,7 @@ test("5b. --all --dry-run needs no pi/mise/npm installation and writes nothing",
 });
 
 test("6b. fresh-machine --all bootstraps the runtime BEFORE the settings apply (no PAWPRINT_PI_PKG, mise cannot resolve)", () => {
-  const repo = fixtureRepo();
+  const repo = fixtureFiles();
   const home = mktmp("w6b-home");
   const live = join(home, ".pi");
   mkdirSync(join(live, "agent"), { recursive: true });
@@ -520,7 +516,7 @@ function pkgStubHome(piStub: string) {
 }
 
 test("6c. --apply on the default live target: native install of every APPLIED package, after the merge", () => {
-  const repo = fixtureRepo();
+  const repo = fixtureFiles();
   const { live, trace, env } = pkgStubHome('#!/bin/sh\necho "pi dir=$PI_CODING_AGENT_DIR :: $*" >> "$TRACE"\n');
   mkdirSync(live, { recursive: true });
   writeFileSync(join(live, "auth.json"), "LIVE-AUTH\n");
@@ -559,7 +555,7 @@ test("6c. --apply on the default live target: native install of every APPLIED pa
 });
 
 test("6d. a failed package install: nonzero, config stays applied, failed source + concrete retry named, later sources never attempted", () => {
-  const repo = fixtureRepo();
+  const repo = fixtureFiles();
   const { live, trace, env } = pkgStubHome('#!/bin/sh\necho "pi $*" >> "$TRACE"\ncase "$*" in *pi-stash*) exit 1;; esac\n');
   const failedSrc = srcPackageSources.find((s) => s.includes("pi-stash"));
   assert.ok(failedSrc, "fixture source list has pi-stash");
@@ -580,7 +576,7 @@ test("6d. a failed package install: nonzero, config stays applied, failed source
 });
 
 test("6e. package installs skip truthfully: --config-only, --dry-run, non-default target", () => {
-  const repo = fixtureRepo();
+  const repo = fixtureFiles();
   for (const extra of [["--apply", "--config-only"], ["--all", "--dry-run"]]) {
     const { trace, env } = pkgStubHome('#!/bin/sh\necho "pi $*" >> "$TRACE"\n');
     const r = spawnSync("bash", [join(repo, "setup.sh"), ...extra], { encoding: "utf8", env });
@@ -600,7 +596,7 @@ test("6e. package installs skip truthfully: --config-only, --dry-run, non-defaul
 });
 
 test("6f. --all package failure: the printed retry preserves --all; following it runs the remaining machinery, no false completion", () => {
-  const repo = fixtureRepo();
+  const repo = fixtureFiles();
   // pi fails on pi-stash exactly once (marker file): the retry succeeds
   const { trace, env } = pkgStubHome(
     '#!/bin/sh\necho "pi $*" >> "$TRACE"\ncase "$*" in *pi-stash*) [ -f "${TRACE}.failed-once" ] || { touch "${TRACE}.failed-once"; exit 1; } ;; esac\n',
@@ -696,7 +692,7 @@ test("3f. path aliases cannot bypass the guards: trailing slash, /., case alias,
 });
 
 test("3h. a symlinked config ROOT (~/.pi) is refused, not silently followed", () => {
-  const repo = fixtureRepo();
+  const repo = fixtureFiles();
   const home = mktmp("w3h");
   const real = join(home, "real");
   mkdirSync(join(real, "agent"), { recursive: true });
@@ -810,7 +806,7 @@ test("12h. newline-HOME with the live dir symlinked: identity error aborts — n
 });
 
 test("3i. a literal wildcard in --target is never glob-expanded against the checkout", () => {
-  const repo = fixtureRepo();
+  const repo = fixtureFiles();
   const scratch = mktmp("w3i");
   const literal = join(scratch, "a*"); // quoted argv: a directory literally named a*
   const r = spawnSync("bash", [join(repo, "setup.sh"), "--apply", "--target", join(literal, "agent")], { encoding: "utf8", env: SETUP_ENV });
@@ -820,7 +816,7 @@ test("3i. a literal wildcard in --target is never glob-expanded against the chec
 });
 
 test("3j. an empty --target (flag or env) is refused at the door — never the caller's cwd", () => {
-  const repo = fixtureRepo();
+  const repo = fixtureFiles();
   const cwd = mktmp("w3j");
   writeFileSync(join(cwd, "AGENTS.md"), "sentinel\n");
   const r = spawnSync("bash", [join(repo, "setup.sh"), "--apply", "--target", ""], { encoding: "utf8", cwd });
@@ -842,7 +838,7 @@ test("3k. a newline in --target is refused at the door — never truncated to th
   // read -ra stops at the first newline: '<applied>/agent\nignored' used to
   // normalize to the applied live dir itself — applied to / validated as a
   // directory the caller never named.
-  const repo = fixtureRepo();
+  const repo = fixtureFiles();
   const scratch = mktmp("w3k");
   const live = join(scratch, "pi");
   const applied = setupAll(repo, live);
@@ -877,7 +873,7 @@ test("3l. a relative target from a newline-containing cwd is refused — the com
   // 'agent' has no newline, so the raw-target refusal passes; normalize_dir
   // then prepends the caller's cwd ('<scratch>/prefix\nsuffix') and read
   // truncated the composed path to the wrong prefix.
-  const repo = fixtureRepo();
+  const repo = fixtureFiles();
   const scratch = mktmp("w3l");
   const wrongPrefix = join(scratch, "prefix"); // the truncation result: a fully applied live dir
   {
@@ -919,7 +915,7 @@ test("12e. a missing or invalid selected source refuses — no success without a
     });
   // source is a directory
   {
-    const repo = fixtureRepo();
+    const repo = fixtureFiles();
     rmSync(join(repo, "agent", "settings.json"));
     mkdirSync(join(repo, "agent", "settings.json"));
     const r = run(repo, "settings.json");
@@ -929,7 +925,7 @@ test("12e. a missing or invalid selected source refuses — no success without a
   }
   // source is a dangling symlink (json side and source-only side)
   {
-    const repo = fixtureRepo();
+    const repo = fixtureFiles();
     rmSync(join(repo, "agent", "mcp.json"));
     symlinkSync(join(repo, "agent", "nowhere"), join(repo, "agent", "mcp.json"));
     const r = run(repo, "mcp.json");
@@ -937,7 +933,7 @@ test("12e. a missing or invalid selected source refuses — no success without a
     assert.match(r.stderr, /REFUSED:.*mcp\.json|refusing symlinked/);
   }
   {
-    const repo = fixtureRepo();
+    const repo = fixtureFiles();
     rmSync(join(repo, "agent", "cloak.json"));
     symlinkSync(join(repo, "agent", "nowhere"), join(repo, "agent", "cloak.json"));
     const r = run(repo, "cloak.json");
@@ -946,7 +942,7 @@ test("12e. a missing or invalid selected source refuses — no success without a
   }
   // source missing entirely
   {
-    const repo = fixtureRepo();
+    const repo = fixtureFiles();
     rmSync(join(repo, "agent", "presets.json"));
     const r = run(repo, "presets.json");
     assert.notEqual(r.status, 0, "missing source refuses");
