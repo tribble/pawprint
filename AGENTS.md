@@ -47,6 +47,11 @@ piece"). This file is for changing this repo.
   Authorized direct-tree cleanup uses `git -C ~/work/pawprint worktree remove ~/work/pawprint-<branch>`
   after the same actor/decision/claim/occupant/artifact checks in the shared recipe.
   Native cleanup also requires its fresh exact workspace identity check.
+  An unexpected occupant is a reason to investigate before reporting cleanup blocked:
+  inspect its live process identity, the native creation/event records and configured
+  lifecycle hooks, since hook-created companions can follow the creation receipt and be
+  absent from it. Ownership still needs authoritative evidence, never a name or workspace
+  membership; anything unresolved stays preserved.
   Never force or auto-remove. Preserve needed ignored artifacts before removal.
   After verified merge and successful verified tree removal, the parent deletes the
   delivery's merged local and remote task branch as part of the authorized delivery;
