@@ -50,7 +50,6 @@ test("apply: managed values win, runtime/unmanaged survive, sentinels intact, se
       editorPaddingX: 9, // live-only preference
       retry: { enabled: false, maxRetries: 1, provider: { timeoutMs: 1, liveOnlyMs: 7 } },
       compaction: { enabled: false, liveOnlyNested: { x: 1 } },
-      subagents: { agentOverrides: { worker: { model: "live/model", liveOnlyFlag: true } } },
       packages: ["git:github.com/live/unrelated"],
     }),
   );
@@ -90,7 +89,6 @@ test("apply: managed values win, runtime/unmanaged survive, sentinels intact, se
   assert.equal(settings.retry.maxRetries, srcSettings.retry.maxRetries);
   assert.equal(settings.retry.provider.timeoutMs, srcSettings.retry.provider.timeoutMs);
   assert.equal(settings.compaction.enabled, srcSettings.compaction.enabled);
-  assert.equal(settings.subagents.agentOverrides.worker.model, srcSettings.subagents.agentOverrides.worker.model);
   assert.deepEqual(settings.packages, srcSettings.packages);
   assert.ok(
     settings.packages.some((p: Json) => typeof p === "object" && Array.isArray(p.extensions)),
@@ -103,7 +101,6 @@ test("apply: managed values win, runtime/unmanaged survive, sentinels intact, se
   assert.equal(settings.editorPaddingX, 9);
   assert.equal(settings.retry.provider.liveOnlyMs, 7);
   assert.deepEqual(settings.compaction.liveOnlyNested, { x: 1 });
-  assert.equal(settings.subagents.agentOverrides.worker.liveOnlyFlag, true);
 
   const mcp: Json = JSON.parse(readFileSync(join(live, "mcp.json"), "utf8"));
   // managed server: source fields win, live-only toggle on it survives

@@ -1,46 +1,16 @@
 # Managed code workflow
 
-Any full Pi session uses this flow for code changes of any size: fresh native
-herdr worktree → managed Coder → worker and independent review. Small fixes,
-renames and mechanical code edits are included. Only trivial configuration
-changes can bypass it. If unsure whether configuration is trivial, use this flow.
-Read-only work and non-code authoring do not become code work by using an agent.
+Any full Pi session uses fresh native herdr worktree → bounded main Coder → worker and independent fresh review for code changes of any size. Only trivial configuration may bypass this flow. Read-only work and non-code authoring use `configs/delegation.md`.
 
-The launching parent owns scope, decisions, final acceptance, authorized publication
-and native lifecycle. For a delegated full session, publication and deployment
-must be assigned in its scoped handoff under applicable owner authorization.
-Otherwise return evidence for launching-parent acceptance. Proceed without repeat
-approval prompts for actions already assigned and authorized.
-A Coordinator owns a broad project. Add a full workstream
-session only for substantial independent ownership across deliveries, not as a
-routine per-PR wrapper. It uses this same flow for each bounded deliverable.
-The managed Coder supervises one deliverable, usually one PR, through sequential
-implementation, independent review and fixes. The worker writes code.
+The launching parent owns scope, decisions, final acceptance, authorized publication and native lifecycle. The Coder adjudicates one bounded deliverable, usually one PR, outside the human-facing parent's context. The worker writes code. Existing participants execute their assigned roles without recursive wrapping. A headless child cannot supervise another child or launch a pane. Do not clear lineage to manufacture a main.
 
-Existing managed participants keep their assigned roles in their assigned tree;
-they never recursively wrap themselves. A leaf or narrowly scoped agent receiving
-code work outside this flow stops and requests routing from a capable parent.
-It must not create a tree through shell, raise depth or edit inline to bypass this rule.
-A claimed or narrowly assigned pane tree cannot become a managed tree. There is
-no legacy pane-Coder exception. If that assignment cannot enter the flow within
-its authority and scope, escalate to its launching parent. Do not bypass a claim
-or create an unauthorized second scope. Existing pane APIs and legacy claims stay intact.
+Additional full workstream sessions are for substantial independent ownership across deliveries, not routine per-PR wrappers. Preserve legacy claims and their release rules. Never repurpose a claimed or narrowly assigned pane tree or create an unauthorized second scope. A delegated session publishes or deploys only when assigned under owner authority. Already-authorized actions need no repeat approval.
 
-## Launch and recover
+## Native launch
 
-Use a persistent saved native parent session, never `--no-session`, so run and
-question ownership remains recoverable. Confirm herdr and public managed delegation
-are available and the effective depth permits the Coder and its leaves. If a
-prerequisite or delegation fails, stop and report the exact error. Do not substitute
-shell worktree creation, another pane or inline implementation.
+Use Pi 1.5.0 or later with pi-subagents 0.52.14. Restart the Pi process to change SDK versions; `/reload` does not upgrade the host. Verify the actual child SDK, not merely CLI version. Use a persistent saved native parent session. If delegation or native launch fails, preserve the exact error and identities and stop; do not implement inline or retry blindly.
 
-1. Preflight the source repository and its Git status, an unused local branch and
-   an absent absolute sibling path, including dangling symlinks and registered
-   worktrees. Determine the intended base from the repository's policy and owner
-   scope. Refresh the relevant Git state and resolve and record its immutable
-   commit immediately before creation. Herdr does not fetch. Do not assume a
-   remote name or default branch for other repositories. Pawprint uses `origin/main`
-   and `/Users/pantera/work/pawprint-<branch>`:
+1. Inspect source status and the repository's authorized base/path policy. Refresh relevant Git state and resolve the immutable base immediately before creation. Confirm the branch is unused and the sibling path absent, including dangling symlinks and registered worktrees. Herdr does not fetch. Pawprint uses:
 
    ```sh
    herdr worktree create --cwd /Users/pantera/work/pawprint --branch <branch> \
@@ -48,102 +18,45 @@ shell worktree creation, another pane or inline implementation.
      --label <branch> --no-focus
    ```
 
-2. Read `.result.worktree.path` and `.result.workspace.workspace_id` from the
-   successful receipt. Independently verify the returned canonical path, branch
-   and HEAD against the intended path/branch/base, and its canonical Git common
-   directory against the source repository. Verify it is a linked checkout, with
-   a canonical Git admin directory distinct from the common directory. Record
-   the canonical path, repository `repo_key`, base commit, exact `workspace_id`
-   and persistent parent session identity in a plan inside the task worktree.
-   The plan is an index, not the authority for cleanup. Original parent-saved
-   native receipts and managed run/question/continuation records are authoritative;
-   a child-editable plan cannot replace or overwrite identity or actor evidence.
-   Do not predict identities or reuse an existing tree.
+2. Save the original receipt. Read `.result.worktree.path` and `.result.workspace.workspace_id`. Independently verify canonical path, branch, HEAD/base and Git common directory against the intended repository. Require a linked checkout whose Git admin directory differs from the common directory. Inspect for `pawprint-writer.json` and `pawprint-writer.lock`, including symlinks; any entry or unknown inspection blocks admission. Keep the exact native workspace ID, repo_key, path, base and persistent parent identity in the task plan. The plan indexes original receipts; it does not replace them.
 
-3. Delegate through the public managed tool with the actual returned path:
+3. Launch one bounded Coder through the public pane boundary:
 
-   ```text
-   delegate({agent:"managed-coder-trial",cwd:<returned path>,async:true,
-     task:<verbatim Owner outcome + scoped brief with assigned absolute path>})
+   ```js
+   launch_agent({
+     name: "delivery-coder",
+     role: "managed-coder",
+     cwd: "/actual/verified/native/worktree/path",
+     task: "Owner outcome:\n<verbatim ask>\n\n<bounded task, assigned absolute cwd, acceptance and authority>"
+   });
    ```
 
-   Do not set `worktree:true`; the native tree is already isolated. Record the
-   returned run ID, child/continuation IDs and task command identities in the plan.
-   The managed Coder supervises sequential workers and independent reviewers there.
-   Never attach another workstream or pane Coder to the managed task tree.
-   Preserve every legacy/uncertain pawprint claim; do not bypass or alter claims.
-   PR context grants children no staging, commit, PR, push, merge or deploy authority.
-   Assign only actions authorized by the owner request and standing policy.
+   `managed-coder` requires the existing native linked cwd and rejects `base`. It does not create another worktree or persistent writer claim. Existing legacy Coder/Coordinator APIs and claims remain intact. The shared admission gate rejects concurrent/uncertain admission and observed same-tree occupants. A recorded earlier managed launch prevents same-parent replay into that tree. Native creation/removal remains Herdr's job.
 
-4. Keep the saved-question chain: the managed Coder retains the worker run/question
-   IDs and opens its own saved `contact_supervisor` question to its launching parent.
-   Recover with `agent_runs({action:"questions"})` in that same saved parent session.
-   Obtain the required authoritative decision, then answer the exact managed run
-   and question with `agent_runs({action:"answer",id:<run ID>,questionId:<question ID>,
-   message:<authoritative answer>,async:true})`. The Coder returns that saved answer
-   to the original worker question. A full workstream owner can explicitly relay
-   a decision request to its own parent through Intercom. Questions do not
-   automatically forward to ancestors. A model answer cannot replace required
-   human approval. A nudge or answer receipt is not completion. Record successor
-   IDs when answering or continuing creates a new run.
+   Save launch, native child session and pane IDs from the receipt. Verify the returned native session identity and directory. Do not infer ownership from a name or workspace group. The new Coder must be a real main: neither Intercom lineage variable may be set. Never strip flags or environment variables to pass that check.
 
-For an uncertain creation or launch, inspect native worktree/workspace readback,
-Git state and saved run/continuation identities before recovery. Keep partial state.
-Never blindly retry, launch a duplicate writer or manufacture a trust decision.
-Shell access and the installed diff-review plugin suffice; no Coder pane or
-activity viewer is required.
+4. The Coder reads `configs/managed-coder.md` and delegates sequentially using `delegate({prompt,name,cwd,model,context:"fresh"})`. Roles are complete prompt contracts from `configs/delegation.md`, not loaded profiles. Worker model is `cloudflare-ai-gateway/gpt-6.1-sol`; independent reviewer and security-reviewer model is `cloudflare-ai-gateway/claude-opus-5-5`. Thinking is inherited. No effort setter, suffix workaround, fallback catalog or tool masks. Allow at most three implementation/review rounds.
+
+5. End turns after asynchronous launches. Ordinary Intercom send/ask/reply carries decisions. No answer or an expired ask leaves dependent work blocked; the parent handles continuation manually. There is no durable question ledger, automatic restart or historical claim cleanup. `agent_runs` supports list, inspect, continue and stop in the owning native main. Preserve original and successor IDs and command exits. Never assume ancestor forwarding or substitute a model answer for human approval.
+
+Unresolved project trust stops task delivery. A human must resolve the native prompt, or the caller must explicitly choose `noProjectResources`. Agents never answer trust/auth prompts. For an uncertain native start or delivery, inspect the returned pane and saved identity before recovery. Keep partial state and do not launch a duplicate writer.
 
 ## Acceptance and cleanup
 
-The parent verifies the final deliverable against the Owner outcome after
-independent review. Review completion alone is not acceptance.
+The parent verifies the integrated outcome after independent review. The Coder returns changed paths, complete diff, check results, child/successor IDs, unresolved decisions and actor/command exit evidence, then remains idle for parent-owned shutdown.
 
-Before cleanup, cross-check the task-local plan's identities and actors against
-those original parent-saved native receipts and managed run/question/continuation
-records. Use the original saved records and command exit evidence to establish
-closure. Missing or conflicting evidence means keep the tree.
+Cross-check the task plan against original native receipts, owned run records and command evidence. Missing or conflicting identity means keep the tree. Establish that every owned child, continuation and command descendant finished. A completed result, Stop receipt, idle pane or absent pane is not proof of closure. Herdr does not account for detached headless writers. Inspect the Coder's public `agent_runs` evidence before its shutdown, plus scoped process evidence for owned commands. Unknown/running actors or unanswered decisions block cleanup.
 
-Before removal, establish that every recorded task agent and command, including
-nested children, continuations and command descendants, has finished. Inspect
-saved runs/questions and command exit evidence. A terminal top-level run, Stop
-receipt, idle pane or absent pane does not prove all actors finished. Herdr does
-not account for detached headless writers. If an actor is unknown or running,
-or a decision/answer delivery remains pending, keep the tree.
+Only the authorized launching parent removes the native workspace after merge or authorized abandonment. Immediately before removal, freshly read `herdr workspace list` and match the exact recorded workspace_id to checkout_path, repo_key and `is_linked_worktree: true`. A mismatch, absence or unreadable identity means keep it.
 
-Only the launching parent may remove it, after merge or authorized abandonment
-and with deletion authority. Just before removal, freshly read `herdr workspace list`
-and match the exact recorded `workspace_id` row to the recorded canonical
-`checkout_path` and `repo_key`, with `is_linked_worktree: true`.
-Never use a list position or workspace number.
-A missing, mismatched or unreadable identity means keep the tree.
+Inspect the task Git admin directory for `pawprint-writer.json` and `pawprint-writer.lock`, including symlinks. Freshly read `herdr agent list` and canonicalize each visible cwd and foreground_cwd for same-tree occupants. For a vanished path, canonicalize its existing parent and use lstat to prove the final entry absent rather than a dangling symlink. Missing ancestors, unresolved links, permission errors or unknown identity block removal. Any legacy claim or lock blocks this cleanup; never remove or bypass it.
 
-Resolve the tree's Git admin directory with `git -C <path> rev-parse --absolute-git-dir`.
-Inspect it for entries named `pawprint-writer.json` or `pawprint-writer.lock`,
-including symlinks. Freshly read `herdr agent list` and canonicalize each visible
-agent's `cwd` and `foreground_cwd` to check for occupants at or below the task path.
-If a visible agent path no longer exists, canonicalize its existing parent and
-use `lstat` to prove the final entry absent, not a dangling symlink. Compare
-canonical-parent-plus-final-name against the canonical task tree. Known absence
-outside that tree is not an occupant. Missing ancestors, unresolved links,
-permission errors or unknown identity still block.
-Any claim, lock, occupant or unknown/unreadable inspection means keep the tree.
-Never remove, release or bypass claims. Visible agents do not account for detached
-headless writers; actor completion, decisions and deletion authority remain independent checks.
+Preserve needed ignored artifacts and delivery evidence before non-force removal:
 
-Non-force removal also deletes ignored files. Preserve needed artifacts and delivery
-evidence first. Use `herdr worktree remove --workspace <recorded workspace_id>`
-without `--force`, then verify native/Git readback. A dirty refusal means keep and
-inspect the tree, not force deletion. Native removal leaves the branch.
-Only after verified merge and successful verified tree removal, explicit branch
-deletion authority permits `git -C <source repo> branch -d <branch>`.
-Keep abandoned/unmerged branches unless separately authorized. No automatic cleanup.
+```sh
+herdr worktree remove --workspace <recorded workspace_id>
+```
 
-`launch_agent`, human `/delegate`, `/ws` and `release_worktree` remain explicit
-pane APIs with their existing claim, trust and authority rules. They do not
-provide an alternative code-authoring route. Human `/delegate` is not managed `delegate`.
+Verify native and Git readback afterward. A dirty refusal means keep and inspect, never force. Native removal leaves the branch. Only after verified merge and successful tree removal, explicit branch-deletion authority permits `git -C <source repo> branch -d <branch>`. Keep abandoned/unmerged branches unless separately authorized. No automatic cleanup.
 
-Authority derives from the owner request, scoped handoff and applicable standing policy.
-A role label or interaction mode grants no additional authority.
-Publishing, merging and deployment require applicable authorization.
-Escalate scope changes and user-owned tradeoffs immediately.
-Unanswered approval requests leave dependent work paused.
+Legacy `release_worktree` still releases only its UUID/file-bound owner's recorded pre-pane failure claim. Post-start or uncertain claims stay held. It never removes a worktree or branch. The managed Coder has no authority to close its pane or remove native resources merely because review finished.

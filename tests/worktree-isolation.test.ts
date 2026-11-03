@@ -13,6 +13,8 @@ setAgentDir(new URL("../agent", import.meta.url).pathname);
 process.env.HERDR_ENV = "1";
 process.env.HERDR_PANE_ID = "wT:p1";
 delete process.env.PI_SUBAGENT_CHILD;
+delete process.env.PI_INTERCOM_ROOT_SESSION_ID;
+delete process.env.PI_INTERCOM_PARENT_SESSION_ID;
 const task = "Owner outcome:\nKeep source work intact.\n";
 const launch = (parent: ReturnType<typeof fleetParent>, params: Record<string, unknown> = {}) =>
   parent.pi.tools.launch_agent.execute("launch", { name: "lead", task, ...params }, undefined, undefined, parent.ctx);
@@ -26,6 +28,90 @@ function linked() {
 }
 const paneMutations = (parent: ReturnType<typeof fleetParent>) => parent.pi.execCalls.filter((call: string[]) =>
   call[0] === "herdr" && (call[1] === "tab" || ["start", "prompt"].includes(call[2])));
+
+test("managed Coder uses the supplied native tree without a second worktree or persistent claim", async () => {
+  const { source, cwd } = linked();
+  const parent = fleetParent(source);
+  herdrFleet(parent.pi);
+  const result = await launch(parent, { role: "managed-coder", cwd });
+  assert.equal(result.details.cwd, cwd);
+  assert.equal(result.details.claimPath, undefined);
+  const key = git(cwd, "rev-parse", "--absolute-git-dir");
+  assert.equal(existsSync(join(key, "pawprint-writer.json")), false);
+  assert.equal(existsSync(join(key, "pawprint-writer.lock")), false);
+  assert.equal(parent.pi.execCalls.some((call: string[]) => call.includes("add") && call.includes("worktree")), false);
+  const start = parent.pi.execCalls.find((call: string[]) => call[0] === "herdr" && call[2] === "start");
+  assert.equal(start[start.indexOf("--model") + 1], "cloudflare-ai-gateway/gpt-6-astra");
+  assert.match(readFileSync(start[start.indexOf("--append-system-prompt") + 1], "utf8"), /one bounded deliverable/);
+  const prompt = parent.pi.execCalls.find((call: string[]) => call[0] === "herdr" && call[2] === "prompt")[4];
+  assert.ok(prompt.startsWith(task));
+  assert.match(prompt, /parent owns.*closure/i);
+  assert.doesNotMatch(prompt, /herdr tab close/);
+  parent.roster.length = 1;
+  const before = paneMutations(parent).length;
+  await assert.rejects(() => launch(parent, { role: "managed-coder", cwd }), /already has a recorded managed Coder launch/);
+  assert.equal(paneMutations(parent).length, before);
+});
+
+test("managed Coder readmits after a proved pre-pane occupancy or trust refusal", async () => {
+  for (const refusal of ["occupancy", "trust"]) {
+    const { source, cwd } = linked();
+    const parent = fleetParent(source);
+    herdrFleet(parent.pi);
+    if (refusal === "occupancy") {
+      parent.roster.push({ name: "neighbor", pane_id: "wU:p9", cwd });
+    } else {
+      mkdirSync(join(cwd, ".pi"));
+      writeFileSync(join(cwd, ".pi/settings.json"), "{}");
+    }
+    await assert.rejects(() => launch(parent, { role: "managed-coder", cwd }),
+      refusal === "occupancy" ? /occupied by neighbor/ : /Project trust decision required/);
+    assert.equal(parent.pi.state.entries.at(-1).data.phase, "failed-before-pane");
+    assert.equal(paneMutations(parent).length, 0);
+    parent.roster.length = 1;
+    const result = await launch(parent, {
+      role: "managed-coder", cwd, ...(refusal === "trust" ? { noProjectResources: true } : {}),
+    });
+    assert.equal(result.details.cwd, cwd);
+    assert.equal(parent.pi.execCalls.filter((call: string[]) => call[0] === "herdr" && call[1] === "tab").length, 1);
+  }
+});
+
+test("managed Coder retains the replay block after an uncertain tab attempt without a pane ID", async () => {
+  const { source, cwd } = linked();
+  const parent = fleetParent(source);
+  const exec = parent.pi.execImpl;
+  parent.pi.execImpl = (cmd: string, args: string[]) => {
+    if (cmd === "herdr" && args[0] === "tab") return Promise.resolve({
+      code: 0, stdout: '{"result":{}}', stderr: "", killed: false,
+    });
+    return exec(cmd, args);
+  };
+  herdrFleet(parent.pi);
+  await assert.rejects(() => launch(parent, { role: "managed-coder", cwd }), /no pane_id/);
+  assert.equal(parent.pi.state.entries.at(-1).data.phase, "uncertain");
+  const before = paneMutations(parent).length;
+  parent.pi.execImpl = exec;
+  await assert.rejects(() => launch(parent, { role: "managed-coder", cwd }), /already has a recorded managed Coder launch/);
+  assert.equal(paneMutations(parent).length, before);
+});
+
+test("managed admission requires an unclaimed linked cwd and preserves legacy claims", async () => {
+  const { source, cwd } = linked();
+  const parent = fleetParent(source);
+  herdrFleet(parent.pi);
+  for (const params of [{}, { cwd: source }, { cwd, base: "HEAD" }]) {
+    await assert.rejects(() => launch(parent, { role: "managed-coder", ...params }), /cwd|linked|base/i);
+  }
+  assert.equal(paneMutations(parent).length, 0);
+  const legacy = await launch(parent, { cwd });
+  const bytes = readFileSync(legacy.details.claimPath, "utf8");
+  const other = fleetParent(source, "another-owner");
+  herdrFleet(other.pi);
+  await assert.rejects(() => launch(other, { role: "managed-coder", cwd }), /already claimed/i);
+  assert.equal(readFileSync(legacy.details.claimPath, "utf8"), bytes);
+  assert.equal(paneMutations(other).length, 0);
+});
 
 test("registered Coder launcher creates two independent worktrees without transferring dirty source work", async () => {
   const { source } = fleetRepo();

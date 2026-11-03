@@ -60,7 +60,7 @@ test("changed managed values and missing/differing source files are named; runti
   writeFileSync(join(agent, "auth.json"), "SENTINEL");
   mkdirSync(join(agent, "sessions"));
   writeFileSync(join(agent, "sessions", "s.jsonl"), "{}");
-  writeFileSync(join(agent, "agents", "new.md"), "new\n");
+  writeFileSync(join(agent, "configs", "new.md"), "new\n");
   const stamped = { ...JSON.parse(readFileSync(settingsPath, "utf8")), lastChangelogVersion: "999.0.0", deviceId: "synthetic", editorPaddingX: 9 };
   writeFileSync(settingsPath, JSON.stringify(stamped, null, 2));
   const mcpPlus = JSON.parse(readFileSync(mcpPath, "utf8"));

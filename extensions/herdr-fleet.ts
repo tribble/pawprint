@@ -13,7 +13,7 @@ import { resolve, join, isAbsolute, basename, dirname } from "node:path";
 import { claimWriter, createWorktree, gitOutput, readWriterClaim, removeWriterClaim, withWriterOperation, worktreeDestination, worktreeIdentity, writerClaimPath, type Worktree, type WriterClaim } from "./lib/worktree.ts";
 
 // This session's pi-intercom ID — what a child must report to, because names change and IDs do not
-// (pi-subagents src/pi-intercom/index.ts L1284 at the pinned 84614b3: `pi-` + sha256(sessionId).hex[0:32]).
+// pi-subagents src/pi-intercom/session-targets.ts: `pi-` + sha256(sessionId).hex[0:32].
 const intercomId = (sessionId: string) => `pi-${createHash("sha256").update(sessionId).digest("hex").slice(0, 32)}`;
 
 // The herdr skill forbids inspect/control from outside Herdr; every command's execs route through herdr().
@@ -21,9 +21,15 @@ function assertHerdr() {
   if (process.env.HERDR_ENV !== "1") throw new Error("not running inside Herdr (HERDR_ENV is not 1)");
 }
 
+function isHeadlessChild() {
+  return process.env.PI_SUBAGENT_CHILD === "1" ||
+    process.env.PI_INTERCOM_ROOT_SESSION_ID !== undefined ||
+    process.env.PI_INTERCOM_PARENT_SESSION_ID !== undefined;
+}
+
 function assertPaneLaunch() {
   assertHerdr();
-  if (process.env.PI_SUBAGENT_CHILD === "1") throw new Error("headless leaf subagents cannot launch pane agents");
+  if (isHeadlessChild()) throw new Error("headless leaf subagents cannot launch pane agents");
 }
 
 async function herdr(pi: ExtensionAPI, args: string[], signal?: AbortSignal): Promise<unknown> {
@@ -217,10 +223,10 @@ async function agentOp(pi: ExtensionAPI, args: string[], name: string, paneId: s
 const OWNER_OUTCOME = /^Owner outcome:/m;
 
 // Appended to every delegated task: the child's contract with its spawner (addressed by intercom ID).
-const CONTRACT = (me: string, name: string) =>
-  `You were spawned by intercom session \`${me}\`. The \`Owner outcome:\` block above is the user's verbatim ask and the only authority on intent; everything else in this brief is your spawner's derived design and may be wrong — if the two conflict, follow the owner outcome and tell \`${me}\`. Copy the \`Owner outcome:\` block unchanged into every subagent brief you write (reviewer included). When done, report ONCE to intercom session \`${me}\` (that is your spawner's ID; use it verbatim) as one line: ✅ ${name} — <outcome>. Then close your own tab: \`herdr tab close "$HERDR_TAB_ID"\`.`;
+const CONTRACT = (me: string, name: string, role: Role) =>
+  `You were spawned by intercom session \`${me}\`. The \`Owner outcome:\` block above is the user's verbatim ask and the only authority on intent; everything else in this brief is your spawner's derived design and may be wrong — if the two conflict, follow the owner outcome and tell \`${me}\`. Copy the \`Owner outcome:\` block unchanged into every subagent brief you write (reviewer included). When done, report ONCE to intercom session \`${me}\` (that is your spawner's ID; use it verbatim) as one line: ✅ ${name} — <outcome>. ${role === "managed-coder" ? "Return owned child/run/command identities, exit evidence and unresolved decisions. Remain idle; the launching parent owns native closure and cleanup. Never treat a completed result as proof that command descendants exited." : 'Then close your own tab: `herdr tab close "$HERDR_TAB_ID"`.'}`;
 
-type Role = "coordinator" | "coder";
+type Role = "coordinator" | "coder" | "managed-coder";
 type Mode = "interactive" | "delegated";
 interface RoleProfile { model: string; thinking: string; instructionsFile: string }
 interface LaunchRequest { name: string; task: string; role?: Role; mode?: "delegated"; cwd?: string; base?: string; noProjectResources?: boolean }
@@ -394,16 +400,17 @@ async function launch(pi: ExtensionAPI, ctx: ExtensionContext, request: LaunchRe
   const { name: wanted, task, role = "coder", mode = "delegated" } = request;
   if (typeof wanted !== "string" || !LEGAL_NAME.test(wanted)) throw new Error(`illegal agent name "${wanted}" — must match [a-z][a-z0-9_-]{0,31} (start with a letter, ≤32 chars)`);
   if (typeof task !== "string" || !OWNER_OUTCOME.test(task)) throw new Error("task must contain an `Owner outcome:` block quoting the user's ask verbatim (copied, not paraphrased). Re-issue it whenever the user corrects or narrows.");
-  if (role !== "coder" && role !== "coordinator") throw new Error("role must be coder or coordinator");
+  if (role !== "coder" && role !== "coordinator" && role !== "managed-coder") throw new Error("role must be coder, coordinator or managed-coder");
+  if (role === "managed-coder" && request.cwd === undefined) throw new Error("managed-coder requires the cwd returned by native herdr worktree create");
   if (mode !== "delegated") throw new Error("/delegate and launch_agent are delegated-only; use human /ws for an interactive Coordinator");
   if (request.noProjectResources !== undefined && typeof request.noProjectResources !== "boolean") throw new Error("noProjectResources must be an explicit boolean opt-out");
-  if (request.base !== undefined && (role === "coordinator" || request.cwd !== undefined || typeof request.base !== "string" || !request.base.trim() || hasControls(request.base))) {
+  if (request.base !== undefined && (role !== "coder" || request.cwd !== undefined || typeof request.base !== "string" || !request.base.trim() || hasControls(request.base))) {
     throw new Error("base is only valid for a new Coder worktree, never explicit cwd reuse or a Coordinator");
   }
   const profile = roleProfile(role);
   const sourceCwd = launchDirectory(pi, ctx, request.cwd);
   const ownerSessionFile = nativeOwnerFile(ctx);
-  if (role === "coder" && !ownerSessionFile) throw new Error("Coder launch needs a persistent native parent session. Start Pi without --no-session (or use a persisted SDK SessionManager), then reissue the task. No Git, pane or claim was created.");
+  if (role !== "coordinator" && !ownerSessionFile) throw new Error("Coder launch needs a persistent native parent session. Start Pi without --no-session (or use a persisted SDK SessionManager), then reissue the task. No Git, pane or claim was created.");
   if (role === "coordinator") projectTrustOptOut(sourceCwd, request.noProjectResources);
   const parent = intercomId(ctx.sessionManager.getSessionId());
   const agents = await agentList(pi, signal);
@@ -445,12 +452,12 @@ async function launch(pi: ExtensionAPI, ctx: ExtensionContext, request: LaunchRe
     const native = await herdr(pi, ["agent", "get", paneId], signal) as { agent?: FleetAgent };
     verifySessionHeader(native.agent?.agent_session, record);
     save("started");
-    await agentOp(pi, ["agent", "prompt", paneId, `${task}\n\n${CONTRACT(parent, name)}`, "--wait", "--until", "working", "--timeout", "10000"], name, paneId, signal);
+    await agentOp(pi, ["agent", "prompt", paneId, `${task}\n\n${CONTRACT(parent, name, role)}`, "--wait", "--until", "working", "--timeout", "10000"], name, paneId, signal);
     verifySessionHeader(native.agent?.agent_session, record);
     save("prompted");
     return { name, paneId, role, mode, cwd, sourceCwd, parent, model: profile.model, thinking: profile.thinking,
       ownerSessionId: record.ownerSessionId, ownerSessionFile: record.ownerSessionFile, childSessionId: record.childSessionId, launchId: record.launchId, branch: record.branch, base: record.base, baseCommit: record.baseCommit,
-      worktreeKey: record.worktreeKey, claimPath: record.worktreeKey ? join(record.worktreeKey, "pawprint-writer.json") : undefined };
+      worktreeKey: record.worktreeKey, claimPath: record.claimHash && record.worktreeKey ? join(record.worktreeKey, "pawprint-writer.json") : undefined };
   };
   try {
     if (role === "coordinator") { save("intent"); return await runPane(); }
@@ -476,6 +483,13 @@ async function launch(pi: ExtensionAPI, ctx: ExtensionContext, request: LaunchRe
         const occupants = await sameTreeOccupants(pi, await agentList(pi, signal), tree, signal);
         if (occupants.length) throw new Error(`Worktree is occupied by ${occupants.map((a) => a.name ?? a.pane_id ?? "an unowned session").join(", ")}. Refusing explicit reuse; omit cwd for fresh isolation. Occupancy does not prove writer status.`);
       }
+      if (role === "managed-coder") {
+        if (ownLaunches(ctx).some((r) => r.role === role && r.worktreeKey === tree.key && r.launchId !== record.launchId && r.phase !== "failed-before-pane")) {
+          throw new Error("This tree already has a recorded managed Coder launch; inspect its actors before using fresh isolation");
+        }
+        // Herdr owns this tree; reuse the admission gate without adding a persistent claim.
+        return runPane();
+      }
       const claim: WriterClaim = { version: 1, ownerSessionId: record.ownerSessionId, ownerSessionFile, childSessionId: record.childSessionId, launchId: record.launchId,
         worktreeKey: tree.key, cwd: record.cwd, branch: tree.branch, baseCommit: tree.commit };
       claimAttempted = true;
@@ -499,7 +513,7 @@ function parseDelegate(args: string): LaunchRequest {
       continue;
     }
     const option = rest.match(/^--(role|mode|cwd|base)\s+(?:"([^"]+)"|'([^']+)'|(\S+))(?:\s+|$)/);
-    if (!option) throw new Error("Usage: /delegate [--role coder|coordinator] [--cwd <existing-worktree> | --base <ref>] [--no-approve] <name> <task>");
+    if (!option) throw new Error("Usage: /delegate [--role coder|coordinator|managed-coder] [--cwd <existing-worktree> | --base <ref>] [--no-approve] <name> <task>");
     const value = option[2] ?? option[3] ?? option[4];
     if (option[1] === "role") options.role = value as Role;
     else if (option[1] === "mode") {
@@ -587,13 +601,14 @@ export default function herdrFleet(pi: ExtensionAPI) {
     },
   });
 
-  if (process.env.PI_SUBAGENT_CHILD !== "1") pi.registerTool({
+  if (!isHeadlessChild()) pi.registerTool({
     name: "launch_agent",
     label: "Launch Pane Agent",
-    description: "Launch an isolated Coder or a Coordinator in a no-focus herdr tab.",
+    description: "Launch a bounded managed Coder in a supplied native worktree, a full Coder, or a Coordinator in a no-focus herdr tab.",
     promptSnippet: "Launch an independently owned pane workstream with an explicit role profile",
     promptGuidelines: [
       "Use launch_agent for pane workstreams; delegate runs headless subagents.",
+      "For a code delivery, first create the native herdr worktree, then use role managed-coder with its exact cwd. This main delegates worker and fresh review with explicit models. The launching parent owns final acceptance and native cleanup. No persistent writer claim is added.",
       "Coders default to a fresh linked worktree from the effective repository and committed HEAD. Supply base for repo policy (pawprint: origin/main). Explicit cwd reuses exactly an admitted linked checkout; never combine cwd and base. Coordinators keep directory behavior and reject base.",
       "launch_agent is delegated-only, retains parent provenance and requires the verbatim Owner outcome. Unresolved project trust requires human action; noProjectResources explicitly opts out.",
       "Isolate independent workstreams. Sequence work that depends on an unsettled API or migration. Coder parents need persistent native session files. Release only recorded pre-pane failures through release_worktree. Any pane/start attempt or uncertainty keeps the claim; completed Coder worktrees cannot be reassigned through this launcher yet. Post-start reconciliation/release is deferred. Release never cleans Git.",
@@ -602,9 +617,9 @@ export default function herdrFleet(pi: ExtensionAPI) {
     parameters: Type.Object({
       name: Type.String({ pattern: "^[a-z][a-z0-9_-]{0,31}$" }),
       task: Type.String({ minLength: 1, description: "Task containing the verbatim Owner outcome: block" }),
-      role: Type.Optional(StringEnum(["coder", "coordinator"] as const)),
+      role: Type.Optional(StringEnum(["coder", "coordinator", "managed-coder"] as const)),
       mode: Type.Optional(StringEnum(["delegated"] as const)),
-      cwd: Type.Optional(Type.String({ minLength: 1, description: "Existing linked Coder worktree/subdirectory to reuse exactly; relative to effective cwd, supports ~. Coordinator directory is unchanged." })),
+      cwd: Type.Optional(Type.String({ minLength: 1, description: "Required for managed-coder: native herdr's returned linked worktree path. Legacy Coder reuses a linked checkout; Coordinator directory is unchanged. Supports ~." })),
       base: Type.Optional(Type.String({ minLength: 1, description: "Committed base ref for a new Coder worktree; defaults HEAD. Pawprint callers supply origin/main. Invalid with cwd or Coordinator." })),
       noProjectResources: Type.Optional(Type.Boolean({ description: "Explicitly decline trust-gated project resources for this child (--no-approve)" })),
     }, { additionalProperties: false }),
@@ -633,7 +648,7 @@ export default function herdrFleet(pi: ExtensionAPI) {
     },
   });
 
-  if (process.env.PI_SUBAGENT_CHILD !== "1") pi.registerTool({
+  if (!isHeadlessChild()) pi.registerTool({
     name: "release_worktree",
     label: "Release Worktree Claim",
     description: "Release only a recorded pre-pane failure claim owned by your native UUID and canonical session file. Any pane/start attempt or uncertainty stays claimed because detached workers may remain. Completed Coder worktrees cannot be reassigned yet; post-start reconciliation/release is deferred. No Git cleanup.",

@@ -58,100 +58,10 @@
     "git:github.com/fitchmultz/pi-agent-skills@b286c88e3ef164a5c37b8196ab7be0070e53e927",
     "git:github.com/DietrichGebert/ponytail@84740e3d344b69b4a133201fa519eb37a62a2b2a",
     "git:github.com/fitchmultz/pi-agent-browser-native@cb4052d818d7af895b12e28b72f705e918d3b4e2",
-    "git:github.com/fitchmultz/pi-subagents@f757ed054e7d819fd590a3da346be8a03aefe2d4",
+    "git:github.com/fitchmultz/pi-subagents@5ce25caecf0328a7f67f46792bfad3a7fdb108cf",
     "npm:@nicknisi/pi-cloak@0.1.2",
     "npm:@nicknisi/pi-answer@0.2.4"
   ],
-  "subagents": {
-    "agentOverrides": {
-      "scout": {
-        "model": "cloudflare-ai-gateway/claude-sonnet-5-5",
-        "fallbackModels": [
-          "openai-codex/gpt-6.1-sol"
-        ]
-      },
-      "context-builder": {
-        "model": "cloudflare-ai-gateway/claude-sonnet-5-5",
-        "fallbackModels": [
-          "anthropic/claude-opus-5-5",
-          "openai-codex/gpt-6-astra"
-        ]
-      },
-      "worker": {
-        "model": "cloudflare-ai-gateway/gpt-6.1-sol",
-        "thinking": "high"
-      },
-      "fixer": {
-        "model": "cloudflare-ai-gateway/gpt-6.1-sol",
-        "thinking": "low",
-        "fallbackModels": false
-      },
-      "watcher": {
-        "model": "cloudflare-ai-gateway/accounts/fireworks/models/minimax-m3"
-      },
-      "planner": {
-        "model": "cloudflare-ai-gateway/gpt-6.1-sol",
-        "thinking": "high",
-        "fallbackModels": [
-          "anthropic/claude-opus-5-5"
-        ]
-      },
-      "oracle": {
-        "model": "cloudflare-ai-gateway/gpt-6.1-sol",
-        "thinking": "high",
-        "fallbackModels": false
-      },
-      "debugger": {
-        "model": "cloudflare-ai-gateway/gpt-6-astra",
-        "thinking": "high",
-        "fallbackModels": [
-          "anthropic/claude-opus-5-5"
-        ]
-      },
-      "researcher": {
-        "model": "cloudflare-ai-gateway/gpt-6.1-sol"
-      },
-      "reviewer": {
-        "model": "cloudflare-ai-gateway/claude-opus-5-5",
-        "thinking": "xhigh",
-        "fallbackModels": [
-          "anthropic/claude-opus-5-5"
-        ]
-      },
-      "reviewer-gpt": {
-        "model": "cloudflare-ai-gateway/gpt-6-astra",
-        "thinking": "xhigh"
-      },
-      "reviewer-claude": {
-        "model": "cloudflare-ai-gateway/claude-opus-5-5",
-        "thinking": "xhigh",
-        "fallbackModels": [
-          "anthropic/claude-opus-5-5"
-        ]
-      },
-      "reviewer-security": {
-        "model": "cloudflare-ai-gateway/claude-opus-5-5",
-        "thinking": "xhigh",
-        "fallbackModels": false
-      },
-      "reviewer-ponytail": {
-        "model": "cloudflare-ai-gateway/gpt-6.1-sol",
-        "fallbackModels": [
-          "anthropic/claude-opus-5-5",
-          "openai-codex/gpt-6-astra"
-        ]
-      },
-      "ui-designer": {
-        "model": "cloudflare-ai-gateway/claude-fable-5-1",
-        "fallbackModels": [
-          "anthropic/claude-opus-5-5"
-        ]
-      },
-      "writer": {
-        "model": "cloudflare-ai-gateway/claude-fable-5-1"
-      }
-    }
-  },
   "theme": "system",
   "defaultProjectTrust": "ask"
 }

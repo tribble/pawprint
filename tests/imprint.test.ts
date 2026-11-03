@@ -344,7 +344,7 @@ test("3c. --apply refuses symlinked PARENT directories and writes nothing throug
   mkdirSync(live, { recursive: true });
   const elsewhere = join(mktmp("w3c-out"), "elsewhere");
   mkdirSync(elsewhere, { recursive: true });
-  symlinkSync(elsewhere, join(live, "agents"));
+  symlinkSync(elsewhere, join(live, "configs"));
   const r = spawnSetup(["--apply", "--target", live]);
   assert.notEqual(r.status, 0, "refused");
   assert.match(r.stdout + r.stderr, /REFUSED:.*symlinked path component/);

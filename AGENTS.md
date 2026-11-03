@@ -4,8 +4,8 @@ Visiting to adopt a piece for your own pi? That's the README ("Adopt a
 piece"). This file is for changing this repo.
 
 - Every pawprint change uses a fresh task worktree. Any full Pi session routes
-  code changes of any size through fresh native herdr worktree → `managed-coder-trial`
-  → worker and independent review. Small fixes and renames are included. Only
+  code changes of any size through fresh native herdr worktree → bounded main Coder
+  (`launch_agent` role `managed-coder`) → worker and independent fresh review. Small fixes and renames are included. Only
   trivial configuration can bypass the code flow and use fixer; if unsure, use the full flow.
   Non-code authoring and small prose edits use the existing writer outside the code flow.
   Read-only work keeps its appropriate delegation.
@@ -14,7 +14,7 @@ piece"). This file is for changing this repo.
   nonempty `PI_CODING_AGENT_DIR` with Pi's path expansion, otherwise `~/.pi/agent`.
   Do not substitute repository source for a missing applied recipe. The recipe covers
   preflight, canonical repository/path/base checks, persistent parent identity,
-  saved questions/continuations, acceptance, actor closure, claims, occupants,
+  native launch/run/successor identities, acceptance, actor closure, claims, occupants,
   artifact preservation and authorized non-force cleanup. Pawprint's native creation is
   `herdr worktree create --cwd /Users/pantera/work/pawprint --branch <branch> --base origin/main --path /Users/pantera/work/pawprint-<branch> --label <branch> --no-focus`.
   Delegate at the actual verified returned path. A Coordinator owns a broad project;
@@ -31,11 +31,13 @@ piece"). This file is for changing this repo.
   Delegated full sessions publish or deploy only when assigned in their scoped handoff
   under applicable owner authorization; otherwise return evidence for launching-parent acceptance.
   Already assigned and authorized actions do not need repeat approval prompts.
-  Original parent-saved native receipts and managed run/question/continuation records
+  Original parent-saved native receipts and owned run/continuation/command records
   are authoritative for cleanup. Cross-check the task-local plan against those originals;
   child-editable plans cannot replace or overwrite identity or actor evidence.
-  Managed questions return to that parent; full workstream owners can explicitly
-  relay through Intercom, not automatic ancestor forwarding.
+  Ordinary Intercom carries decisions to that parent; no answer blocks dependent work.
+  Full workstream owners relay required owner questions explicitly. No durable question ledger.
+  Headless delegates use prompt/name/cwd/model/context, explicit qualified models and
+  inherited thinking. Role contracts are in the prompt, not loaded profiles.
   Only trivial configuration or non-code work outside the code flow can use direct
   `git -C ~/work/pawprint worktree add ~/work/pawprint-<branch> -b <branch> origin/main`.
   Authorized direct-tree cleanup uses `git -C ~/work/pawprint worktree remove ~/work/pawprint-<branch>`
