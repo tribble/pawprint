@@ -50,7 +50,11 @@ piece"). This file is for changing this repo.
   Never force or auto-remove. Preserve needed ignored artifacts before removal.
   Branch deletion requires verified merge, successful verified tree removal and
   explicit authority. Keep abandoned/unmerged branches unless separately authorized.
-  `~/work/pawprint` is never edited; `~/.pi` is a plain runtime/config dir — managed
+  Keep `~/work/pawprint` attached to `main`; never detach it or author changes there.
+  Routine deploy must verify `symbolic-ref --quiet HEAD` is `refs/heads/main`
+  before fetch, fast-forward-only merge or apply. A failed check stops deployment;
+  do not switch branches automatically. Author only in fresh task worktrees.
+  `~/.pi` is a plain runtime/config dir — managed
   config lands there only via `setup.sh --apply`, never by hand-editing managed files.
   Run `npm ci` in task worktrees, never in `~/work/pawprint` or `~/.pi`.
 - The gate is `npm test`: `oxlint` (type-aware via tsgolint; no `any`, no floating/misused promises; opt out per line with a reason), `tsc`, then the node tests. Red = not done.

@@ -32,9 +32,9 @@ mv "$LIVE/.git-pawprint-retired" "$LIVE/.git"
 git -C "$LIVE" status --porcelain
 `;
 
-// Routine source refresh on the DETACHED source checkout (the retired locked
-// metadata keeps main reserved, so the clone must not switch back to main).
+// Routine source refresh requires the base checkout attached to main.
 const REFRESH = `set -e
+test "$(git -C "$CLONE" symbolic-ref --quiet HEAD)" = refs/heads/main
 git -C "$CLONE" fetch origin main
 git -C "$CLONE" merge --ff-only FETCH_HEAD
 `;
@@ -49,8 +49,8 @@ const runBlock = (block: string, live: string, clone: string) =>
   });
 
 function linkedLive(repo: string) {
-  // ~/.pi today: a locked, linked worktree of the pawprint clone on main (the
-  // clone itself detached), with runtime state only pi/the machine writes.
+  // Historical layout before retirement, not today's plain ~/.pi directory:
+  // main in the locked live worktree, source clone detached.
   git(repo, "switch", "-q", "--detach");
   const live = join(mktmp("mig"), "pi");
   git(repo, "worktree", "add", "-q", "--lock", "--reason", "live pi config", live, "main");
@@ -155,37 +155,96 @@ test("rollback preconditions stop before the rename", () => {
   }
 });
 
-test("detached source checkout refreshes with explicit fetch + ff merge (pull fails detached)", () => {
-  const repo = fixtureRepo(); // the source clone, detached as ~/work/pawprint is
-  git(repo, "switch", "-q", "--detach");
-
-  // advance origin/main from a second clone
+function advanceOrigin(repo: string): string {
   const other = join(mktmp("mig"), "other");
   execFileSync("git", ["clone", "-q", join(dirname(repo), "origin.git"), other]);
   writeFileSync(join(other, "agent", "AGENTS.md"), "v2\n");
   git(other, "add", "agent/AGENTS.md");
   git(other, "commit", "-qm", "v2");
   git(other, "push", "-q", "origin", "HEAD:main");
-  const originHead = git(other, "rev-parse", "HEAD");
+  return git(other, "rev-parse", "HEAD");
+}
 
-  const pull = spawnSync("git", ["-C", repo, "pull", "--ff-only"], { encoding: "utf8" });
-  assert.notEqual(pull.status, 0, "documented reason: plain pull cannot run on the detached checkout");
-
+test("source refresh fast-forwards main and remains attached", () => {
+  const repo = fixtureRepo();
+  const originHead = advanceOrigin(repo);
   const r = runBlock(REFRESH, repo, repo);
   assert.equal(r.status, 0, r.stderr);
-  assert.equal(git(repo, "rev-parse", "HEAD"), originHead, "HEAD fast-forwarded while detached");
-  assert.equal(git(repo, "branch", "--show-current"), "", "still detached");
+  assert.equal(git(repo, "rev-parse", "main"), originHead, "main fast-forwarded");
+  assert.equal(git(repo, "branch", "--show-current"), "main", "still attached to main");
   assert.equal(readFileSync(join(repo, "agent", "AGENTS.md"), "utf8"), "v2\n");
 });
 
-test("deferred cleanup (unlock + prune) drops the admin entry — after it, mv-back alone no longer relinks and repair cannot recreate it", () => {
+for (const checkout of ["detached", "task"]) {
+  test(`source refresh refuses ${checkout} before fetch, merge or apply`, () => {
+    const repo = fixtureRepo();
+    if (checkout === "detached") git(repo, "switch", "-q", "--detach");
+    else git(repo, "switch", "-qc", checkout);
+    advanceOrigin(repo);
+    const before = {
+      head: git(repo, "rev-parse", "HEAD"),
+      main: git(repo, "rev-parse", "main"),
+      remote: git(repo, "rev-parse", "origin/main"),
+      fetch: readFileSync(join(repo, ".git", "FETCH_HEAD"), "utf8"),
+      branch: git(repo, "branch", "--show-current"),
+      status: git(repo, "status", "--porcelain"),
+      content: readFileSync(join(repo, "agent", "AGENTS.md"), "utf8"),
+    };
+    const r = runBlock(`${REFRESH}touch "$CLONE/applied"\n`, repo, repo);
+    assert.notEqual(r.status, 0, "non-main checkout must stop the deploy sequence");
+    assert.equal(git(repo, "rev-parse", "HEAD"), before.head);
+    assert.equal(git(repo, "rev-parse", "main"), before.main);
+    assert.equal(git(repo, "rev-parse", "origin/main"), before.remote, "no fetch");
+    assert.equal(readFileSync(join(repo, ".git", "FETCH_HEAD"), "utf8"), before.fetch);
+    assert.equal(git(repo, "branch", "--show-current"), before.branch, "no branch switch");
+    assert.equal(git(repo, "status", "--porcelain"), before.status);
+    assert.equal(readFileSync(join(repo, "agent", "AGENTS.md"), "utf8"), before.content);
+    assert.ok(!existsSync(join(repo, "applied")), "apply step not reached");
+  });
+}
+
+test("source refresh refuses a non-fast-forward without merging or applying", () => {
+  const repo = fixtureRepo();
+  advanceOrigin(repo);
+  writeFileSync(join(repo, "README.md"), "local\n");
+  git(repo, "add", "README.md");
+  git(repo, "commit", "-qm", "local");
+  const head = git(repo, "rev-parse", "HEAD");
+  const r = runBlock(`${REFRESH}touch "$CLONE/applied"\n`, repo, repo);
+  assert.notEqual(r.status, 0);
+  assert.equal(git(repo, "branch", "--show-current"), "main");
+  assert.equal(git(repo, "rev-parse", "HEAD"), head, "no merge commit or reset");
+  assert.equal(readFileSync(join(repo, "README.md"), "utf8"), "local\n");
+  assert.ok(!existsSync(join(repo, "applied")), "apply step not reached");
+});
+
+test("migration completion frees main without touching live files or unrelated worktrees; rollback then cannot relink", () => {
   const repo = fixtureRepo();
   const live = linkedLive(repo);
+  const unrelated = join(mktmp("mig"), "task");
+  git(repo, "worktree", "add", "-qb", "task", unrelated);
+  const settings = readFileSync(join(live, "agent", "settings.json"));
+  const session = readFileSync(join(live, "agent", "sessions", "s.jsonl"));
+  const sentinel = readFileSync(join(live, "agent", "auth.json"));
+  const admin = readFileSync(join(live, ".git"), "utf8").trim().replace(/^gitdir: /, "");
   const mig = runBlock(MIGRATE, live, repo);
   assert.equal(mig.status, 0, mig.stderr);
   git(repo, "worktree", "unlock", live);
-  git(repo, "worktree", "prune", "-v");
+  const dryRun = spawnSync("git", ["-C", repo, "worktree", "prune", "--dry-run", "--verbose", "--expire", "now"], { encoding: "utf8" });
+  assert.equal(dryRun.status, 0, dryRun.stderr);
+  const candidates = `${dryRun.stdout}${dryRun.stderr}`.trim();
+  assert.equal(candidates.split("\n").length, 1, "only the retired entry may be pruned");
+  assert.ok(candidates.startsWith(`Removing worktrees/${admin.split("/").at(-1)}:`), candidates);
+  git(repo, "worktree", "prune", "--verbose", "--expire", "now");
+  git(repo, "switch", "main");
+  assert.equal(git(repo, "branch", "--show-current"), "main", "base returned to main");
   assert.ok(!git(repo, "worktree", "list").includes(live), "admin entry gone");
+  assert.equal(git(unrelated, "branch", "--show-current"), "task", "unrelated worktree kept");
+  assert.match(git(repo, "worktree", "list", "--porcelain"), new RegExp(`worktree ${unrelated}\\n`));
+  assert.deepEqual(readFileSync(join(live, "agent", "settings.json")), settings);
+  assert.deepEqual(readFileSync(join(live, "agent", "sessions", "s.jsonl")), session);
+  assert.deepEqual(readFileSync(join(live, "agent", "auth.json")), sentinel);
+  assert.ok(!existsSync(join(live, ".git")), "live remains plain");
 
   spawnSync("mv", [join(live, ".git-pawprint-retired"), join(live, ".git")]);
   const gone = runBlock("git -C \"$LIVE\" status", live, repo);
