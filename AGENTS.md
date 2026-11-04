@@ -98,7 +98,7 @@ piece"). This file is for changing this repo.
   per-file durations do not sum to wall time. Delete needless test work before adding concurrency
   machinery. Compare before/after on one base and runtime, excluding install time, and report
   per-file gains separately from full-gate wall time. Keep coverage and runner settings intact.
-- Mise supplies Node 24. `npm ci` installs the pinned development tools and Pi SDK into this worktree's
+- Mise supplies Node 26. `npm ci` installs the pinned development tools and Pi SDK into this worktree's
   `node_modules`; `npm test` and `npm run typecheck` use them. Never `npx`.
   Resolve the pinned runtime before applying test-only `HOME`/`TMPDIR` overrides so tool setup does not
   relocate or reinstall it inside the fixture. Keep test `TMPDIR` short enough for Unix socket filenames

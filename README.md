@@ -410,13 +410,13 @@ npm test            # local oxlint --type-aware, tsc, then the node suites
 npm run typecheck   # local tsc only
 ```
 
-Mise supplies Node 24. The SDK/types, lint and typecheck tools are pinned in
+Mise supplies Node 26. The SDK/types, lint and typecheck tools are pinned in
 `package.json` and `package-lock.json` and resolve from the worktree's
 `node_modules`. Development installs leave the shared Pi runtime and live
 config alone. Pi's package install omits development dependencies and uses
 the optional runtime peers.
 
-Node 24 runs the `.ts` natively; an ESM loader hook
+Node 26 runs the `.ts` natively; an ESM loader hook
 (`tests/loader.mjs`) redirects pi's runtime packages to stubs in
 `tests/stubs/`, and `tests/harness.mjs` fakes the ExtensionAPI/ctx. The
 imprint matrix (`tests/imprint.test.ts`) drives `setup.sh` against throwaway
