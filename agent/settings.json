@@ -34,7 +34,7 @@
   "packages": [
     "git:github.com/tribble/pawprint",
     {
-      "source": "git:github.com/fitchmultz/pi-fitch-kit@e79bbfeb8fe740cb9394c25c30ea474db3f74d31",
+      "source": "git:github.com/fitchmultz/pi-fitch-kit@14526a5e01fbe01d4f9bb3f9b81ef0e81d29b7d9",
       "extensions": [
         "extensions/anthropic-image-guard.ts",
         "extensions/session-name.ts"
@@ -46,21 +46,24 @@
         "themes/calm.json"
       ]
     },
-    "git:github.com/fitchmultz/pi-apply-edits@4a05c50cd11c7c2b188fca58ddfbedb1a7590e10",
-    "git:github.com/fitchmultz/pi-todo-list@d3574f898ca68e7496bc305da5cabf7f0ad9bff1",
-    "git:github.com/fitchmultz/pi-change-working-dir@9731701b62e4888a97bf249b9f52e76447759c2e",
-    "git:github.com/fitchmultz/pi-ctx-info@030afef3c93167c0892aa6723e7af8cd62accf60",
-    "git:github.com/fitchmultz/pi-tool-duration@4ad8581931f4864634ec72b5b4a4af34958bd071",
+    "git:github.com/fitchmultz/pi-apply-edits@39d81622ab372309e5d2f87570bb5dc43919d551",
+    "git:github.com/fitchmultz/pi-todo-list@86fe85d0274c37f634b916e848c538c0f3cf0840",
+    "git:github.com/fitchmultz/pi-change-working-dir@c55109c12f23e240389719ae22c9240c846692fc",
+    "git:github.com/fitchmultz/pi-ctx-info@5f67439c2a197a313c47e005cf605afa8c3f54c2",
+    "git:github.com/fitchmultz/pi-tool-duration@a7690a7663e84204bb82b2a104ca040fd4067ac2",
     "git:github.com/fitchmultz/pi-edit-session-in-place@1b9a4d9b83757725a736f66f5c1a58557420b5c1",
-    "git:github.com/fitchmultz/pi-stash@d1db56e3597018c6d9c6c0b85d1ceb3782bd6bb9",
-    "git:github.com/fitchmultz/pi-copy-message@9b3aaf2de125180cf1fe199b0606c6c432d98cb0",
-    "git:github.com/fitchmultz/pi-calculator@4cb51c16ed9e47772ac4123f57e234eedd268ed0",
-    "git:github.com/fitchmultz/pi-agent-skills@b286c88e3ef164a5c37b8196ab7be0070e53e927",
-    "git:github.com/DietrichGebert/ponytail@84740e3d344b69b4a133201fa519eb37a62a2b2a",
-    "git:github.com/fitchmultz/pi-agent-browser-native@cb4052d818d7af895b12e28b72f705e918d3b4e2",
+    "git:github.com/fitchmultz/pi-stash@ba31e06a1b7c9702da7bce8518d402bd969a091c",
+    "git:github.com/fitchmultz/pi-copy-message@ed244010e0a156abb9440ee11ac86039d5a7502c",
+    "git:github.com/fitchmultz/pi-calculator@07f45ba397ef2f3fb61c071ae91c2b620d6249c7",
+    {
+      "source": "git:github.com/fitchmultz/pi-agent-skills@68a3de6c391fcf35cfeb375b1920592cc33cfc7a",
+      "skills": ["-skills/lyrics"]
+    },
+    "git:github.com/DietrichGebert/ponytail@96608e078b2d5ea607c5c3b8b5a54d1c1fba6846",
+    "git:github.com/fitchmultz/pi-agent-browser-native@4b5be5ec1a97a7afa40fffff3142c94bc8415601",
     "git:github.com/tribble/pi-subagents@438e2b055f2d84c6229dc4fe9b9458ec97392a12",
-    "npm:@nicknisi/pi-cloak@0.1.2",
-    "npm:@nicknisi/pi-answer@0.2.4"
+    "npm:@nicknisi/pi-cloak@0.2.0",
+    "npm:@nicknisi/pi-answer@0.3.2"
   ],
   "theme": "system",
   "defaultProjectTrust": "ask"
