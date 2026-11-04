@@ -41,13 +41,19 @@ piece"). This file is for changing this repo.
   Before declaring a task complete, the parent accounts for every agent it itself launched for
   that task, including superseded implementers and diagnostic helpers, and shuts each down once
   its children and commands have verifiably exited. Preserving a worktree or evidence never
-  requires keeping its agent alive.
+  requires keeping its agent alive. Authorized worktree and branch cleanup is part of the
+  delivery: a task is not "done" while it is pending, and a partial completion names
+  exactly what remains and who owns it.
   Delegated full sessions publish or deploy only when assigned in their scoped handoff
   under applicable owner authorization; otherwise return evidence for launching-parent acceptance.
   Already assigned and authorized actions do not need repeat approval prompts.
   Original parent-saved native receipts and owned run/continuation/command records
   are authoritative for cleanup. Cross-check the task-local plan against those originals;
   child-editable plans cannot replace or overwrite identity or actor evidence.
+  Reconcile missing PIDs or exit codes against the original command/result evidence and
+  execution semantics before declaring cleanup blocked. Preserve genuinely unknown values;
+  foreground closure proves nothing about detached descendants. Capture each command's
+  failure so a later success cannot mask it.
   Ordinary Intercom carries decisions to that parent; no answer blocks dependent work.
   Full workstream owners relay required owner questions explicitly. No durable question ledger.
   Headless delegates use prompt/name/cwd/model/thinking/context, explicit qualified models and
@@ -63,7 +69,8 @@ piece"). This file is for changing this repo.
   lifecycle hooks, since hook-created companions can follow the creation receipt and be
   absent from it. Ownership still needs authoritative evidence, never a name or workspace
   membership; anything unresolved stays preserved.
-  Never force or auto-remove. Preserve needed ignored artifacts before removal.
+  Never force or auto-remove. Before removal, copy needed ignored artifacts outside the
+  trees being removed and verify the copy by hash.
   After verified merge and successful verified tree removal, the parent deletes the
   delivery's merged local and remote task branch as part of the authorized delivery;
   no separate approval is needed. Follow the recipe's merged-branch deletion steps:
@@ -96,6 +103,9 @@ piece"). This file is for changing this repo.
   Resolve the pinned runtime before applying test-only `HOME`/`TMPDIR` overrides so tool setup does not
   relocate or reinstall it inside the fixture. Keep test `TMPDIR` short enough for Unix socket filenames
   to fit platform path limits.
+  Isolate dependency resolution too, not only `HOME` and caches: install probes run in a clean
+  tree with no ancestor `node_modules`. Compare installation layouts with identical runtime,
+  package scripts and configuration.
   Read `node_modules/@earendil-works/pi-coding-agent/docs/` and `dist/` instead of guessing Pi's behaviour.
   Keep host-provided packages in optional runtime peers and development dependencies, not `dependencies`.
 - This repo *is* the package: source string `git:github.com/tribble/pawprint`, clone
