@@ -8,6 +8,7 @@
     "settings.json",
     "cloak.json",
     "configs/ws.json",
+    "configs/answer.json",
     "configs/session-roles.json",
     "configs/managed-code-workflow.md",
     "configs/session-role-coordinator.md",
@@ -64,6 +65,10 @@
       "does": "Native pane roles: qualified model, thinking and prompt instructions",
       "needs": ["pawprint package (extensions/herdr-fleet.ts)"],
       "personal": true
+    },
+    "configs/answer.json": {
+      "does": "pi-answer: disables automatic external classification of assistant replies",
+      "needs": ["pi-answer"]
     },
     "configs/ws.json": {
       "does": "tribble's repo map for `/ws`: short id → local checkout path (workos, infra)",

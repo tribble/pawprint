@@ -485,11 +485,10 @@ write a literal secret into that file — review the config before committing.
 Native MCP stores OAuth credentials as plaintext in the ignored
 `~/.pi/agent/mcp-auth.json`, mode 0600. If that file is ever exposed, revoke the grants with each
 provider; `pi mcp logout <server>` removes the local credentials but is not
-revocation. `agent/cloak.json`
-masks `mcp-auth.json` token values, but only in `read`-tool output — a `bash` read, including
-one called from codemode, is not masked, so the agent/AGENTS.md rule against reading or
-copying credential contents through bash/codemode is the control on every other
-path — plus one content scan:
+revocation. `agent/cloak.json` masks configured matches in `read`, `bash` and `grep`
+output, including inner tool calls from codemode. Path-based masking requires a
+matching file path in the call. Never read or copy credential contents through
+bash/codemode.
 `.githooks/pre-commit` runs `gitleaks` on every staged diff
 (`setup.sh` sets `core.hooksPath`, repo-wide; a missing scanner fails the
 commit, since this repo is public) and `scripts/validate.sh` scans the whole

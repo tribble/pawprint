@@ -51,9 +51,10 @@ Check assumptions → make the change → verify the result.
 
 ## Credential protection
 
-- Never read or copy `auth.json` or `mcp-auth.json` contents through bash/codemode (the cloak masks read-tool output only).
+- Never read or copy `auth.json` or `mcp-auth.json` contents through bash/codemode.
 - Never copy `auth.json` or `mcp-auth.json` to `/tmp` or elsewhere.
 - Never put credentials in config test fixtures.
+- Cloak masks configured matches in `read`, `bash` and `grep` output, including inner codemode calls. Path-based masking requires a matching file path in the call.
 
 <!-- fitch-pi-kit:baseline:start -->
 ## Baseline safety and evidence
