@@ -85,6 +85,13 @@ anything. Questions or a broken piece
 Working in this repo itself, not adopting? The root `AGENTS.md` is the
 contributor side.
 
+## Current-agent progress
+
+The native busy row shows `Model working · 28s` or `Running bash · 12s`
+with the configured interrupt key. Parallel tools retain their own elapsed time.
+The row clears when the current agent stops. Existing child-agent rows stay
+under their package's control. Retry and compaction keep Pi's native displays.
+
 ## Session recap
 
 `/recap` summarizes the session with the selected model in a detached request.

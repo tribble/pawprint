@@ -14,6 +14,7 @@ export function getAgentDir() {
   return agentDir;
 }
 export const CONFIG_DIR_NAME = ".pi";
+export const keyText = () => "escape";
 
 // File-backed native trust doubles. The real loader is also exercised by the
 // no-credential launch probe; these fixtures never persist a trust decision.
