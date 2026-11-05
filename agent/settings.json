@@ -5,7 +5,10 @@
   "quietStartup": true,
   "steeringMode": "all",
   "defaultTools": [
-    "+codemode"
+    "+codemode",
+    "+grep",
+    "+find",
+    "+ls"
   ],
   "retry": {
     "enabled": true,

@@ -107,8 +107,8 @@ test("github: Authorization is the documented whole-value command header (never 
   assert.deepEqual(github.headers, { Authorization: "!echo Bearer $(gh auth token)" });
 });
 
-test("settings.json: defaultTools additively enables codemode", () => {
-  assert.deepEqual(readJson("settings.json").defaultTools, ["+codemode"]);
+test("settings.json: defaultTools additively enables codemode and filesystem tools", () => {
+  assert.deepEqual(readJson("settings.json").defaultTools, ["+codemode", "+grep", "+find", "+ls"]);
 });
 
 test("gitignore policy: agent/mcp-auth.json stays ignored; agent/mcp.json is trackable", () => {
