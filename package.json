@@ -22,9 +22,9 @@
     "typebox": { "optional": true }
   },
   "devDependencies": {
-    "@earendil-works/pi-ai": "1.1.0",
-    "@earendil-works/pi-coding-agent": "1.1.0",
-    "@earendil-works/pi-tui": "1.1.0",
+    "@earendil-works/pi-ai": "1.5.0",
+    "@earendil-works/pi-coding-agent": "1.5.0",
+    "@earendil-works/pi-tui": "1.5.0",
     "@nicknisi/pi-cloak": "0.2.0",
     "@types/node": "26.6.4",
     "oxlint": "1.87.0",
