@@ -1,31 +1,55 @@
-# Headless delegation
+# Native delegation
 
-Pi 1.5.0 or later and the `tribble/pi-subagents` source pin in `settings.json` are required for `delegate.thinking`. The fork is 0.52.16 plus the child-thinking commit; released 0.52.16 does not provide this field. Only a main session delegates, one child level deep. Use the public tool:
+Herdr owns every main, leaf, pane and process lifecycle. Standalone `pi-intercom` owns messaging. There is no headless delegate tool or saved-run controller.
+
+A project Coordinator stays responsive while multiple independent delivery-owner mains work concurrently in separate admitted trees. Each delivery owner (`managed-coder`) launches sequential native worker and fresh reviewer leaves. The owner triggers review, sends valid fixes back to a worker, adjudicates findings and reports results. Neither main writes code. Leaves never launch actors, trigger review or adjudicate their own implementation.
+
+## Owner launch
+
+`launch_agent` reads qualified model, explicit effort and complete role contract from `configs/session-roles.json`. Names are labels, not profiles. Leave `defaultModel` unchanged. Every brief carries the verbatim `Owner outcome:` block and assigned absolute cwd.
 
 ```js
-delegate({
-  prompt: "Owner outcome:\n<verbatim ask>\n\nRole: <contract below>\n<bounded task, cwd, evidence and authority>",
-  name: "worker",
-  cwd: "/absolute/task/worktree",
-  model: "cloudflare-ai-gateway/gpt-6.1-sol",
-  thinking: "high",
-  context: "fresh"
+launch_agent({
+  name: "implementation",
+  role: "worker",
+  cwd: "/assigned/admitted/task/worktree",
+  task: "Owner outcome:\n<verbatim ask>\n\n<bounded task, acceptance and authority>"
 });
 ```
 
-The prompt carries the entire role and assignment. Names are labels, not loaded profiles. Every call must supply explicit `thinking` from the role contract below, independently of `model`. The upstream field is optional: omission still inherits the parent's effort. Do not change parent thinking or append model suffixes to set child effort. Saved continuations and live guidance retain the child's effort even after parent thinking changes. Pi clamps effort to model capabilities; a launch receipt's requested value is not proof of effective effort.
+Delivery code leaves (worker, reviewer and reviewer-security) require the caller's original admitted `managed-coder` record, current native UUID/file/pane and the same linked task tree. The launcher reuses the admission lock, refuses legacy claims and other observed occupants, and adds no worktree or persistent writer claim. Only the owner may start the next leaf after the prior leaf and its commands have verifiably closed. Reviewer/security-review leaves can also be launched by the same full main that originally launched a successful isolated fixer/writer delivery in that canonical tree. The launcher verifies original UUID/file ownership and native identity, exclusive admission and absence of live/uncertain predecessors. The parent must separately inspect completion, command results and owned subprocess exits before requesting review. Missing exits or unknown actors block handoff; pane/roster absence or a final assistant answer is not command-closure proof. Worker launches remain managed-Coder-owner-only. An uncertain leaf launch blocks the same canonical tree. Independence requires the original caller-owned record and a recorded tree key matching live Git identity. Missing, invalid or mismatched ownership/tree identity blocks across trees. Historical scout records without a tree key remain unknown.
 
-There is no `agent`, `task`, `async`, profile override, fallback list or tool-mask field. End the turn after launch; completion arrives asynchronously. `agent_runs` supports list, inspect, continue and stop. Stop and verify owned actors and command descendants before the next writer or cleanup.
+Fixer (trivial configuration only) and writer require an explicit unclaimed linked task tree. They use the same exclusive admission/occupancy gate without requiring a nested managed Coder. Scout, context-builder, oracle and debugger use their explicit assigned directory. These non-code roles need no nested managed Coder. Task artifacts still belong in a task worktree.
 
-Include these shared constraints in every prompt: execute your assigned role without recursive wrapping; do not delegate or launch panes; preserve unrelated work; obey the supplied execution venue; no publication or native lifecycle authority unless explicitly assigned. Report changed paths, command exits, evidence and remaining risks. Use ordinary Intercom for decisions. No answer means blocked work.
+## Leaf contract
 
-## Role contracts to include in prompts
+Execute only the role contract and bounded assignment in your task prompt. Preserve unrelated work and obey the supplied execution venue. Do not delegate, launch panes, trigger review or adjudicate your own implementation. No publication or native lifecycle authority is implicit in your role.
 
-- **worker / fixer** — `cloudflare-ai-gateway/gpt-6.1-sol`. Worker: `thinking:"high"`; fixer: `thinking:"low"`. Implement the complete bounded task using existing patterns. Inspect status, callers and acceptance before editing. Add focused regression coverage and run the required checks. Fixer is only for trivial configuration. Do not expand scope or repair orchestration.
-- **reviewer / reviewer-security** — `cloudflare-ai-gateway/claude-opus-5-5`, `thinking:"xhigh"`. Use `thinking:"medium"` only for a quick small low-risk review. Independent fresh-context, read-only review against the verbatim owner outcome and complete diff. Inspect connected code and run relevant non-destructive checks. Security review focuses on trust, lineage, authority, credential exposure and lifecycle boundaries. Return evidence-backed findings with paths and severity, or `No blocking findings.` Missing evidence means an incomplete review, not sign-off. Do not implement fixes.
-- **writer** — `cloudflare-ai-gateway/claude-fable-5-1`, `thinking:"medium"`. Author only the requested prose artifact in the task worktree. Preserve supplied facts and decisions. Do not turn chat explanations into artifact text or change code.
-- **scout / context-builder** — `cloudflare-ai-gateway/claude-sonnet-5-5`, `thinking:"medium"`. Read-only reconnaissance. Return relevant paths, call boundaries, evidence and gaps. Do not run full suites or author an implementation.
-- **oracle** — `cloudflare-ai-gateway/gpt-6.1-sol`, `thinking:"high"`. Diagnose a hard technical question from supplied evidence. Return the concrete cause, evidence and smallest proposed repair; do not edit code.
-- **debugger** — `cloudflare-ai-gateway/gpt-6-astra`, `thinking:"high"`. Reproduce and diagnose within the brief's execution policy. Return evidence and a bounded repair proposal. Route resulting code through the managed worker.
+Report changed paths, commands and exits, evidence and remaining risks. Use ordinary Intercom for decisions. No answer leaves dependent work blocked. Return once and remain idle for owner verification and settled native closure. Do not close your pane or worktree.
 
-These are prompt instructions, not enforced read-only permissions. Pass the qualified model in the actual `model` argument and role effort in `thinking`. An unavailable model is an error; do not silently choose another.
+## Roles
+
+| Role | Qualified model | Native thinking | Assignment |
+| --- | --- | --- | --- |
+| worker | cloudflare-ai-gateway/gpt-6.1-sol | high | Complete bounded implementation, focused regression coverage and required checks. |
+| fixer | cloudflare-ai-gateway/gpt-6.1-sol | low | Trivial configuration only, with required checks. |
+| reviewer | cloudflare-ai-gateway/claude-opus-5-5 | xhigh | Independent fresh-context read-only intent and complete-diff review. |
+| reviewer-security | cloudflare-ai-gateway/claude-opus-5-5 | xhigh | Separate fresh read-only trust, lineage, authority, credential and lifecycle review. |
+| writer | cloudflare-ai-gateway/claude-fable-5-1 | medium | Requested prose only. Preserve facts and decisions. No code. |
+| scout / context-builder | cloudflare-ai-gateway/claude-sonnet-5-5 | medium | Read-only paths, call boundaries, evidence and gaps. No full suites. |
+| oracle | cloudflare-ai-gateway/gpt-6.1-sol | high | Concrete technical cause, evidence and smallest repair proposal. No edits. |
+| debugger | cloudflare-ai-gateway/gpt-6-astra | high | Bounded reproduction and diagnosis. Route code to the owner's worker. |
+
+The launcher includes the selected complete role contract in the actual prompt and passes native `--model` and `--thinking`. Pi clamps effort to model capabilities; verify the effective setting in the native session. Do not change parent effort, invent fallbacks or restrict reviewer tools. Read-only roles are prompt contracts, not a sandbox.
+
+## Messaging and continuation
+
+Use `intercom({action:"status"})` and `intercom({action:"list"})` for real standalone peer IDs. Pawprint claims the native session UUID through the supported identity hook. A rename does not change it. Native replacement uses the new session UUID; resume uses the saved one. Never derive a hashed ID or route by workspace/role label.
+
+Standalone actions are `list`, `list-cwd`, `send`, `ask`, `reply`, `pending`, `status`, `cancel` and `handover`. Use exact IDs and ordinary send/ask/reply. Do not pass bundled-only `scope`, `delivery`, `queueMode` or `last`. Busy delivery is global `steer` or `human-first`, not a per-message option. Model tool requests with `openProjectPaneIfMissing: true` are blocked, including nested codemode calls for send/ask/handover. Explicit human slash commands are a separate native entrypoint; they do not grant model tool authority. Broker acceptance is not proof of recipient persistence or completion.
+
+Immediately before any native prompt or close, run `herdr agent get <recorded-pane>` and verify it still binds that pane to the original recorded session UUID. Missing or mismatched identity stops the action.
+
+End the turn after launch. Reports arrive through Intercom. Inspect with `herdr agent get <recorded-pane>` and `herdr agent read <recorded-pane> --source recent-unwrapped --lines 120`. Continue the same settled native session with `herdr agent prompt <recorded-pane> '<Owner outcome and bounded continuation>'` only while its recorded pane remains open. After independent review the previous worker is closed; verify/close the reviewer and launch a fresh worker with the findings. Do not resend after an uncertain timeout.
+
+Owners verify final settlement and command/descendant exits before native `herdr pane close <recorded-pane>`. Inspect native state afterward and close only confirmed-owned settled panes. Busy-stop safety is not established; never stop a busy actor as a routine transition. No result, idle label or pane-close receipt proves detached commands exited. Preserve original launch/session/pane and command evidence. There is no automatic retry, restart, question ledger or second actor registry.

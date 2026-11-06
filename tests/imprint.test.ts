@@ -11,7 +11,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { execFileSync, spawnSync } from "node:child_process";
 import {
-  mkdirSync, writeFileSync, readFileSync, existsSync,
+  mkdirSync, writeFileSync, readFileSync, existsSync, linkSync,
   rmSync, chmodSync, readdirSync, lstatSync, readlinkSync, realpathSync, symlinkSync,
 } from "node:fs";
 import { join, relative } from "node:path";
@@ -27,7 +27,7 @@ const printFiles: string[] = JSON.parse(readFileSync(join(REPO, "manifest.json")
 // that write to a scratch repo so tests never touch this checkout's .git/config.
 const GIT_DIR = mktmp("gitdir");
 execFileSync("git", ["init", "-q", "--bare", GIT_DIR]);
-const SETUP_ENV = { ...process.env, GIT_DIR, PAWPRINT_PI_PKG: piPackageDir() };
+const SETUP_ENV = { ...process.env, HOME: mktmp("setup-home"), PATH: `${join(process.execPath, "..")}:${process.env.PATH}`, GIT_DIR, PAWPRINT_PI_PKG: piPackageDir() };
 function runSetup(args: string[]) {
   return execFileSync("bash", [join(REPO, "setup.sh"), ...args], { encoding: "utf8", env: SETUP_ENV });
 }
@@ -510,6 +510,7 @@ function pkgStubHome(piStub: string) {
     HOME: home,
     PATH: `${bin}:${process.env.PATH}`,
     TRACE: trace,
+    GIT_DIR,
     PAWPRINT_PI_PKG: piPackageDir(), // the settings writer must not probe the stubbed mise/npm
   };
   return { home, live: join(home, ".pi", "agent"), trace, env };
@@ -528,6 +529,12 @@ test("6c. --apply on the default live target: native install of every APPLIED pa
   }));
   const r = spawnSync("bash", [join(repo, "setup.sh"), "--apply"], { encoding: "utf8", env });
   assert.equal(r.status, 0, r.stderr + r.stdout);
+  for (const helper of ["pr-note", "pr-steer"]) {
+    const installed = join(env.HOME, ".local", "bin", helper);
+    assert.deepEqual(readFileSync(installed), readFileSync(join(REPO, "scripts", helper)));
+    assert.equal(lstatSync(installed).mode & 0o777, 0o755);
+    assert.equal(lstatSync(installed).isSymbolicLink(), false);
+  }
 
   // the applied settings carry the source's list with object-form filters intact
   const applied = JSON.parse(readFileSync(join(live, "settings.json"), "utf8"));
@@ -583,6 +590,7 @@ test("6e. package installs skip truthfully: --config-only, --dry-run, non-defaul
     assert.equal(r.status, 0, `${extra}: ${r.stderr}${r.stdout}`);
     assert.match(r.stdout, /package installation: SKIPPED/, extra.join(" "));
     assert.ok(!existsSync(trace), `no installer ran under ${extra.join(" ")}`);
+    assert.equal(existsSync(join(env.HOME, ".local/bin/pr-note")), false);
   }
   // --apply no longer implies --config-only; a non-default target must still skip
   {
@@ -592,6 +600,23 @@ test("6e. package installs skip truthfully: --config-only, --dry-run, non-defaul
     assert.equal(r.status, 0, r.stderr + r.stdout);
     assert.match(r.stdout, /package installation: SKIPPED/);
     assert.ok(!existsSync(trace), "no installer ran against a non-default target");
+  }
+});
+
+test("PR helper installation refuses symlink and hardlink destinations without altering their referents", () => {
+  for (const kind of ["symlink", "hardlink"]) {
+    const repo = fixtureFiles();
+    const { env } = pkgStubHome("#!/bin/sh\nexit 0\n");
+    const bin = join(env.HOME, ".local/bin");
+    mkdirSync(bin, { recursive: true });
+    const sentinel = join(env.HOME, "sentinel");
+    writeFileSync(sentinel, "keep\n");
+    if (kind === "symlink") symlinkSync(sentinel, join(bin, "pr-note"));
+    else linkSync(sentinel, join(bin, "pr-note"));
+    const result = spawnSync("bash", [join(repo, "setup.sh"), "--apply"], { encoding: "utf8", env });
+    assert.equal(result.status, 1, result.stdout + result.stderr);
+    assert.match(result.stderr, kind === "symlink" ? /symlinked path/ : /hardlinked/);
+    assert.equal(readFileSync(sentinel, "utf8"), "keep\n");
   }
 });
 

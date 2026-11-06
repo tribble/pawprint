@@ -17,6 +17,8 @@
 !scripts/sync-forks.sh
 !scripts/compare.ts
 !scripts/apply-config.ts
+!scripts/pr-note
+!scripts/pr-steer
 !manifest.json
 !.oxlintrc.json
 !package.json

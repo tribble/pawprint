@@ -13,5 +13,59 @@
     "model": "cloudflare-ai-gateway/gpt-6-astra",
     "thinking": "high",
     "instructionsFile": "managed-coder.md"
+  },
+  "worker": {
+    "model": "cloudflare-ai-gateway/gpt-6.1-sol",
+    "thinking": "high",
+    "instructionsFile": "delegation.md",
+    "contract": "Implement the complete bounded task using existing patterns. Inspect status, callers and acceptance before editing. Add focused regression coverage and run the required checks. Do not expand scope or repair orchestration."
+  },
+  "fixer": {
+    "model": "cloudflare-ai-gateway/gpt-6.1-sol",
+    "thinking": "low",
+    "instructionsFile": "delegation.md",
+    "contract": "Implement only the assigned trivial configuration change using existing patterns. Inspect status, callers and acceptance before editing. Run required checks. Do not expand scope or repair orchestration."
+  },
+  "reviewer": {
+    "model": "cloudflare-ai-gateway/claude-opus-5-5",
+    "thinking": "xhigh",
+    "instructionsFile": "delegation.md",
+    "contract": "Independent fresh-context, read-only review against the verbatim Owner outcome and complete diff. Inspect connected code and run relevant non-destructive checks. Return evidence-backed findings with paths and severity, or No blocking findings. Missing evidence means an incomplete review, not sign-off. Do not implement fixes."
+  },
+  "reviewer-security": {
+    "model": "cloudflare-ai-gateway/claude-opus-5-5",
+    "thinking": "xhigh",
+    "instructionsFile": "delegation.md",
+    "contract": "Independent fresh-context, read-only security review against the verbatim Owner outcome and complete diff. Inspect trust, lineage, authority, credential exposure and lifecycle boundaries. Return evidence-backed findings with paths and severity, or No blocking findings. Missing evidence means an incomplete review, not sign-off. Do not implement fixes."
+  },
+  "writer": {
+    "model": "cloudflare-ai-gateway/claude-fable-5-1",
+    "thinking": "medium",
+    "instructionsFile": "delegation.md",
+    "contract": "Author only the requested prose artifact in the task worktree. Preserve supplied facts and decisions. Do not turn chat explanations into artifact text or change code."
+  },
+  "scout": {
+    "model": "cloudflare-ai-gateway/claude-sonnet-5-5",
+    "thinking": "medium",
+    "instructionsFile": "delegation.md",
+    "contract": "Read-only reconnaissance. Return relevant paths, call boundaries, evidence and gaps. Do not run full suites or author an implementation."
+  },
+  "context-builder": {
+    "model": "cloudflare-ai-gateway/claude-sonnet-5-5",
+    "thinking": "medium",
+    "instructionsFile": "delegation.md",
+    "contract": "Read-only reconnaissance. Return relevant paths, call boundaries, evidence and gaps. Do not run full suites or author an implementation."
+  },
+  "oracle": {
+    "model": "cloudflare-ai-gateway/gpt-6.1-sol",
+    "thinking": "high",
+    "instructionsFile": "delegation.md",
+    "contract": "Diagnose a hard technical question from supplied evidence. Return the concrete cause, evidence and smallest proposed repair. Do not edit code."
+  },
+  "debugger": {
+    "model": "cloudflare-ai-gateway/gpt-6-astra",
+    "thinking": "high",
+    "instructionsFile": "delegation.md",
+    "contract": "Reproduce and diagnose within the brief's execution policy. Return evidence and a bounded repair proposal. Do not edit code. Route resulting code through the delivery owner's worker."
   }
 }

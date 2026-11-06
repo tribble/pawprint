@@ -222,9 +222,12 @@ export async function workstreamCosts(pi: ExtensionAPI, ctx: ExtensionContext, s
       else runs.set(str(r.runId) ?? `invalid-${runs.size}`, r);
     }
     for (const r of panes.values()) {
-      const child = node(safeId(r.childSessionId) ? r.childSessionId : "invalid-child", `${r.role === "coordinator" ? "Coordinator" : "Coder"} ${label(r.name, "unnamed")}`, "pane");
+      const role = str(r.role) ?? "";
+      const child = node(safeId(r.childSessionId) ? r.childSessionId : "invalid-child", `${role === "coordinator" ? "Coordinator" : role === "coder" ? "Coder" : label(role, "unknown role")} ${label(r.name, "unnamed")}`, "pane");
       n.children.push(child); child.role = str(r.role); child.pane = str(r.paneId);
-      if (!runId(r.launchId) || !safeId(r.childSessionId) || r.ownerSessionFile !== j.file || !["coder", "coordinator"].includes(str(r.role) ?? "") || !isAbsolute(str(r.cwd) ?? "")) { issue(child, "pane ownership/path mismatch"); child.flags.add("unknown"); continue; }
+      if (!runId(r.launchId) || !safeId(r.childSessionId) || r.ownerSessionFile !== j.file ||
+        !["coder", "coordinator", "managed-coder", "worker", "fixer", "reviewer", "reviewer-security", "writer", "scout", "context-builder", "oracle", "debugger"].includes(role) ||
+        !isAbsolute(str(r.cwd) ?? "")) { issue(child, "pane ownership/path mismatch"); child.flags.add("unknown"); continue; }
       if (r.phase === "failed-before-pane" || r.phase === "released") { child.flags.add("not-started"); continue; }
       try {
         const path = paneFile(r.childSessionId);

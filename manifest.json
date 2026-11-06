@@ -19,7 +19,7 @@
   "about": {
     "AGENTS.md": {
       "does": "pi's global instructions — the rules every session on this machine follows",
-      "needs": ["herdr", "pi-subagents", "pr-watch"],
+      "needs": ["herdr", "pi-intercom", "pr-watch"],
       "personal": true
     },
     "mcp.json": {
@@ -48,7 +48,7 @@
     },
     "configs/managed-code-workflow.md": {
       "does": "Any full session's code flow: native worktree, managed Coder and safe lifecycle",
-      "needs": ["herdr", "pi-subagents", "configs/managed-coder.md"],
+      "needs": ["herdr", "pi-intercom", "configs/managed-coder.md"],
       "personal": true
     },
     "configs/session-role-coordinator.md": {
@@ -77,12 +77,12 @@
     },
     "configs/managed-coder.md": {
       "does": "Bounded main Coder: sequential worker, fresh review and parent closeout",
-      "needs": ["herdr", "pi-subagents", "configs/delegation.md"],
+      "needs": ["herdr", "pi-intercom", "configs/delegation.md"],
       "personal": true
     },
     "configs/delegation.md": {
-      "does": "Headless role prompts with explicit models and per-child thinking",
-      "needs": ["pi-subagents"],
+      "does": "Native leaf contracts, messaging and owner continuation commands",
+      "needs": ["pi-intercom"],
       "personal": true
     }
   },

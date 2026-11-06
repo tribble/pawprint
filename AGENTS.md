@@ -20,10 +20,12 @@ piece"). This file is for changing this repo.
   nonempty `PI_CODING_AGENT_DIR` with Pi's path expansion, otherwise `~/.pi/agent`.
   Do not substitute repository source for a missing applied recipe. The recipe covers
   preflight, canonical repository/path/base checks, persistent parent identity,
-  native launch/run/successor identities, acceptance, actor closure, claims, occupants,
+  native launch/session/file/pane identities, acceptance, actor closure, claims, occupants,
   artifact preservation and authorized non-force cleanup. Pawprint's native creation is
   `herdr worktree create --cwd /Users/pantera/work/pawprint --branch <branch> --base origin/main --path /Users/pantera/work/pawprint-<branch> --label <branch> --no-focus`.
-  Delegate at the actual verified returned path. A Coordinator owns a broad project;
+  Delegate at the actual verified returned path. A responsive Coordinator owns a broad project and launches multiple concurrent independent
+  delivery-owner mains. Each owner supervises sequential native workers and fresh reviewers.
+  Neither main writes code; the owner triggers review and returns valid fixes. A Coordinator owns a broad project;
   additional full sessions own substantial independent scope across deliveries,
   not routine per-PR wrappers. Every full session uses the same code flow.
   Before implementation, settle the short path to real acceptance: which checks run
@@ -56,9 +58,9 @@ piece"). This file is for changing this repo.
   failure so a later success cannot mask it.
   Ordinary Intercom carries decisions to that parent; no answer blocks dependent work.
   Full workstream owners relay required owner questions explicitly. No durable question ledger.
-  Headless delegates use prompt/name/cwd/model/thinking/context, explicit qualified models and
-  explicit thinking from the role contract in `agent/configs/delegation.md`.
-  Role contracts are in the prompt, not loaded profiles.
+  Native leaves use `launch_agent({name,role,cwd,task})`. Role profiles supply qualified models,
+  explicit native efforts and complete contracts in the actual prompt. Herdr owns lifecycle;
+  standalone pi-intercom owns messaging. See `agent/configs/delegation.md`.
   Only trivial configuration or non-code work outside the code flow can use direct
   `git -C ~/work/pawprint worktree add ~/work/pawprint-<branch> -b <branch> origin/main`.
   Authorized direct-tree cleanup uses `git -C ~/work/pawprint worktree remove ~/work/pawprint-<branch>`
