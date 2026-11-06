@@ -1,0 +1,481 @@
+#!/usr/bin/env node
+// pr-note — send a PR review note to a coordinating pi session over pi-intercom.
+//
+// Adopted from pr-review's pr-note; maintained and installed by pawprint.
+// Uses the installed standalone pi-intercom client and its own TypeScript loader.
+
+import { spawnSync } from "node:child_process";
+import { createRequire } from "node:module";
+import { existsSync, readFileSync, realpathSync } from "node:fs";
+import { homedir } from "node:os";
+import { dirname, isAbsolute, join, relative, resolve } from "node:path";
+import { pathToFileURL } from "node:url";
+
+const PROG = "pr-note";
+const MAX_CODE_LINES = 200;
+const TRACK_JSON = join(homedir(), ".local/state/pr-watch/track.json");
+const CONFIG_JSON = join(homedir(), ".config/pr-review/config.json");
+// How this program names its own broker registration (see connectClient): pr-note-<pid>.
+const EPHEMERAL = /^pr-note-\d+$/;
+// Native UUIDs and legacy IDs remain exact addresses, never name lookups.
+const SESSION_ID = /^(?:pi-[0-9a-f]{32}|[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12})$/;
+
+function usage() {
+  return `Usage:
+  ${PROG} --list
+  ${PROG} --resolve <session>   (prints {id, name}: an ID as-is, a name looked up among live sessions)
+  ${PROG} [--to <session>] --pr <ref> --path <file> --start <n> [--end <n>] \\
+          [--side <LEFT|RIGHT>] --body <text> [--code <text>] [--repo owner/repo]
+  ${PROG} --here --path <file> --code <text> --body <text>   (editor flow: derives the rest)
+  ${PROG} --json    (reads the same fields as a JSON object on stdin)
+  --dry-run prints the resolved note as JSON instead of sending it (--list is always live);
+          its resolvedBy (to|track|cwd|env|config) says how the recipient was chosen, to is the
+          recipient's intercom ID and toName its name (null when only the ID is known).
+
+<session> is an intercom session ID (native UUID, stable) or the exact name of a live session.
+<ref> is either "owner/repo#123" or a bare number (requires --repo).
+--here   derive --pr (and --repo) from the PR of the branch checked out where --path
+         lives (gh pr view), and make --path relative to that checkout's root.
+--start  omitted: --code is located in the file at --path (unique match = exact range,
+         several = first match + approximate, none = error).
+--end    defaults to the last line of --code counted from --start (one final newline does
+         not add a line; --start alone when there is no --code).
+--side   defaults to RIGHT (an editor buffer is always the new side).
+Recipient resolution order (every step yields an ID; names are resolved once, at send time):
+  --to (or JSON "to") ->
+  pr-watch's ~/.local/state/pr-watch/track.json entry for the PR (agent_id, or a legacy agent name) ->
+  the one live intercom session whose cwd is --path's git checkout (or inside it; several:
+    subagent-* are dropped first, still several is an error) -- the checkout is derived from
+    --path when absolute, from the current directory otherwise ->
+  \$PR_REVIEW_COORDINATOR -> ~/.config/pr-review/config.json {"coordinator": "<session>"}
+    (overrides for when no agent works in the checkout) -> error.
+
+See pawprint README for installation.`;
+}
+
+class CliError extends Error {}
+
+function fail(message) {
+  throw new CliError(message);
+}
+
+function resolveIntercomHome() {
+  const agent = process.env.PI_CODING_AGENT_DIR?.replace(/^~(?=\/|$)/, homedir()) || join(homedir(), ".pi/agent");
+  return process.env.PI_INTERCOM_HOME || join(resolve(agent), "git/github.com/nicobailon/pi-intercom");
+}
+
+async function loadIntercomClient() {
+  const home = resolveIntercomHome();
+  const clientPath = join(home, "broker/client.ts");
+  if (!existsSync(clientPath)) fail(`standalone pi-intercom client not found at ${clientPath} (set $PI_INTERCOM_HOME or apply pawprint)`);
+  try {
+    const require = createRequire(join(home, "package.json"));
+    const { tsImport } = await import(pathToFileURL(require.resolve("tsx/esm/api")).href);
+    const mod = await tsImport(pathToFileURL(clientPath).href, import.meta.url);
+    if (!mod.IntercomClient) fail(`${clientPath} has no IntercomClient export`);
+    return mod.IntercomClient;
+  } catch (error) {
+    fail(`failed to import standalone intercom client from ${clientPath}: ${error.message}`);
+  }
+}
+
+function readStdin() {
+  try {
+    return readFileSync(0, "utf8");
+  } catch {
+    return "";
+  }
+}
+
+function parseArgs(argv) {
+  const out = { _list: false, _json: false, _here: false, _dryRun: false };
+  for (let i = 0; i < argv.length; i++) {
+    const arg = argv[i];
+    switch (arg) {
+      case "--list":
+        out._list = true;
+        break;
+      case "--resolve":
+        out._resolve = argv[++i];
+        if (!out._resolve) fail(`--resolve needs a <session>\n\n${usage()}`);
+        break;
+      case "--json":
+        out._json = true;
+        break;
+      case "--here":
+        out._here = true;
+        break;
+      case "--dry-run":
+        out._dryRun = true;
+        break;
+      case "--to":
+        out.to = argv[++i];
+        break;
+      case "--pr":
+        out.pr = argv[++i];
+        break;
+      case "--repo":
+        out.repo = argv[++i];
+        break;
+      case "--path":
+        out.path = argv[++i];
+        break;
+      case "--start":
+        out.start = argv[++i];
+        break;
+      case "--end":
+        out.end = argv[++i];
+        break;
+      case "--side":
+        out.side = argv[++i];
+        break;
+      case "--body":
+        out.body = argv[++i];
+        break;
+      case "--code":
+        out.code = argv[++i];
+        break;
+      case "-h":
+      case "--help":
+        console.log(usage());
+        process.exit(0);
+        break;
+      default:
+        fail(`unknown argument: ${arg}\n\n${usage()}`);
+    }
+  }
+  return out;
+}
+
+// A selection dragged to column 0 of the next line includes the last line's newline.
+function codeLines(code) {
+  return code.replace(/\n$/, "").split("\n");
+}
+
+function normalizePayload(raw) {
+  const payload = {
+    to: raw.to ?? raw.coordinator,
+    pr: raw.pr,
+    repo: raw.repo,
+    path: raw.path,
+    start: raw.start !== undefined ? Number(raw.start) : undefined,
+    end: raw.end !== undefined ? Number(raw.end) : undefined,
+    side: raw.side ? String(raw.side).toUpperCase() : "RIGHT",
+    body: raw.body,
+    code: raw.code ? String(raw.code) : undefined,
+    approximate: raw.approximate === true,
+  };
+  if (payload.end === undefined && payload.start !== undefined) {
+    payload.end = payload.start + (payload.code ? codeLines(payload.code).length - 1 : 0);
+  }
+  return payload;
+}
+
+function validatePayload(payload) {
+  const missing = [];
+  if (!payload.pr) missing.push("--pr");
+  if (!payload.path) missing.push("--path");
+  if (payload.start === undefined && !payload.code) missing.push("--start (or --code, to locate it)");
+  if (!payload.body) missing.push("--body");
+  if (missing.length) fail(`missing required field(s): ${missing.join(", ")}\n\n${usage()}`);
+  // Line numbers are 1-based; Number("") === 0 must be rejected, not sent.
+  if (payload.start !== undefined && (!Number.isInteger(payload.start) || payload.start < 1)) {
+    fail(`invalid --start line number: ${payload.start} (must be an integer >= 1)`);
+  }
+  if (payload.end !== undefined && (!Number.isInteger(payload.end) || payload.end < 1)) {
+    fail(`invalid --end line number: ${payload.end} (must be an integer >= 1)`);
+  }
+  if (payload.side !== "LEFT" && payload.side !== "RIGHT") {
+    fail(`--side must be LEFT or RIGHT, got: ${payload.side}`);
+  }
+}
+
+function resolveRepoAndPr(payload) {
+  const raw = String(payload.pr);
+  if (raw.includes("#")) {
+    const [repo, num] = raw.split("#");
+    if (!repo || !/^[0-9]+$/.test(num)) {
+      fail(`--pr must look like owner/repo#123, got: ${raw}`);
+    }
+    return { repo, pr: num };
+  }
+  if (!/^[0-9]+$/.test(raw)) {
+    fail(`--pr must be a number or owner/repo#number, got: ${raw}`);
+  }
+  const repo = payload.repo;
+  if (!repo) fail("--repo is required when --pr is a bare number");
+  return { repo, pr: raw };
+}
+
+function run(cmd, args, cwd) {
+  const r = spawnSync(cmd, args, { cwd, encoding: "utf8" });
+  if (r.error) fail(`${cmd} failed to start: ${r.error.message}`);
+  if (r.status !== 0) fail(`${cmd} ${args.join(" ")} failed in ${cwd}: ${(r.stderr || r.stdout).trim()}`);
+  return r.stdout.trim();
+}
+
+// Session cwds and git roots may spell one directory differently (/tmp vs /private/tmp).
+function canonical(dir) {
+  try {
+    dir = realpathSync(dir);
+  } catch {
+    // a session's cwd may have been deleted since it registered; compare the raw string
+  }
+  return dir.replace(/\/+$/, "") || "/";
+}
+
+// Checkout root of dir, or null outside any checkout.
+function checkoutRoot(dir) {
+  const r = spawnSync("git", ["-C", dir, "rev-parse", "--show-toplevel"], { encoding: "utf8" });
+  return r.status === 0 ? r.stdout.trim() : null;
+}
+
+// --here: the PR is whichever one the branch checked out around --path belongs to.
+// Returns the absolute path and the checkout root (payload.path becomes checkout-relative,
+// like the PR's diff).
+function deriveHere(payload) {
+  if (!payload.path) fail("--here requires --path");
+  let abs;
+  try {
+    abs = realpathSync(resolve(payload.path)); // git reports the checkout root symlink-free
+  } catch (error) {
+    fail(`--here: cannot resolve --path ${payload.path}: ${error.message}`);
+  }
+  const root = run("git", ["-C", dirname(abs), "rev-parse", "--show-toplevel"], process.cwd());
+  if (!payload.pr || (!String(payload.pr).includes("#") && !payload.repo)) {
+    // No --repo: gh resolves the repo from the checkout's remote and the PR from its branch.
+    const view = JSON.parse(run("gh", ["pr", "view", ...(payload.pr ? [String(payload.pr)] : []), "--json", "number,url"], root));
+    const m = /^https?:\/\/[^/]+\/([^/]+\/[^/]+)\/pull\/\d+/.exec(view.url);
+    if (!m) fail(`cannot read owner/repo from PR url: ${view.url}`);
+    payload.pr = `${m[1]}#${view.number}`;
+  }
+  payload.path = relative(root, abs); // abs is inside root: git derived root from abs's directory
+  return { abs, root };
+}
+
+// --start omitted: the selection text is the source of truth, so find it in the saved
+// file. (VS Code's ${lineNumber} is the caret end of the selection and does not resolve
+// in diff editors at all, so an editor cannot hand us a reliable line number.)
+function locateCode(payload, absPath) {
+  let text;
+  try {
+    text = readFileSync(absPath, "utf8");
+  } catch (error) {
+    fail(`--start omitted and cannot read ${absPath} to locate --code: ${error.message}`);
+  }
+  // Search the selection verbatim (a trailing newline is part of what was selected and
+  // rules out prefix matches like "foo" in "foobar"); it only stops counting as a line.
+  const needle = payload.code;
+  const hits = [];
+  for (let i = text.indexOf(needle); i !== -1; i = text.indexOf(needle, i + 1)) hits.push(i);
+  if (!hits.length) {
+    fail(`--code not found in ${absPath} (unsaved edits, or the old side of a diff?); pass --start`);
+  }
+  payload.start = text.slice(0, hits[0]).split("\n").length;
+  if (payload.end === undefined) payload.end = payload.start + codeLines(needle).length - 1;
+  // ponytail: several matches -> first one, flagged approximate; pass --start to pin it.
+  if (hits.length > 1) payload.approximate = true;
+}
+
+// Missing or malformed file = skip that source.
+function readJson(path) {
+  try {
+    return JSON.parse(readFileSync(path, "utf8"));
+  } catch {
+    return undefined;
+  }
+}
+
+// <session> -> {id, name}: an ID passes through (name null: no broker needed), a name must match
+// exactly one live session. pr-watch reuses this through `pr-note --resolve` instead of speaking
+// the list protocol itself.
+async function resolveSessionRef(ref, listPeers) {
+  if (SESSION_ID.test(ref)) return { id: ref, name: null };
+  const hits = (await listPeers()).filter((s) => s.name === ref);
+  if (hits.length > 1) {
+    fail(`several sessions are named "${ref}": ${hits.map((s) => `${s.id} (${s.cwd})`).join(", ")} — use the ID`);
+  }
+  if (!hits.length) fail(`no intercom session named "${ref}" (run "${PROG} --list" to see live sessions)`);
+  return { id: hits[0].id, name: hits[0].name };
+}
+
+// Who gets the note: {to: <id>, toName, resolvedBy}. Steps 1-2 are facts on disk; step 3 is a fact
+// from the broker: the agent working on a PR is the live session whose cwd is that PR's checkout
+// (the broker drops a session the moment its socket closes, so its list is only live sessions;
+// acceptsAsks:false there means busy mid-turn, which a steered note is fine with). Env/config are
+// user overrides for when neither applies. A name anywhere is resolved to its ID here.
+async function resolveRecipient(payload, prRef, dir, root, listPeers) {
+  const resolved = async (ref, resolvedBy) => {
+    const { id, name } = await resolveSessionRef(ref, listPeers);
+    return { to: id, toName: name, resolvedBy };
+  };
+  if (payload.to) return resolved(payload.to, "to");
+  // pr-watch records which intercom session opened each PR: agent_id (+ agent_name for display),
+  // or just a name in entries written before IDs were recorded.
+  const tracked = readJson(TRACK_JSON)?.tracked?.[prRef];
+  if (typeof tracked?.agent_id === "string" && tracked.agent_id) {
+    return { to: tracked.agent_id, toName: tracked.agent_name ?? null, resolvedBy: "track" };
+  }
+  if (typeof tracked?.agent === "string" && tracked.agent) return resolved(tracked.agent, "track");
+  if (root) {
+    const top = canonical(root);
+    const here = (await listPeers()).filter((s) => {
+      const cwd = canonical(s.cwd);
+      return cwd === top || cwd.startsWith(top + "/");
+    });
+    // Several: the named agent owns the worktree, subagent-* are its helpers.
+    const named = here.length > 1 ? here.filter((s) => !/^subagent-/.test(s.name ?? "")) : here;
+    if (named.length === 1) return { to: named[0].id, toName: named[0].name ?? null, resolvedBy: "cwd" };
+    if (here.length > 1) {
+      const list = here.map((s) => `${s.name ?? s.id} (${s.cwd})`).join(", ");
+      fail(`several agents are working in ${top}: ${list} — pass --to <session>`);
+    }
+  }
+  if (process.env.PR_REVIEW_COORDINATOR) return resolved(process.env.PR_REVIEW_COORDINATOR, "env");
+  const configured = readJson(CONFIG_JSON)?.coordinator;
+  if (typeof configured === "string" && configured) return resolved(configured, "config");
+  fail(`no agent is working in ${root ?? dir} for ${prRef} — start one there (ws / /ws) or pass --to <session>`);
+}
+
+function buildMessage(payload, repo) {
+  const lines = [];
+  const lineRange =
+    payload.end && payload.end !== payload.start ? `L${payload.start}-L${payload.end}` : `L${payload.start}`;
+  const approxTag = payload.approximate ? " (approximate)" : "";
+  lines.push(
+    `🔎 PR review note — ${repo}#${payload.pr} · ${payload.path}:${lineRange} (${payload.side})${approxTag}`,
+  );
+  lines.push(`> ${payload.body}`);
+
+  if (payload.code) {
+    let codeLines = String(payload.code).split("\n");
+    let truncatedNote = "";
+    if (codeLines.length > MAX_CODE_LINES) {
+      truncatedNote = `\n… truncated (${codeLines.length - MAX_CODE_LINES} more lines)`;
+      codeLines = codeLines.slice(0, MAX_CODE_LINES);
+    }
+    lines.push("```");
+    lines.push(codeLines.join("\n") + truncatedNote);
+    lines.push("```");
+  }
+
+  const text = lines.join("\n");
+  const attachments = [
+    {
+      type: "context",
+      name: "pr-note.json",
+      content: JSON.stringify({ ...payload, repo }),
+      language: "json",
+    },
+  ];
+  return { text, attachments };
+}
+
+async function main() {
+  const argv = process.argv.slice(2);
+  let client;
+  // The broker is only contacted once the note is valid (an invalid invocation must not register
+  // an ephemeral session) and only when needed: --list, a recipient found by cwd, or the send.
+  const connectClient = async () => {
+    if (client) return client;
+    const IntercomClient = await loadIntercomClient();
+    client = new IntercomClient();
+    try {
+      await client.connect({ name: `pr-note-${process.pid}`, cwd: process.cwd(), model: "none", pid: process.pid, startedAt: Math.trunc(performance.timeOrigin), lastActivity: Date.now() });
+    } catch (error) {
+      fail(`could not connect to intercom broker: ${error.message}`);
+    }
+    return client;
+  };
+  let sessions;
+  const listSessions = async () => (sessions ??= await (await connectClient()).listSessions());
+  // pr-note registrations (this one, a concurrent one) carry a caller's cwd and are never recipients.
+  const listPeers = async () => (await listSessions()).filter((s) => !EPHEMERAL.test(s.name ?? ""));
+
+  try {
+    const args = parseArgs(argv);
+
+    if (args._list) {
+      console.log(JSON.stringify(await listSessions(), null, 2));
+      return;
+    }
+    if (args._resolve) {
+      const ref = await resolveSessionRef(args._resolve, listPeers);
+      // For display: the name an ID currently goes by, if it is connected. Best effort — an ID
+      // is a valid answer with no broker running at all.
+      ref.name ??= (await listPeers().catch(() => [])).find((s) => s.id === ref.id)?.name ?? null;
+      console.log(JSON.stringify(ref));
+      return;
+    }
+
+    let raw = args;
+    if (args._json) {
+      const stdinText = readStdin();
+      if (!stdinText.trim()) fail("--json requires a JSON payload on stdin");
+      let parsed;
+      try {
+        parsed = JSON.parse(stdinText);
+      } catch (error) {
+        fail(`invalid JSON on stdin: ${error.message}`);
+      }
+      raw = { ...args, ...parsed };
+    }
+
+    const payload = normalizePayload(raw);
+    const here = args._here ? deriveHere(payload) : null;
+    validatePayload(payload);
+    const { repo, pr } = resolveRepoAndPr(payload);
+    payload.pr = pr;
+    if (payload.start === undefined) locateCode(payload, here?.abs ?? resolve(payload.path));
+    if (payload.end < payload.start) fail(`--end ${payload.end} is before --start ${payload.start}`);
+    // The checkout the note is about: --path's when absolute, the caller's otherwise.
+    const dir = here ? dirname(here.abs) : isAbsolute(payload.path) ? dirname(payload.path) : process.cwd();
+    const root = here?.root ?? checkoutRoot(dir);
+    const recipient = await resolveRecipient(payload, `${repo}#${pr}`, dir, root, listPeers);
+    if (args._dryRun) {
+      const { path, start, end, side, approximate } = payload;
+      const { to, toName, resolvedBy } = recipient;
+      console.log(JSON.stringify({ to, toName, resolvedBy, pr: `${repo}#${pr}`, path, start, end, side, approximate }));
+      return;
+    }
+
+    // A name was just matched against the live list; an ID from disk/env may belong to a session
+    // that has since ended — say so plainly instead of surfacing the broker's rejection.
+    if (!(await listPeers()).some((s) => s.id === recipient.to)) {
+      const was = recipient.toName ? ` (tracked as "${recipient.toName}")` : "";
+      fail(`no intercom session with id "${recipient.to}" is connected${was} (run "${PROG} --list" to see live sessions)`);
+    }
+
+    const { text, attachments } = buildMessage(payload, repo);
+    const result = await client.send(recipient.to, { text, attachments });
+
+    const ok = result.delivered === true;
+    console.log(
+      JSON.stringify({
+        ok,
+        delivered: result.delivered === true,
+        id: result.id,
+        ...(result.reason ? { reason: result.reason } : {}),
+      }),
+    );
+
+    if (!ok) {
+      process.exitCode = 1;
+    }
+  } catch (error) {
+    const cli = error instanceof CliError;
+    console.error(`${PROG}: ${cli ? error.message : `unexpected error: ${error.stack || error.message}`}`);
+    console.log(JSON.stringify({ ok: false, error: error.message })); // stdout stays one JSON line either way
+    process.exitCode = 1;
+  } finally {
+    if (client) {
+      try {
+        await client.disconnect();
+      } catch {
+        // best-effort cleanup
+      }
+    }
+  }
+}
+
+main();

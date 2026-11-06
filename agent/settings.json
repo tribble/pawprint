@@ -64,7 +64,7 @@
     },
     "git:github.com/DietrichGebert/ponytail@96608e078b2d5ea607c5c3b8b5a54d1c1fba6846",
     "git:github.com/fitchmultz/pi-agent-browser-native@4b5be5ec1a97a7afa40fffff3142c94bc8415601",
-    "git:github.com/tribble/pi-subagents@438e2b055f2d84c6229dc4fe9b9458ec97392a12",
+    "git:github.com/nicobailon/pi-intercom@02913edcd7b1bdb21b480852ff82f674d309c651",
     "npm:@nicknisi/pi-cloak@0.2.0",
     "npm:@nicknisi/pi-answer@0.3.2"
   ],

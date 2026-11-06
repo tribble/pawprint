@@ -7,14 +7,10 @@
 import { getAgentDir, hasTrustRequiringProjectResources, ProjectTrustStore, SettingsManager, type ExtensionAPI, type ExtensionCommandContext, type ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { normalizeContext, StringEnum } from "@earendil-works/pi-ai";
 import { Type } from "typebox";
-import { createHash, randomUUID } from "node:crypto";
+import { randomUUID } from "node:crypto";
 import { closeSync, existsSync, openSync, readFileSync, readSync, statSync, realpathSync } from "node:fs";
 import { resolve, join, isAbsolute, basename, dirname } from "node:path";
 import { claimWriter, createWorktree, gitOutput, readWriterClaim, removeWriterClaim, withWriterOperation, worktreeDestination, worktreeIdentity, writerClaimPath, type Worktree, type WriterClaim } from "./lib/worktree.ts";
-
-// This session's pi-intercom ID — what a child must report to, because names change and IDs do not
-// pi-subagents src/pi-intercom/session-targets.ts: `pi-` + sha256(sessionId).hex[0:32].
-const intercomId = (sessionId: string) => `pi-${createHash("sha256").update(sessionId).digest("hex").slice(0, 32)}`;
 
 // The herdr skill forbids inspect/control from outside Herdr; every command's execs route through herdr().
 function assertHerdr() {
@@ -22,14 +18,15 @@ function assertHerdr() {
 }
 
 function isHeadlessChild() {
-  return process.env.PI_SUBAGENT_CHILD === "1" ||
+  return process.env.PAWPRINT_FLEET_LEAF === "1" ||
+    process.env.PI_SUBAGENT_CHILD === "1" ||
     process.env.PI_INTERCOM_ROOT_SESSION_ID !== undefined ||
     process.env.PI_INTERCOM_PARENT_SESSION_ID !== undefined;
 }
 
 function assertPaneLaunch() {
   assertHerdr();
-  if (isHeadlessChild()) throw new Error("headless leaf subagents cannot launch pane agents");
+  if (isHeadlessChild()) throw new Error("leaf sessions/subagents cannot launch pane agents");
 }
 
 async function herdr(pi: ExtensionAPI, args: string[], signal?: AbortSignal): Promise<unknown> {
@@ -224,11 +221,16 @@ const OWNER_OUTCOME = /^Owner outcome:/m;
 
 // Appended to every delegated task: the child's contract with its spawner (addressed by intercom ID).
 const CONTRACT = (me: string, name: string, role: Role) =>
-  `You were spawned by intercom session \`${me}\`. The \`Owner outcome:\` block above is the user's verbatim ask and the only authority on intent; everything else in this brief is your spawner's derived design and may be wrong — if the two conflict, follow the owner outcome and tell \`${me}\`. Copy the \`Owner outcome:\` block unchanged into every subagent brief you write (reviewer included). When done, report ONCE to intercom session \`${me}\` (that is your spawner's ID; use it verbatim) as one line: ✅ ${name} — <outcome>. ${role === "managed-coder" ? "Return owned child/run/command identities, exit evidence and unresolved decisions. Remain idle; the launching parent owns native closure and cleanup. Never treat a completed result as proof that command descendants exited." : 'Then close your own tab: `herdr tab close "$HERDR_TAB_ID"`.'}`;
+  `You were spawned by intercom session \`${me}\`. The \`Owner outcome:\` block above is the user's verbatim ask and the only authority on intent; everything else in this brief is your spawner's derived design and may be wrong — if the two conflict, follow the owner outcome and tell \`${me}\`. Copy the \`Owner outcome:\` block unchanged into every subagent brief you write (reviewer included). When done, report ONCE to intercom session \`${me}\` (that is your spawner's ID; use it verbatim) as one line: ✅ ${name} — <outcome>. ${role === "managed-coder" || isLeafRole(role) ? "Return owned native session/pane/command identities, exit evidence and unresolved decisions. Remain idle; the launching parent owns native closure and cleanup. Never treat a completed result as proof that command descendants exited." : 'Then close your own tab: `herdr tab close "$HERDR_TAB_ID"`.'}`;
 
-type Role = "coordinator" | "coder" | "managed-coder";
+const MAIN_ROLES = ["coordinator", "coder", "managed-coder"] as const;
+const LEAF_ROLES = ["worker", "fixer", "reviewer", "reviewer-security", "writer", "scout", "context-builder", "oracle", "debugger"] as const;
+const ROLES = [...MAIN_ROLES, ...LEAF_ROLES] as const;
+type Role = typeof ROLES[number];
+const isLeafRole = (role: Role) => (LEAF_ROLES as readonly string[]).includes(role);
+const isCodeLeaf = (role: Role) => ["worker", "reviewer", "reviewer-security"].includes(role);
 type Mode = "interactive" | "delegated";
-interface RoleProfile { model: string; thinking: string; instructionsFile: string }
+interface RoleProfile { model: string; thinking: string; instructionsFile: string; contract?: string }
 interface LaunchRequest { name: string; task: string; role?: Role; mode?: "delegated"; cwd?: string; base?: string; noProjectResources?: boolean }
 
 interface LaunchRecord {
@@ -259,16 +261,21 @@ function nativeOwnerFile(ctx: ExtensionContext): string | undefined {
   return canonical;
 }
 
-function ownLaunches(ctx: ExtensionContext): LaunchRecord[] {
+function recordedLaunches(ctx: ExtensionContext): LaunchRecord[] {
   const records = new Map<string, LaunchRecord>();
-  const ownerFile = nativeOwnerFile(ctx);
-  if (!ownerFile) return [];
   for (const entry of ctx.sessionManager.getEntries()) {
     if (entry.type !== "custom" || entry.customType !== "fleet-launch" || !entry.data || typeof entry.data !== "object") continue;
     const record = entry.data as LaunchRecord;
-    if (record.ownerSessionId === ctx.sessionManager.getSessionId() && record.ownerSessionFile === ownerFile && typeof record.launchId === "string") records.set(record.launchId, record);
+    records.set(JSON.stringify([record.ownerSessionId, record.ownerSessionFile, record.launchId]), record);
   }
   return [...records.values()];
+}
+
+function ownLaunches(ctx: ExtensionContext): LaunchRecord[] {
+  const ownerFile = nativeOwnerFile(ctx);
+  if (!ownerFile) return [];
+  return recordedLaunches(ctx).filter(record => record.ownerSessionId === ctx.sessionManager.getSessionId() &&
+    record.ownerSessionFile === ownerFile && typeof record.launchId === "string");
 }
 
 function sessionMatches(ref: FleetAgent["agent_session"], childId: string): boolean {
@@ -317,7 +324,7 @@ function roleProfile(role: Role): RoleProfile {
   const raw: unknown = JSON.parse(readFileSync(path, "utf8"));
   const profile = raw && typeof raw === "object" ? (raw as Record<string, unknown>)[role] : undefined;
   if (!profile || typeof profile !== "object") throw new Error(`missing ${role} profile in ${path}`);
-  const { model, thinking, instructionsFile } = profile as Record<string, unknown>;
+  const { model, thinking, instructionsFile, contract } = profile as Record<string, unknown>;
   if (typeof model !== "string" || hasControls(model) || !/^[a-z0-9][a-z0-9._-]*\/\S+$/.test(model)) {
     throw new Error(`${path}: ${role}.model must be a qualified provider/model ID`);
   }
@@ -329,7 +336,56 @@ function roleProfile(role: Role): RoleProfile {
   }
   const file = resolve(getAgentDir(), "configs", instructionsFile);
   if (hasControls(file) || !readFileSync(file, "utf8").trim()) throw new Error(`${path}: ${role} instruction file must be nonempty and have a control-free path`);
-  return { model, thinking, instructionsFile: file };
+  if (isLeafRole(role) && (typeof contract !== "string" || !contract.trim())) throw new Error(`${path}: ${role}.contract must contain the complete leaf role contract`);
+  return { model, thinking, instructionsFile: file, contract: typeof contract === "string" ? contract : undefined };
+}
+
+// A code leaf belongs to this exact admitted native main, not to a workspace label.
+function verifyDeliveryOwner(ctx: ExtensionContext, tree: Worktree, agents: FleetAgent[]) {
+  const parentFile = process.env.PAWPRINT_FLEET_PARENT_FILE;
+  if (!parentFile || !isAbsolute(parentFile) || hasControls(parentFile)) throw new Error("Code leaf admission requires its launching parent's native session file");
+  const entries = readFileSync(parentFile, "utf8").trim().split("\n").map((line) => JSON.parse(line) as Record<string, unknown>);
+  const header = entries[0];
+  const launches = new Map<string, LaunchRecord>();
+  for (const entry of entries) {
+    if (entry.type === "custom" && entry.customType === "fleet-launch" && entry.data && typeof entry.data === "object") {
+      const record = entry.data as LaunchRecord;
+      if (record.childSessionId === ctx.sessionManager.getSessionId()) launches.set(record.launchId, record);
+    }
+  }
+  const matches = [...launches.values()].filter((record) =>
+    record.role === "managed-coder" && ["started", "prompted"].includes(record.phase) &&
+    record.ownerSessionId === header?.id && record.ownerSessionFile === realpathSync.native(parentFile) &&
+    record.worktreeKey === tree.key && realpathSync.native(record.cwd) === realpathSync.native(ctx.cwd) &&
+    record.paneId === process.env.HERDR_PANE_ID);
+  if (header?.type !== "session" || matches.length !== 1) throw new Error("Code leaf admission does not match this native delivery owner and same task tree");
+  const self = agents.filter((agent) => agent.pane_id === process.env.HERDR_PANE_ID);
+  if (self.length !== 1) throw new Error("Native delivery owner identity is missing or ambiguous");
+  if (self[0].agent_session?.kind === "path" && realpathSync.native(self[0].agent_session.value) !== nativeOwnerFile(ctx)) {
+    throw new Error("Native delivery owner session-file identity does not match this caller");
+  }
+  verifySessionHeader(self[0].agent_session, matches[0]);
+}
+
+// Structural ownership only. The parent must verify command/descendant exits before handoff.
+function isolatedReviewOwner(ctx: ExtensionContext, tree: Worktree, agents: FleetAgent[]): boolean {
+  const launches = ownLaunches(ctx);
+  const originals = launches.filter(r => ["fixer", "writer"].includes(r.role) && r.phase === "prompted" &&
+    r.worktreeKey === tree.key && realpathSync.native(r.cwd) === tree.root);
+  if (!originals.length) return false;
+  const self = agents.filter(a => a.pane_id === process.env.HERDR_PANE_ID);
+  if (self.length !== 1 || self[0].agent_session?.kind !== "path" ||
+    realpathSync.native(self[0].agent_session.value) !== nativeOwnerFile(ctx)) {
+    throw new Error("Isolated review owner native session-file identity is missing or mismatched");
+  }
+  verifySessionHeader(self[0].agent_session, { ...originals[0], childSessionId: ctx.sessionManager.getSessionId(), cwd: realpathSync.native(ctx.cwd) });
+  for (const original of originals) {
+    if (!original.paneId || !original.childSessionId ||
+      agents.some(a => a.pane_id === original.paneId || sessionMatches(a.agent_session, original.childSessionId))) {
+      throw new Error("Original fixer/writer predecessor is still live or its native identity is unknown");
+    }
+  }
+  return true;
 }
 
 // change_dir keeps session resources and ctx.cwd unchanged. Ask its synchronous
@@ -432,7 +488,9 @@ async function launch(pi: ExtensionAPI, ctx: ExtensionContext, request: LaunchRe
   const { name: wanted, task, role = "coder", mode = "delegated" } = request;
   if (typeof wanted !== "string" || !LEGAL_NAME.test(wanted)) throw new Error(`illegal agent name "${wanted}" — must match [a-z][a-z0-9_-]{0,31} (start with a letter, ≤32 chars)`);
   if (typeof task !== "string" || !OWNER_OUTCOME.test(task)) throw new Error("task must contain an `Owner outcome:` block quoting the user's ask verbatim (copied, not paraphrased). Re-issue it whenever the user corrects or narrows.");
-  if (role !== "coder" && role !== "coordinator" && role !== "managed-coder") throw new Error("role must be coder, coordinator or managed-coder");
+  if (!(ROLES as readonly string[]).includes(role)) throw new Error(`role must be ${ROLES.join(", ")}`);
+  const leaf = isLeafRole(role);
+  if (leaf && request.cwd === undefined) throw new Error("Leaf launch requires its assigned explicit cwd");
   if (role === "managed-coder" && request.cwd === undefined) throw new Error("managed-coder requires the cwd returned by native herdr worktree create");
   if (mode !== "delegated") throw new Error("/delegate and launch_agent are delegated-only; use human /ws for an interactive Coordinator");
   if (request.noProjectResources !== undefined && typeof request.noProjectResources !== "boolean") throw new Error("noProjectResources must be an explicit boolean opt-out");
@@ -444,7 +502,8 @@ async function launch(pi: ExtensionAPI, ctx: ExtensionContext, request: LaunchRe
   const ownerSessionFile = nativeOwnerFile(ctx);
   if (role !== "coordinator" && !ownerSessionFile) throw new Error("Coder launch needs a persistent native parent session. Start Pi without --no-session (or use a persisted SDK SessionManager), then reissue the task. No Git, pane or claim was created.");
   if (role === "coordinator") projectTrustOptOut(sourceCwd, request.noProjectResources);
-  const parent = intercomId(ctx.sessionManager.getSessionId());
+  const parent = ctx.sessionManager.getSessionId();
+  if (process.env.PI_INTERCOM_SESSION_ID !== undefined && process.env.PI_INTERCOM_SESSION_ID !== parent) throw new Error("Intercom identity does not match the current native session; inspect standalone intercom status before launching");
   const agents = await agentList(pi, signal);
   const parentWorkspace = myWorkspace(agents);
   if (!parentWorkspace) throw new Error("/delegate needs to run inside a herdr pane");
@@ -470,7 +529,9 @@ async function launch(pi: ExtensionAPI, ctx: ExtensionContext, request: LaunchRe
     const optOut = projectTrustOptOut(cwd, request.noProjectResources);
     save("tab-requested");
     tabAttempted = true;
-    const tabArgs = ["tab", "create", "--workspace", ws, "--cwd", cwd, "--label", name, "--no-focus", "--env", `PI_CODING_AGENT_DIR=${getAgentDir()}`, "--env", `PI_SPAWNED_BY=${parent}`];
+    const tabArgs = ["tab", "create", "--workspace", ws, "--cwd", cwd, "--label", name, "--no-focus", "--env", `PI_CODING_AGENT_DIR=${getAgentDir()}`, "--env", `PI_SPAWNED_BY=${parent}`,
+      ...(ownerSessionFile ? ["--env", `PAWPRINT_FLEET_PARENT_FILE=${ownerSessionFile}`] : []),
+      ...(leaf ? ["--env", "PAWPRINT_FLEET_LEAF=1"] : [])];
     const tab = await herdr(pi, tabArgs, signal);
     const paneId = findPaneId(tab);
     if (!paneId) throw new Error(`tab created but no pane_id in response; inspect tabs in ${ws} before retrying`);
@@ -485,7 +546,7 @@ async function launch(pi: ExtensionAPI, ctx: ExtensionContext, request: LaunchRe
     const native = await herdr(pi, ["agent", "get", paneId], signal) as { agent?: FleetAgent };
     verifySessionHeader(native.agent?.agent_session, record);
     save("started");
-    await agentOp(pi, ["agent", "prompt", paneId, `${task}\n\n${CONTRACT(parent, name, role)}`, "--wait", "--until", "working", "--timeout", "10000"], name, paneId, signal);
+    await agentOp(pi, ["agent", "prompt", paneId, `${task}\n\n${profile.contract ? `${role}: ${profile.contract}\n\n` : ""}${CONTRACT(parent, name, role)}`, "--wait", "--until", "working", "--timeout", "10000"], name, paneId, signal);
     verifySessionHeader(native.agent?.agent_session, record);
     save("prompted");
     return { name, paneId, role, mode, cwd, sourceCwd, parent, model: profile.model, thinking: profile.thinking,
@@ -495,6 +556,10 @@ async function launch(pi: ExtensionAPI, ctx: ExtensionContext, request: LaunchRe
   try {
     if (role === "coordinator") { save("intent"); return await runPane(); }
     if (!ownerSessionFile) throw new Error("Coder launch needs a persistent native parent session");
+    if (leaf && !isCodeLeaf(role) && role !== "writer" && role !== "fixer") {
+      save("intent");
+      return await runPane();
+    }
     let tree = await worktreeIdentity(pi, sourceCwd, signal);
     if (request.cwd !== undefined) {
       if (tree.key === tree.common) throw new Error("Explicit Coder cwd must be a linked task worktree, not a primary checkout");
@@ -512,6 +577,33 @@ async function launch(pi: ExtensionAPI, ctx: ExtensionContext, request: LaunchRe
       if (current.key !== tree.key) throw new Error("Worktree identity changed during admission");
       const existing = readWriterClaim(tree);
       if (existing) throw new Error(`Worktree already claimed by session ${existing.claim.ownerSessionId}, launch ${existing.claim.launchId}. Keep and inspect ${writerClaimPath(tree)}.`);
+      if (leaf) {
+        const live = await agentList(pi, signal);
+        if (isCodeLeaf(role) && !(role !== "worker" && isolatedReviewOwner(ctx, current, live))) {
+          const ownerTree = await worktreeIdentity(pi, executionCwd(pi, ctx), signal);
+          if (ownerTree.key !== tree.key) throw new Error("Code leaves must use the same admitted task tree as their owner");
+          verifyDeliveryOwner(ctx, current, live);
+          ws = await managedWorkspace(pi, current, signal);
+        }
+        for (const prior of recordedLaunches(ctx)) {
+          if (!isLeafRole(prior.role) || ["prompted", "failed-before-pane"].includes(prior.phase)) continue;
+          const owned = prior.ownerSessionId === record.ownerSessionId && prior.ownerSessionFile === ownerSessionFile &&
+            typeof prior.launchId === "string" && !!prior.launchId;
+          if (owned && prior.launchId === record.launchId) continue;
+          let recordedTree: Worktree | undefined;
+          if (owned && typeof prior.cwd === "string" && isAbsolute(prior.cwd) && !hasControls(prior.cwd) &&
+            typeof prior.worktreeKey === "string" && isAbsolute(prior.worktreeKey) && !hasControls(prior.worktreeKey)) {
+            try { recordedTree = await worktreeIdentity(pi, prior.cwd, signal); }
+            catch { signal?.throwIfAborted(); } // Unresolved identity stays globally blocking.
+          }
+          if (!recordedTree || recordedTree.key !== prior.worktreeKey || recordedTree.key === tree.key) {
+            throw new Error("An uncertain leaf launch requires inspection; no automatic replacement without verified independent tree identity");
+          }
+        }
+        const occupants = await sameTreeOccupants(pi, live, tree, signal);
+        if (occupants.length) throw new Error(`Task tree occupied by ${occupants.map((a) => a.name ?? a.pane_id ?? "unknown").join(", ")}; settle and close owned actors and commands before the next leaf`);
+        return runPane();
+      }
       if (request.cwd !== undefined) {
         const occupants = await sameTreeOccupants(pi, await agentList(pi, signal), tree, signal);
         if (occupants.length) throw new Error(`Worktree is occupied by ${occupants.map((a) => a.name ?? a.pane_id ?? "an unowned session").join(", ")}. Refusing explicit reuse; omit cwd for fresh isolation. Occupancy does not prove writer status.`);
@@ -547,7 +639,7 @@ function parseDelegate(args: string): LaunchRequest {
       continue;
     }
     const option = rest.match(/^--(role|mode|cwd|base)\s+(?:"([^"]+)"|'([^']+)'|(\S+))(?:\s+|$)/);
-    if (!option) throw new Error("Usage: /delegate [--role coder|coordinator|managed-coder] [--cwd <existing-worktree> | --base <ref>] [--no-approve] <name> <task>");
+    if (!option) throw new Error("Usage: /delegate [--role <main-or-leaf-role>] [--cwd <assigned-directory> | --base <ref>] [--no-approve] <name> <task>");
     const value = option[2] ?? option[3] ?? option[4];
     if (option[1] === "role") options.role = value as Role;
     else if (option[1] === "mode") {
@@ -591,6 +683,19 @@ async function releaseWorktree(pi: ExtensionAPI, ctx: ExtensionContext, requeste
 }
 
 export default function herdrFleet(pi: ExtensionAPI) {
+  pi.on("tool_call", event => {
+    if (event.toolName === "intercom" && event.input.openProjectPaneIfMissing === true) {
+      return { block: true, reason: "Intercom auto-project-pane creation is blocked for model tool calls; use the admitted native launcher." };
+    }
+  });
+  let sessionManager: ExtensionContext["sessionManager"] | undefined;
+  pi.on("session_start", (_event, ctx) => { sessionManager = ctx.sessionManager; });
+  pi.events.on("intercom:session-identity", (data) => {
+    if (!data || typeof data !== "object") return;
+    const request = data as { version?: unknown; claim?: (id: string) => void };
+    if (request.version === 1 && typeof request.claim === "function" && sessionManager) request.claim(sessionManager.getSessionId());
+  });
+  pi.on("session_shutdown", () => { sessionManager = undefined; });
   pi.registerCommand("fleet", {
     description: "Fleet status surface: herdr agents with live state",
     handler: async (_args, ctx) => {
@@ -620,7 +725,7 @@ export default function herdrFleet(pi: ExtensionAPI) {
 
   pi.registerCommand("delegate", {
     description:
-      "Launch a delegated Coder in a fresh worktree: /delegate [--base <ref> | --cwd <existing-linked-worktree>] [--no-approve] <name> <task>. Requires Owner outcome. --role coordinator keeps directory behavior; /ws is interactive.",
+      "Launch a delegated native main or leaf: /delegate --role <role> --cwd <assigned-directory> <name> <task>. Requires Owner outcome. /ws is interactive.",
     handler: async (args, ctx) => {
       try {
         const result = await launch(pi, ctx, parseDelegate(args), ctx.signal);
@@ -638,11 +743,12 @@ export default function herdrFleet(pi: ExtensionAPI) {
   if (!isHeadlessChild()) pi.registerTool({
     name: "launch_agent",
     label: "Launch Pane Agent",
-    description: "Launch a bounded managed Coder in a supplied native worktree, a full Coder, or a Coordinator in a no-focus herdr tab.",
+    description: "Launch a native delivery owner, Coordinator, full Coder or supervised leaf in a no-focus Herdr tab.",
     promptSnippet: "Launch an independently owned pane workstream with an explicit role profile",
     promptGuidelines: [
-      "Use launch_agent for pane workstreams; delegate runs headless subagents.",
-      "For a code delivery, first create the native herdr worktree, then use role managed-coder with its exact cwd. This main delegates worker and fresh review with explicit models. The launching parent owns final acceptance and native cleanup. No persistent writer claim is added.",
+      "Use launch_agent for native Herdr mains and leaf roles. There is no headless delegation runner.",
+      "For a code delivery, first create the native herdr worktree, then use role managed-coder with its exact cwd. This delivery-owner main launches sequential native worker and fresh reviewer leaves with qualified models and role efforts. The launching parent owns final acceptance and native cleanup. No persistent writer claim is added.",
+      "Code leaves require their admitted delivery owner and the same explicit task cwd. They create no worktree or persistent claim. Close settled owned leaves and commands before the next leaf. Uncertain launches block replacement. Fixer (trivial configuration only) and writer require an unclaimed linked task tree; scout/context-builder/oracle/debugger use their explicit assigned directory.",
       "Coders default to a fresh linked worktree from the effective repository and committed HEAD. Supply base for repo policy (pawprint: origin/main). Explicit cwd reuses exactly an admitted linked checkout; never combine cwd and base. Coordinators keep directory behavior and reject base.",
       "launch_agent is delegated-only, retains parent provenance and requires the verbatim Owner outcome. Unresolved project trust requires human action; noProjectResources explicitly opts out.",
       "Isolate independent workstreams. Sequence work that depends on an unsettled API or migration. Coder parents need persistent native session files. Release only recorded pre-pane failures through release_worktree. Any pane/start attempt or uncertainty keeps the claim; completed Coder worktrees cannot be reassigned through this launcher yet. Post-start reconciliation/release is deferred. Release never cleans Git.",
@@ -651,9 +757,9 @@ export default function herdrFleet(pi: ExtensionAPI) {
     parameters: Type.Object({
       name: Type.String({ pattern: "^[a-z][a-z0-9_-]{0,31}$" }),
       task: Type.String({ minLength: 1, description: "Task containing the verbatim Owner outcome: block" }),
-      role: Type.Optional(StringEnum(["coder", "coordinator", "managed-coder"] as const)),
+      role: Type.Optional(StringEnum(ROLES)),
       mode: Type.Optional(StringEnum(["delegated"] as const)),
-      cwd: Type.Optional(Type.String({ minLength: 1, description: "Required for managed-coder: native herdr's returned linked worktree path. Legacy Coder reuses a linked checkout; Coordinator directory is unchanged. Supports ~." })),
+      cwd: Type.Optional(Type.String({ minLength: 1, description: "Required for managed-coder and leaves: assigned task directory. Code leaves must stay in their admitted owner tree. Legacy Coder reuses a linked checkout; Coordinator directory is unchanged. Supports ~." })),
       base: Type.Optional(Type.String({ minLength: 1, description: "Committed base ref for a new Coder worktree; defaults HEAD. Pawprint callers supply origin/main. Invalid with cwd or Coordinator." })),
       noProjectResources: Type.Optional(Type.Boolean({ description: "Explicitly decline trust-gated project resources for this child (--no-approve)" })),
     }, { additionalProperties: false }),

@@ -71,11 +71,13 @@ process.env.HERDR_ENV = "1";
 delete process.env.PI_SUBAGENT_CHILD; // Exercise the interactive parent boundary unless a case selects a leaf.
 delete process.env.PI_INTERCOM_ROOT_SESSION_ID;
 delete process.env.PI_INTERCOM_PARENT_SESSION_ID;
+delete process.env.PAWPRINT_FLEET_LEAF;
+delete process.env.PI_INTERCOM_SESSION_ID;
+delete process.env.PAWPRINT_FLEET_PARENT_FILE;
 const ME = { name: "coordinator-test", agent_status: "idle", cwd: "/tmp/me", pane_id: "wH:p1", workspace_id: "wH" };
-// Children are addressed to my intercom ID (pi-<sha256(session id)[0:32]>), never my name, which can change.
-// sha256("fleet-sess").hex[0:32], precomputed so the test does not share the implementation's formula.
+// Standalone Intercom uses native session identity, never a renamable display label.
 const SESSION_ID = "fleet-sess";
-const MY_ID = "pi-8271896c98088f150f678afd3ae5249e";
+const MY_ID = SESSION_ID;
 const fleetCtx = () => makeCtx({ sessionId: SESSION_ID });
 const tabReply = { code: 0, stdout: JSON.stringify({ result: { tab: { tab_id: "wH:t2" }, root_pane: { pane_id: "wH:p2" } } }), stderr: "" };
 
@@ -151,7 +153,7 @@ test("/delegate: tab in MY workspace → explicit profile → pane-targeted task
     ["herdr", "agent", "list"],
     // a tab in the caller's workspace (grouped sidebar nests it under the caller), never a new workspace;
     // the spawner is identified by intercom ID, not by its (renamable) session name
-    ["herdr", "tab", "create", "--workspace", "wH", "--cwd", launchedCwd, "--label", "scout", "--no-focus", "--env", `PI_CODING_AGENT_DIR=${sourceAgentDir}`, "--env", `PI_SPAWNED_BY=${MY_ID}`],
+    ["herdr", "tab", "create", "--workspace", "wH", "--cwd", launchedCwd, "--label", "scout", "--no-focus", "--env", `PI_CODING_AGENT_DIR=${sourceAgentDir}`, "--env", `PI_SPAWNED_BY=${MY_ID}`, "--env", `PAWPRINT_FLEET_PARENT_FILE=${fleetCtx().sessionManager.getSessionFile()}`],
   ]);
   const start = calls(pi)[2];
   assert.deepEqual(start.slice(0, 13), ["herdr", "agent", "start", "scout", "--kind", "pi", "--pane", "wH:p2", "--timeout", "60000", "--", "--name", "scout"]);
@@ -502,7 +504,7 @@ test("launch_agent and /delegate share effective cwd, unique names, parent, topo
       if (human) await pi.commands.delegate.handler(`lead ${task}`, ctx);
       else {
         assert.ok(pi.tools.launch_agent, "distinct model-callable launcher");
-        assert.equal(pi.tools.delegate, undefined, "pi-subagents owns delegate");
+        assert.equal(pi.tools.delegate, undefined, "native launch does not register a second runner");
         const result = await pi.tools.launch_agent.execute("launch", { name: "lead", task }, undefined, undefined, ctx);
         assert.notEqual(result.details.cwd, directory);
         assert.equal(result.details.sourceCwd, directory);
@@ -813,6 +815,7 @@ test("legacy and new child lineage block cached tools and every pane-launch comm
   const registeredParent = makePi({ execImpl: delegateExec([ME]) });
   herdrFleet(registeredParent);
   for (const lineage of [
+    { PAWPRINT_FLEET_LEAF: "1" },
     { PI_SUBAGENT_CHILD: "1" },
     { PI_INTERCOM_ROOT_SESSION_ID: "native-parent" },
     { PI_INTERCOM_PARENT_SESSION_ID: "native-parent" },
@@ -844,6 +847,17 @@ test("legacy and new child lineage block cached tools and every pane-launch comm
       for (const key of Object.keys(lineage)) delete process.env[key];
     }
   }
+});
+
+test("standalone identity hook claims the current native session through replacement and resume", async () => {
+  const pi = makePi();
+  herdrFleet(pi);
+  const claimed: string[] = [];
+  for (const sessionId of ["native-one", "native-two", "native-one"]) {
+    await pi.emit("session_start", { reason: "resume" }, makeCtx({ sessionId }));
+    await pi.events.emit("intercom:session-identity", { version: 1, claim: (id: string) => claimed.push(id) });
+  }
+  assert.deepEqual(claimed, ["native-one", "native-two", "native-one"]);
 });
 
 test("only /ws is interactive", async () => {

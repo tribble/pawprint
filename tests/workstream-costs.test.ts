@@ -63,6 +63,30 @@ async function report(f: ReturnType<typeof fixture>, full = false) {
   return { text: result.content[0].text as string, report: result.details.report, pi, ctx };
 }
 
+test("native delivery owners and current leaves count once beside saved legacy runs", async () => {
+  const f = fixture();
+  const owner = f.pane(2, []);
+  const ownerRecord = f.rootEntries.at(-1) as { data: { role: string } };
+  ownerRecord.data.role = "managed-coder";
+  const children: object[] = [];
+  const roles = ["worker", "fixer", "reviewer", "reviewer-security", "writer", "scout", "context-builder", "oracle", "debugger"];
+  for (const [index, role] of roles.entries()) {
+    const n = index + 10;
+    const file = join(f.sessions, "--child--", `2026-01-01T00-00-00-000Z_${id(n)}.jsonl`);
+    f.native(file, id(n), [entry(n, 1)]);
+    const data = { ownerSessionId: id(2), ownerSessionFile: owner, childSessionId: id(n), launchId: id(n + 100), role, name: role, phase: "started", paneId: `pane-${n}`, cwd: f.cwd };
+    children.push(custom(n, "fleet-launch", data), custom(n + 100, "fleet-launch", { ...data, phase: "prompted" }));
+  }
+  const legacy = f.run(3, owner, id(2), [entry(3, 3)]);
+  f.native(owner, id(2), [entry(2, 2), ...children, legacy.record]);
+  const result = (await report(f, true)).report;
+  assert.equal(result.total, 15);
+  assert.equal(result.contributions, 12);
+  assert.equal(result.nodes.filter((n: { kind: string }) => n.kind === "pane").length, 10);
+  assert.equal(result.nodes.find((n: { id: string }) => n.id === id(2)).subtree, 14);
+  assert.equal(result.flags.includes("incomplete"), false);
+});
+
 test("workstream command and tool count root, pane and continued headless usage once; compact first, full inspectable", async () => {
   const f = fixture();
   const pane = f.pane(2, [entry(2, 2)]);

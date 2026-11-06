@@ -39,7 +39,7 @@ The config half is one person's choices, but pieces of it stand alone. The
 catalog is `manifest.json`'s `about` map — one entry per shipped file:
 
 - `does` — what the file does.
-- `needs` — what it needs: installed tools (`herdr`, `pr-watch`, `pi-subagents`,
+- `needs` — what it needs: installed tools (`herdr`, `pr-watch`, `pi-intercom`,
   the Cloudflare gateway) or another catalog path. A file with no `needs`
   stands alone.
 - `personal: true` — my own choices (models, gateway, rules, repo paths), not
@@ -101,13 +101,15 @@ annotations. Run it while the agent is idle; `/recap cancel` stops only the reca
 
 ## Cost reports
 
-`/costs [days]` keeps the per-model subagent medians. `/costs workstream`
+`/costs [days]` shows per-model medians from **legacy headless-run history**.
+Native leaf efforts come from `agent/configs/session-roles.json`, not this table.
+`/costs workstream`
 shows the calling session's own estimate, grouped root-owned headless work,
 and each recorded pane's own and subtree estimates. The total counts native
 contributions once across all branches, continuations and folded usage.
 Subtree includes own spend. Do not add them together.
 
-Use `/costs workstream full` for the run tree, run IDs, activity and coverage
+Use `/costs workstream full` for the ownership tree, native/legacy IDs, activity and coverage
 diagnostics. The model-facing counterpart is
 `agent_costs({mode: "workstream", full: true})`; omit `full` for the compact view.
 `agent_costs({days: 7})` retains the per-model table.
@@ -128,119 +130,158 @@ Herdr activity uses an asynchronous read-only agent list matched to native
 identity and recorded pane. Ready means ready for input, not completed work.
 These are recorded cost estimates. Spending remains uncapped.
 
-## Managed code workflow
+## Native delivery workflow
 
-Pi >=1.5.0 and the `tribble/pi-subagents` source pin in
-[`agent/settings.json`](agent/settings.json) are required for explicit child thinking.
-The fork is 0.52.16 plus the child-thinking commit; released 0.52.16 lacks this field.
-Restart Pi to change SDK versions;
-`/reload` does not upgrade the host. A CLI version alone does not prove child SDK identity.
+A responsive project Coordinator launches multiple independent delivery-owner mains
+concurrently in separate fresh native Herdr task trees. Each owner (`managed-coder`)
+launches sequential native worker and fresh reviewer leaves. The owner triggers review,
+returns valid fixes, adjudicates findings and reports decisions/results.
+Neither main writes code. Herdr owns all processes/panes/lifecycle.
+Standalone [pi-intercom](https://github.com/nicobailon/pi-intercom) owns messaging.
 
-Any full session can own a delivery. The parent creates a fresh native herdr worktree,
-verifies the returned repository/path/base, then launches a bounded **main** Coder:
+Pi >=1.5.0 and the immutable standalone pin in
+[`agent/settings.json`](agent/settings.json) are required. Never load both Intercom
+extensions. Restart Pi to change SDK versions.
+Read the applied `<agent-dir>/configs/managed-code-workflow.md` first.
+Pi's `getAgentDir()` resolves nonempty `PI_CODING_AGENT_DIR` with Pi's path expansion,
+otherwise `~/.pi/agent`. The [repository recipe](agent/configs/managed-code-workflow.md)
+does not replace a missing applied recipe. Pawprint uses `origin/main` and
+`/Users/pantera/work/pawprint-<branch>`. Herdr does not fetch.
+
+The parent creates and verifies a fresh native task tree, then launches its owner:
 
 ```js
 launch_agent({
-  name: "delivery-coder",
+  name: "delivery-owner",
   role: "managed-coder",
-  cwd: "/verified/path/from/native/herdr/receipt",
-  task: "Owner outcome:\n<verbatim ask>\n\n<bounded delivery and assigned cwd>"
+  cwd: "/verified/native/task/tree",
+  task: "Owner outcome:\n<verbatim ask>\n\n<bounded delivery and acceptance>"
 });
 ```
 
-Read the applied `<agent-dir>/configs/managed-code-workflow.md` first. Pi's
-`getAgentDir()` uses nonempty `PI_CODING_AGENT_DIR` with Pi's path expansion,
-otherwise `~/.pi/agent`. The [repository recipe](agent/configs/managed-code-workflow.md)
-is the source, not a substitute for a missing applied recipe. Pawprint uses
-`origin/main` and `/Users/pantera/work/pawprint-<branch>`; Herdr does not fetch.
+The owner uses `launch_agent({name,role:"worker",cwd,task})`, then fresh
+`reviewer` and separate `reviewer-security` leaves for risky changes.
+[Profiles](agent/configs/session-roles.json) supply qualified model, native effort,
+instruction file and the complete selected contract in the actual prompt.
+Sol workers use high, trivial-configuration fixers low, Opus reviewers xhigh.
+Writer/scout/context-builder use medium and oracle/debugger high.
+No fallback model, parent-effort change or reviewer tool mask is used.
+Read-only roles are prompt contracts, not a sandbox.
 
-The bounded Coder delegates sequential implementation to
-`cloudflare-ai-gateway/gpt-6.1-sol`, then independent fresh review to
-`cloudflare-ai-gateway/claude-opus-5-5`. Risky changes also get fresh security review.
-Adjudication stays in that Coder, outside the human-facing parent's context.
-It allows at most three implementation/review rounds. Existing participants do not
-recursively wrap. Only trivial configuration bypasses the code flow; read-only and
-non-code work use the role contracts in [delegation.md](agent/configs/delegation.md).
+Code leaves require the owner's original admission record, current native UUID/file/pane
+and same linked task tree. The original full main of an isolated successful fixer/writer
+delivery may also launch reviewer/security leaves there after verified actor/command closure;
+workers still require a managed owner. They create no second worktree or persistent writer claim.
+The launcher reuses the admission lock and refuses legacy claims, unknown occupants
+and uncertain replay. Only the owner starts the next leaf after prior actor/command closure.
+Leaves cannot launch actors or trigger review.
 
-Headless calls use `delegate({prompt,name,cwd,model,thinking,context:"fresh"})`. Put the
-complete role and every verbatim Owner outcome in the prompt. Pass a qualified model
-in `model` and explicit role effort in the independent `thinking` field:
-worker/oracle/debugger `high`; fixer `low`; reviewer/security reviewer `xhigh`;
-quick small low-risk review `medium`; scout/context-builder/writer `medium`.
-Names do not load profiles. Omitting `thinking` still inherits parent effort upstream,
-so our calls must supply it. Saved continuations retain child effort.
-Do not change parent thinking or append model suffixes to set child effort.
-Pi clamps effort to model capabilities; a requested value is not proof of effective effort.
-There are no fallback catalogs or reviewer tool masks.
-Read-only review is a prompt contract, not a sandbox.
+Non-code writer/scout/context-builder/oracle/debugger roles use the native launcher
+with explicit assigned cwd. Writer and trivial-configuration fixer need an unclaimed
+linked task tree. Fixer can bypass a managed Coder through the same admission gate.
+Read-only roles can use their assigned directory without a managed wrapper.
+See [delegation](agent/configs/delegation.md) for contracts and continuation commands.
 
-Delegation is async. End the turn after launch and resume on completion.
-`agent_runs` supports list, inspect, continue and stop in the owning native main.
-Ordinary Intercom send/ask/reply handles decisions. No answer means blocked work.
-The parent handles continuation manually; there is no durable question ledger or
-automatic restart. Keep returned run/successor IDs and command exit evidence.
+Standalone Intercom routes by native session UUID through its supported identity hook.
+Renames keep it. Replacement changes it. Resume restores the saved UUID.
+Use `intercom status` and `list`, never a hash or workspace label.
+Supported actions are list, list-cwd, send, ask, reply, pending, status, cancel and handover.
+There is no bundled last/scope/per-message delivery/queueMode API.
+Busy delivery is global steer or human-first.
+Model `openProjectPaneIfMissing: true` calls are blocked, including nested codemode
+send/ask/handover. Explicit human slash commands are separate entrypoints.
 
-The launching parent owns scope, decisions, integrated acceptance, authorized
-publication and native cleanup. The bounded Coder reports owned actor/command
-closure and remains idle for parent shutdown. Review completion, an idle pane,
-a terminal result or a Stop receipt does not prove detached descendants closed.
-Unknown actors or identities mean keep the tree. Preserve ignored evidence before
-authorized non-force native removal. Native receipt and process/run records are
-authoritative; a child-editable plan only indexes them.
+End turns after launch and receive reports through Intercom.
+Inspect with `herdr agent get <recorded-pane>` and
+`herdr agent read <recorded-pane> --source recent-unwrapped --lines 120`.
+Immediately before any native prompt or close, run `herdr agent get <recorded-pane>`
+and require its session UUID to match the original recorded UUID. Missing or mismatched
+identity stops the action. Continue a settled verified owned session with `herdr agent prompt` carrying
+the verbatim Owner outcome. No answer blocks dependent work.
+An uncertain start or task submission may already have taken effect. Inspect before recovery.
 
-## Native pane roles and legacy claims
+The parent owns integrated acceptance, authorized publication and cleanup.
+After verified settlement and command/descendant exits, close the recorded owned pane
+with `herdr pane close <recorded-pane>` and inspect native state afterward.
+After review, close the reviewer and launch a fresh worker for fixes; the previous worker
+is already closed. Busy-stop safety is unproven.
+A completed report, idle label or pane-close receipt does not prove detached descendants exited.
+Preserve original native receipts and process/command exits.
+Preserve ignored evidence before authorized non-force native removal.
 
-`herdr-fleet` reads `configs/session-roles.json` at launch time. Coordinator,
-full-workstream Coder and bounded managed Coder select a qualified model, native
-thinking and prompt instruction file. All currently use Astra/high. Role contents
-are passed through native `--append-system-prompt`; this does not change defaultModel.
-Explicit append flags replace native APPEND_SYSTEM.md discovery.
+### Main roles and legacy claims
 
-`managed-coder` requires an existing native linked cwd and rejects base. It creates
-its no-focus tab in the unique native workspace whose canonical checkout and
-repository identity match that tree. Missing, ambiguous or inconsistent workspace
-metadata stops launch before any tab is created. It creates no worktree or
-persistent writer claim. The existing admission gate prevents
-concurrent admission and rejects legacy claims and observed same-tree occupants.
-A prior recorded same-parent managed launch prevents replay into that tree.
-Herdr owns creation/removal. Never repurpose a claimed or narrowly assigned pane tree.
-
-Existing `role:"coder"` and `role:"coordinator"` pane APIs remain available for
-substantial independent workstream ownership. Legacy Coder defaults to a fresh linked
-checkout from committed HEAD, or base; explicit cwd admits exactly a linked tree.
-Never combine cwd/base. Coordinator keeps directory behavior and rejects base.
-The direct unclaimed parent may plan beside its single Coder. Claims bind canonical
-Git admin directory, native UUID and canonical parent session-file path. Copied or
-moved sessions do not adopt ownership. Workspace grouping does not imply ownership.
-
-Human shortcuts:
+Coordinator, full-workstream Coder and managed Coder retain Astra/high.
+Legacy `role:"coder"` and `role:"coordinator"` APIs remain available.
+Legacy Coder creates a linked tree from committed HEAD or base, or admits explicit cwd.
+Coordinator keeps directory behavior and rejects base.
+Managed Coder requires an existing native linked cwd and the unique matching workspace.
+It creates neither worktree nor persistent writer claim.
+A recorded earlier managed launch prevents same-parent replay into that tree.
 
 ```text
 /delegate --role managed-coder --cwd "/native/task/tree" <name> <task>
-/delegate [--base origin/main | --cwd "/linked/tree"] <name> <task>
-/delegate --role coordinator <name> <task>
+/delegate --role worker --cwd "/same/admitted/tree" <name> <task>
+/delegate --role reviewer --cwd "/same/admitted/tree" <name> <task>
+/delegate --role scout --cwd "/assigned/directory" <name> <task>
 /release-worktree "/path/to/legacy/pre-pane-failure"
 /ws [--no-approve] [repo|dir] <purpose>
 ```
 
-Pane delegation is delegated-only. Legacy Coder and Coordinator open a no-focus tab
-in the current workspace. Managed Coder uses the native worktree workspace above.
-It retains parent provenance and delivers to the returned native pane. Human /ws
-starts a focused interactive Coordinator. Children inherit the configured agent
-directory. Both new Intercom lineage variables and the old child marker block pane
-launches, including cached tools and command paths; no lineage is cleared.
+Human /ws starts a focused interactive Coordinator.
+Delegated mains and leaves use no-focus tabs and inherit the agent directory.
+The native leaf marker and legacy child lineage block actor launches,
+including cached tools and command paths. No lineage is cleared.
 
-Native unresolved project trust stops delivery. A human must choose trust, or the
-caller explicitly opts out with noProjectResources/--no-approve. Never answer trust
-or auth prompts automatically. An uncertain start or task submission may already
-have taken effect: inspect the returned pane and saved identity, never retry blindly.
+Native unresolved trust requires human action or explicit noProjectResources/--no-approve.
+Never answer trust/auth prompts automatically.
+Legacy claims bind native UUID and canonical parent file. Only that owner may release
+a recorded pre-pane failure. Any pane/start attempt or uncertain identity keeps the claim.
+Release removes only the claim, never Git state. No stale reclaim or launcher cleanup.
 
-Legacy claims survive child exit, cancellation and uncertain delivery. Only the
-UUID/file-bound owner may release a recorded pre-pane failure through release_worktree.
-Any pane/start attempt or uncertain identity keeps the claim. Post-start reconciliation
-is not added here. Release is serialized with admission and removes only the claim,
-never a checkout or branch. No age-based reclaim, manual attestation or launcher-driven
-cleanup; the parent still runs verified completion cleanup itself.
+Before live cutover, migrate PR companions to the standalone client and re-register
+tracked PRs against their standalone IDs. Old broker targets cannot reach standalone peers.
+Preserve saved child histories and verify the live transition before removing any old clone.
+
+## PR helper CLIs
+
+Normal `setup.sh --apply` and `--all` copy `scripts/pr-note` and `scripts/pr-steer`
+to `~/.local/bin` with executable permissions, after package installation. Add that
+directory to PATH. Symlinked and hardlinked destinations are refused. `--only`,
+`--config-only`, `--dry-run` and alternate targets do not install helpers.
+
+The helpers use the installed pinned standalone client's own `tsx` loader.
+Its default location is `<agent-dir>/git/github.com/nicobailon/pi-intercom`;
+`PI_CODING_AGENT_DIR` selects the agent directory and `PI_INTERCOM_HOME` can select
+a custom standalone installation. No bundled client is loaded.
+
+`pr-note --list` lists live recipients. `pr-note --resolve <exact-name>` returns
+an ID and refuses ambiguous names. `pr-steer --to <ID> --body <text>` sends watcher
+updates; `pr-note --help` documents editor notes, JSON input and recipient precedence.
+Both helpers preflight the exact ID against connected sessions before sending.
+Broker delivery is not proof that the recipient acted on the message.
+An owner and its native leaf can share cwd. Directory inference then refuses ambiguity;
+use `--to <UUID>` or existing recorded PR ownership. Recipient precedence is unchanged.
+
+### Coordinated migration
+
+Keep pawprint before standalone Intercom in the package list so the native UUID
+identity claim wins over stable-ID environment/config sentinels. Never load both
+Intercom extensions. A floating pawprint update can update the launcher before
+settings and helpers: coordinate publication and apply as one parent-owned rollout.
+
+Before rollout, verify an isolated source-loaded native hierarchy with authenticated
+models, UUID identity, sequential worker/fresh-review closure and real helper delivery.
+Also verify the model auto-project-pane guard is active in the loaded candidate.
+Compare configured broker socket/PID namespaces first. Bundled defaults use the OS temp
+namespace (`/tmp/pi-intercom-<uid>` on this Mac); standalone defaults use
+`<agent-dir>/intercom`. These are disjoint here. Do not kill or clean up a broker on an
+assumed collision. Disjoint sessions and helpers cannot message each other.
+Retain old clones and saved histories until loaded sessions and continuations are
+accounted for. `/reload` neither upgrades the SDK nor migrates saved child bindings.
+After apply, start fresh sessions and re-register every watched PR with its verified
+new standalone UUID using `pr-watch track owner/repo#N --agent <UUID>`.
+Verify delivery to that recorded recipient. Watcher polling is unchanged.
 
 ## Fresh machine (mine)
 
@@ -256,8 +297,8 @@ git clone git@github.com:tribble/pawprint.git ~/work/pawprint
 pin; pi via npm if no `pi` exists yet), then applies the print onto
 `~/.pi/agent`, a **plain directory** (never a git worktree), then installs
 every package the applied `settings.json` declares (native `pi install
-<source> --no-approve` each, in order), then runs the rest of the machine
-machinery.
+<source> --no-approve` each, in order), installs the PR helper CLIs, then runs
+the rest of the machine machinery.
 Source-only files copy from the checkout; `settings.json`/`mcp.json` merge
 field-aware: source
 values win per key, runtime-owned (changelog stamp, device id) and unmanaged
@@ -272,14 +313,15 @@ any target/source path is refused outright — use an absolute path without
 `..` — and a newline in a target is refused (it would silently truncate the
 path).
 Re-runs are idempotent. `setup.sh --apply` is the apply plus the package
-installs; it never bootstraps, so it preflights pi's required modules and
+and PR helper installs; it never bootstraps, so it preflights pi's required modules and
 exports before any managed write and refuses if they are missing. A failed
 install exits nonzero naming the failed source, the config stays applied, and
 the printed retry preserves the original mode — `--all` after a failed `--all`
 (the remaining machine setup still runs), `--apply` after a failed `--apply`.
 `--dry-run`
 prints the plan and writes nothing — it needs no pi installation or bootstrap
-(bash and jq are still required); `--config-only` or a non-default `--target` skips the package installs and the machine machinery.
+(bash and jq are still required); `--config-only` or a non-default `--target` skips
+package/helper installs and the machine machinery.
 
 The machine machinery after the apply (skipped under `--dry-run` / `--config-only` /
 non-default target): agent-browser via npm, ghostty config
@@ -459,7 +501,7 @@ worktree/review/commit flow, then deploys and independently verifies both the
 saved source and the live install state. Apply replaces the live `packages`
 array wholesale with the source's, so a live-only `pi install`/`pi remove` is
 overwritten by the next apply (old clone files stay on disk) unless authored
-in source first. Before bumping `pi-subagents`, see the pin note in
+in source first. Before bumping `pi-intercom`, see the pin note in
 `agent/AGENTS.md`.
 
 Something pi/mcp wrote into the live config just stays there — apply never

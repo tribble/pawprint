@@ -15,6 +15,9 @@ process.env.HERDR_PANE_ID = "wT:p1";
 delete process.env.PI_SUBAGENT_CHILD;
 delete process.env.PI_INTERCOM_ROOT_SESSION_ID;
 delete process.env.PI_INTERCOM_PARENT_SESSION_ID;
+delete process.env.PAWPRINT_FLEET_LEAF;
+delete process.env.PI_INTERCOM_SESSION_ID;
+delete process.env.PAWPRINT_FLEET_PARENT_FILE;
 const task = "Owner outcome:\nKeep source work intact.\n";
 const launch = (parent: ReturnType<typeof fleetParent>, params: Record<string, unknown> = {}) =>
   parent.pi.tools.launch_agent.execute("launch", { name: "lead", task, ...params }, undefined, undefined, parent.ctx);
@@ -40,6 +43,210 @@ function managedParent(source: string, cwd: string) {
   });
   return parent;
 }
+
+async function deliveryOwner() {
+  const { source, cwd } = linked();
+  const parent = managedParent(source, cwd);
+  herdrFleet(parent.pi);
+  const admitted = await launch(parent, { role: "managed-coder", cwd });
+  const owner = fleetParent(cwd, admitted.details.childSessionId);
+  const nativeOwner = parent.roster.at(-1);
+  assert.ok(nativeOwner);
+  const nativeFile = (nativeOwner.agent_session as { value: string }).value;
+  owner.roster[0] = { ...nativeOwner };
+  owner.workspaces.push(...parent.workspaces);
+  owner.ctx.sessionManager.getSessionFile = () => nativeFile;
+  process.env.HERDR_PANE_ID = "wN:p2";
+  process.env.PAWPRINT_FLEET_PARENT_FILE = parent.ctx.sessionManager.getSessionFile();
+  return { parent, owner, cwd };
+}
+
+test("native delivery owner launches sequential fresh code leaves in its admitted tree", async () => {
+  try {
+    const { owner, cwd } = await deliveryOwner();
+    herdrFleet(owner.pi);
+    for (const [role, model, thinking] of [
+      ["worker", "cloudflare-ai-gateway/gpt-6.1-sol", "high"],
+      ["fixer", "cloudflare-ai-gateway/gpt-6.1-sol", "low"],
+      ["reviewer", "cloudflare-ai-gateway/claude-opus-5-5", "xhigh"],
+      ["reviewer-security", "cloudflare-ai-gateway/claude-opus-5-5", "xhigh"],
+    ]) {
+      const result = await launch(owner, { name: role, role, cwd });
+      const start = owner.pi.execCalls.findLast((call: string[]) => call[0] === "herdr" && call[2] === "start");
+      assert.equal(start[start.indexOf("--model") + 1], model);
+      assert.equal(start[start.indexOf("--thinking") + 1], thinking);
+      assert.equal(result.details.cwd, cwd);
+      assert.equal(result.details.parent, owner.ctx.sessionManager.getSessionId());
+      assert.equal(result.details.claimPath, undefined);
+      const prompt = owner.pi.execCalls.findLast((call: string[]) => call[0] === "herdr" && call[2] === "prompt")[4];
+      assert.ok(prompt.startsWith(task));
+      assert.match(prompt, /Remain idle/);
+      const tab = owner.pi.execCalls.findLast((call: string[]) => call[0] === "herdr" && call[1] === "tab");
+      assert.ok(tab.includes("PAWPRINT_FLEET_LEAF=1"));
+      assert.notEqual(result.details.childSessionId, owner.ctx.sessionManager.getSessionId());
+      await assert.rejects(() => launch(owner, { name: "duplicate", role, cwd }), /occupied|still live/i);
+      owner.roster.length = 1;
+    }
+    assert.equal(owner.pi.execCalls.some((call: string[]) => call.includes("add") && call.includes("worktree")), false);
+    assert.equal(existsSync(join(git(cwd, "rev-parse", "--absolute-git-dir"), "pawprint-writer.json")), false);
+  } finally {
+    process.env.HERDR_PANE_ID = "wT:p1";
+    delete process.env.PAWPRINT_FLEET_PARENT_FILE;
+  }
+});
+
+test("code leaves refuse unowned, mismatched, occupied or uncertain admission before a second pane", async () => {
+  for (const refusal of ["unowned", "identity", "copied-session", "cwd", "occupied", "uncertain"]) {
+    try {
+      const { owner, cwd } = await deliveryOwner();
+      if (refusal === "unowned") delete process.env.PAWPRINT_FLEET_PARENT_FILE;
+      if (refusal === "identity") owner.roster[0].agent_session = { kind: "id", value: "somebody-else" };
+      if (refusal === "copied-session") {
+        const copy = join(cwd, "copied-parent.jsonl");
+        writeFileSync(copy, readFileSync(owner.ctx.sessionManager.getSessionFile()));
+        owner.ctx.sessionManager.getSessionFile = () => copy;
+      }
+      if (refusal === "occupied") owner.roster.push({ pane_id: "wN:p9", cwd, name: "unknown" });
+      herdrFleet(owner.pi);
+      if (refusal === "uncertain") {
+        const exec = owner.pi.execImpl;
+        owner.pi.execImpl = (cmd: string, args: string[]) => cmd === "herdr" && args[1] === "start"
+          ? Promise.resolve({ code: 1, stdout: "", stderr: "agent_not_ready", killed: false }) : exec(cmd, args);
+        await assert.rejects(() => launch(owner, { role: "worker", cwd }), /agent_not_ready/);
+        owner.roster.length = 1;
+      }
+      const before = paneMutations(owner).length;
+      await assert.rejects(() => launch(owner, { role: "worker", cwd: refusal === "cwd" ? linked().cwd : cwd }),
+        /admission|identity|same.*tree|occupied|uncertain/i);
+      assert.equal(paneMutations(owner).length, before);
+    } finally {
+      process.env.HERDR_PANE_ID = "wT:p1";
+      delete process.env.PAWPRINT_FLEET_PARENT_FILE;
+    }
+  }
+});
+
+test("uncertain leaves keep unknown ownership global and scope only verified recorded trees", async (t) => {
+  for (const scenario of ["same-tree", "unrelated-tree", "missing-key", "invalid-key", "mismatched-key", "mismatched-cwd", "missing-owner", "foreign-owner", "copied-file", "scout-without-key"]) {
+    await t.test(scenario, async () => {
+      const { source, cwd, dir } = linked();
+      const other = join(dir, "other");
+      git(source, "worktree", "add", "-q", "-b", "other", other);
+      const parent = fleetParent(source);
+      herdrFleet(parent.pi);
+      const exec = parent.pi.execImpl;
+      parent.pi.execImpl = (cmd: string, args: string[]) => cmd === "herdr" && args[1] === "start"
+        ? Promise.resolve({ code: 1, stdout: "", stderr: "agent_not_ready", killed: false }) : exec(cmd, args);
+      await assert.rejects(() => launch(parent, { role: scenario === "scout-without-key" ? "scout" : "fixer", cwd }), /agent_not_ready/);
+      parent.pi.execImpl = exec;
+      for (const entry of parent.pi.state.entries as { data: Record<string, unknown> }[]) {
+        if (scenario === "missing-key") delete entry.data.worktreeKey;
+        if (scenario === "invalid-key") entry.data.worktreeKey = "not-a-recorded-tree";
+        if (scenario === "mismatched-key") entry.data.worktreeKey = git(source, "rev-parse", "--absolute-git-dir");
+        if (scenario === "mismatched-cwd") entry.data.cwd = other;
+        if (scenario === "missing-owner") delete entry.data.ownerSessionFile;
+        if (scenario === "foreign-owner") entry.data.ownerSessionId = "foreign-owner";
+      }
+      if (scenario === "copied-file") {
+        const copy = join(dir, "copied-parent.jsonl");
+        writeFileSync(copy, readFileSync(parent.ctx.sessionManager.getSessionFile()));
+        parent.ctx.sessionManager.getSessionFile = () => copy;
+      }
+      const before = paneMutations(parent).length;
+      if (scenario === "unrelated-tree") {
+        const result = await launch(parent, { role: "fixer", cwd: other });
+        assert.equal(result.details.cwd, realpathSync.native(other));
+      } else {
+        await assert.rejects(() => launch(parent, { role: "fixer", cwd: scenario === "same-tree" ? cwd : other }), /uncertain leaf launch/);
+        assert.equal(paneMutations(parent).length, before);
+      }
+    });
+  }
+});
+
+test("configuration and non-code leaves use native profiles and their venue without a code wrapper", async () => {
+  const { cwd } = linked();
+  const owner = fleetParent(cwd);
+  herdrFleet(owner.pi);
+  for (const [role, model, thinking] of [
+    ["fixer", "gpt-6.1-sol", "low"],
+    ["writer", "claude-fable-5-1", "medium"],
+    ["scout", "claude-sonnet-5-5", "medium"],
+    ["context-builder", "claude-sonnet-5-5", "medium"],
+    ["oracle", "gpt-6.1-sol", "high"],
+    ["debugger", "gpt-6-astra", "high"],
+  ]) {
+    const result = await launch(owner, { role, cwd });
+    const start = owner.pi.execCalls.findLast((call: string[]) => call[0] === "herdr" && call[2] === "start");
+    assert.equal(start[start.indexOf("--model") + 1], `cloudflare-ai-gateway/${model}`);
+    assert.equal(start[start.indexOf("--thinking") + 1], thinking);
+    assert.equal(result.details.cwd, cwd);
+    assert.equal(result.details.claimPath, undefined);
+    const prompt = owner.pi.execCalls.findLast((call: string[]) => call[0] === "herdr" && call[2] === "prompt")[4];
+    assert.match(prompt, new RegExp(`${role}: `));
+    assert.match(prompt, /Do not|Read-only/);
+    owner.roster.length = 1;
+  }
+  assert.equal(owner.pi.execCalls.some((call: string[]) => call.includes("add") && call.includes("worktree")), false);
+});
+
+test("original isolated fixer and writer owners can request fresh review after parent-verified closure", async () => {
+  for (const role of ["fixer", "writer"]) {
+    const { source, cwd } = linked();
+    const parent = fleetParent(source);
+    herdrFleet(parent.pi);
+    await launch(parent, { role, cwd });
+    // The parent verified command exits separately; removing the roster is only native closure.
+    parent.roster.length = 1;
+    for (const review of ["reviewer", "reviewer-security"]) {
+      const result = await launch(parent, { role: review, cwd });
+      assert.equal(result.details.cwd, realpathSync.native(cwd));
+      assert.equal(result.details.parent, parent.ctx.sessionManager.getSessionId());
+      assert.equal(result.details.claimPath, undefined);
+      parent.roster.length = 1;
+    }
+    parent.pi.events.on("pi-change-working-dir:resolve-execution-cwd", (request: { result?: { cwd: string } }) => { request.result = { cwd }; });
+    await assert.rejects(() => launch(parent, { role: "worker", cwd }), /Code leaf admission requires/);
+  }
+});
+
+test("isolated review refuses unrelated or copied owners, live actors, uncertain starts and leaf recursion", async () => {
+  for (const refusal of ["unrelated", "copied", "native-identity", "occupied", "uncertain", "leaf", "tree"]) {
+    const { source, cwd } = linked();
+    const parent = fleetParent(source);
+    herdrFleet(parent.pi);
+    await launch(parent, { role: "fixer", cwd });
+    if (refusal !== "occupied") parent.roster.length = 1;
+    let caller = parent;
+    if (refusal === "unrelated") { caller = fleetParent(source, "unrelated-owner"); herdrFleet(caller.pi); }
+    if (refusal === "copied") {
+      const copy = join(cwd, "copied-session.jsonl");
+      writeFileSync(copy, readFileSync(parent.ctx.sessionManager.getSessionFile()));
+      parent.ctx.sessionManager.getSessionFile = () => copy;
+    }
+    if (refusal === "native-identity") parent.roster[0].agent_session = { kind: "id", value: "not-the-owner" };
+    if (refusal === "uncertain") {
+      const exec = parent.pi.execImpl;
+      parent.pi.execImpl = (cmd: string, args: string[]) => cmd === "herdr" && args[1] === "start"
+        ? Promise.resolve({ code: 1, stdout: "", stderr: "agent_not_ready", killed: false }) : exec(cmd, args);
+      await assert.rejects(() => launch(parent, { role: "fixer", cwd }), /agent_not_ready/);
+    }
+    if (refusal === "leaf") process.env.PAWPRINT_FLEET_LEAF = "1";
+    // Give fallback managed admission the correct execution tree: ownership refusals
+    // must not pass merely because the caller started from another directory.
+    caller.pi.events.on("pi-change-working-dir:resolve-execution-cwd", (request: { result?: { cwd: string } }) => { request.result = { cwd }; });
+    const expected: Record<string, RegExp> = {
+      unrelated: /Code leaf admission requires/, copied: /Code leaf admission requires/,
+      "native-identity": /native session-file identity/, occupied: /predecessor is still live/,
+      uncertain: /uncertain leaf launch/, leaf: /leaf/i, tree: /same admitted task tree/,
+    };
+    const before = paneMutations(caller).length;
+    try {
+      await assert.rejects(() => launch(caller, { role: "reviewer", cwd: refusal === "tree" ? linked().cwd : cwd }), expected[refusal]);
+      assert.equal(paneMutations(caller).length, before);
+    } finally { delete process.env.PAWPRINT_FLEET_LEAF; }
+  }
+});
 
 // Decision cases supply Git identity at pi.exec; paths, sessions and admission locks stay real.
 function identityLinked() {

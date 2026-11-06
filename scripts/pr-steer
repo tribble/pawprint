@@ -1,0 +1,118 @@
+#!/usr/bin/env node
+// pr-steer — one-shot fire-and-forget steer to a pi session over pi-intercom.
+// Used by pr-watch's tracked-PR feature (`pr-watch track ... --agent <session>`),
+// which always passes the agent's intercom session ID (agent_id in track.json).
+//
+// Adopted from pr-watch's pr-steer; maintained and installed by pawprint.
+// Uses the installed standalone pi-intercom client and its own TypeScript loader.
+
+import { existsSync } from "node:fs";
+import { createRequire } from "node:module";
+import { homedir } from "node:os";
+import { join, resolve } from "node:path";
+import { pathToFileURL } from "node:url";
+
+const PROG = "pr-steer";
+
+function usage() {
+  return `Usage: ${PROG} --to <intercom-session> --body <text>
+
+Sends <text> as a steer message to the pi session whose intercom ID (native UUID,
+stable across renames) is <intercom-session>. Names are not addresses: turn one
+into an ID first with \`pr-note --resolve <name>\`.
+Exit 0 when the broker accepted the message, 1 otherwise (unknown session,
+no broker, send rejected). Broker operations use the standalone client's bounded timeouts.`;
+}
+
+class CliError extends Error {}
+
+function fail(message) {
+  throw new CliError(message);
+}
+
+function resolveIntercomHome() {
+  const agent = process.env.PI_CODING_AGENT_DIR?.replace(/^~(?=\/|$)/, homedir()) || join(homedir(), ".pi/agent");
+  return process.env.PI_INTERCOM_HOME || join(resolve(agent), "git/github.com/nicobailon/pi-intercom");
+}
+
+async function loadIntercomClient() {
+  const home = resolveIntercomHome();
+  const clientPath = join(home, "broker/client.ts");
+  if (!existsSync(clientPath)) fail(`standalone pi-intercom client not found at ${clientPath} (set $PI_INTERCOM_HOME or apply pawprint)`);
+  try {
+    const require = createRequire(join(home, "package.json"));
+    const { tsImport } = await import(pathToFileURL(require.resolve("tsx/esm/api")).href);
+    const mod = await tsImport(pathToFileURL(clientPath).href, import.meta.url);
+    if (!mod.IntercomClient) fail(`${clientPath} has no IntercomClient export`);
+    return mod.IntercomClient;
+  } catch (error) {
+    fail(`failed to import standalone intercom client from ${clientPath}: ${error.message}`);
+  }
+}
+
+function parseArgs(argv) {
+  const out = {};
+  for (let i = 0; i < argv.length; i++) {
+    switch (argv[i]) {
+      case "--to":
+        out.to = argv[++i];
+        break;
+      case "--body":
+        out.body = argv[++i];
+        break;
+      case "-h":
+      case "--help":
+        console.log(usage());
+        process.exit(0);
+      default:
+        fail(`unknown argument: ${argv[i]}\n\n${usage()}`);
+    }
+  }
+  if (!out.to) fail(`missing --to <session>\n\n${usage()}`);
+  if (!out.body) fail(`missing --body <text>\n\n${usage()}`);
+  return out;
+}
+
+async function main() {
+  let client;
+  try {
+    const { to, body } = parseArgs(process.argv.slice(2));
+    const IntercomClient = await loadIntercomClient();
+    client = new IntercomClient();
+    try {
+      await client.connect({ name: `pr-steer-${process.pid}`, cwd: process.cwd(), model: "none", pid: process.pid, startedAt: Math.trunc(performance.timeOrigin), lastActivity: Date.now() });
+    } catch (error) {
+      fail(`could not connect to intercom broker: ${error.message}`);
+    }
+
+    const sessions = await client.listSessions();
+    const target = sessions.find((s) => s.id === to);
+    if (!target) {
+      fail(`no intercom session with id "${to}" is connected (names are not addresses: pr-note --resolve <name>)`);
+    }
+
+    const result = await client.send(target.id, { text: body });
+    const ok = result.delivered === true;
+    console.log(JSON.stringify({ ok, delivered: result.delivered === true, id: result.id }));
+    if (!ok) {
+      process.exitCode = 1;
+    }
+  } catch (error) {
+    if (error instanceof CliError) {
+      console.error(`${PROG}: ${error.message}`);
+    } else {
+      console.error(`${PROG}: unexpected error: ${error.stack || error.message}`);
+    }
+    process.exitCode = 1;
+  } finally {
+    if (client) {
+      try {
+        await client.disconnect();
+      } catch {
+        // best-effort cleanup
+      }
+    }
+  }
+}
+
+main();

@@ -330,6 +330,18 @@ else
     fi
   done <<< "$pkg_sources"
 fi
+# Helper CLIs are part of the print's normal apply, not the machine bootstrap.
+if [ "$dry" = 1 ] || [ "$imprint_only" = 1 ] || [ "$target" != "$HOME/.pi/agent" ]; then
+  echo "PR helper installation: SKIPPED (dry-run / --config-only / non-default target)"
+else
+  for helper in pr-note pr-steer; do
+    guard_path "$PWD/scripts" "$PWD/scripts/$helper" "$helper"
+    guard_path "$HOME" "$HOME/.local/bin/$helper" "$helper"
+    run mkdir -p "$HOME/.local/bin"
+    run install -m 755 "$PWD/scripts/$helper" "$HOME/.local/bin/$helper"
+    echo "installed:    $HOME/.local/bin/$helper"
+  done
+fi
 if [ "$apply" = 1 ]; then
   echo
   echo "machine machinery: SKIPPED (--apply)"

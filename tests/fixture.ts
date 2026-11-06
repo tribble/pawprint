@@ -66,6 +66,6 @@ export function setupAll(repo: string, live: string, extra: string[] = [], env =
   // settings writer's pi-package resolution.
   return spawnSync("bash", [join(repo, "setup.sh"), "--all", "--config-only", "--target", join(live, "agent"), ...extra], {
     encoding: "utf8",
-    env: { ...env, PAWPRINT_PI_PKG: piPackageDir() },
+    env: { ...env, HOME: env.HOME === process.env.HOME ? mktmp("setup-home") : env.HOME, PATH: env.PATH === process.env.PATH ? `${dirname(process.execPath)}:${env.PATH}` : env.PATH, PAWPRINT_PI_PKG: piPackageDir() },
   });
 }
