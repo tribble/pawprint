@@ -15,7 +15,6 @@
 !scripts/
 !scripts/validate.sh
 !scripts/sync-forks.sh
-!scripts/patch-pi-anthropic-gateway
 !scripts/compare.ts
 !scripts/apply-config.ts
 !manifest.json
