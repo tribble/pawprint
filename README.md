@@ -391,21 +391,6 @@ Drift repair is `setup.sh --apply`. To keep a value pi wrote live (a UI-toggled
 preference), copy it into the source repo first — apply leaves unmanaged live
 values alone either way.
 
-Cloudflare-routed Anthropic models failing with "credentials … expired" or
-"Credentials file not found"? Root cause is a stale Anthropic SDK profile in
-`~/.config/anthropic/` (left by `ant auth login`); the SDK auto-loads it because
-pi passes `apiKey: null` for header-authenticated gateways. Preferred fix is
-`rm -r ~/.config/anthropic` — stock pi then works. Only if that profile must
-stay, apply the gateway patch (it does not survive `pi update`):
-
-```sh
-scripts/patch-pi-anthropic-gateway              # root from `mise which pi`
-scripts/patch-pi-anthropic-gateway --root PATH  # manual override
-```
-
-Idempotent (`patched:` / `already patched:` per file); it fails loudly and
-touches nothing if a future pi version changes the patched lines.
-
 ## Developing
 
 The repo has a dev side that never reaches `~/.pi` (only `agent/` content is
