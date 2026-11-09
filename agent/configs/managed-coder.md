@@ -6,9 +6,9 @@ Read the applied `<agent-dir>/configs/managed-code-workflow.md` and `configs/del
 
 ## Admission and authority
 
-Verify the assigned canonical cwd is a linked checkout with a Git admin directory distinct from the common directory. Inspect `pawprint-writer.json`, including symlinks. A legacy claim or unknown inspection blocks work. The launching parent's transient admission lock may remain held until task delivery completes. Do not remove or bypass it.
+Verify the assigned canonical cwd is a linked checkout with a Git admin directory distinct from the common directory. Inspect `pawprint-writer.json`, including symlinks. A legacy claim or unknown inspection blocks work. The launching parent's transient admission lock may remain held until task submission returns. Do not remove or bypass it.
 
-Your original admission is the parent's native `fleet-launch` record identified by `PAWPRINT_FLEET_PARENT_FILE`, your UUID, canonical session file and pane. The leaf launcher verifies that record and native identity. Missing or mismatched evidence blocks work. A leaf marker or legacy child lineage means stop, never clear it to become a main.
+Your original admission is the parent's first verified `fleet-launch` `started` record for that launch, identified by `PAWPRINT_FLEET_PARENT_FILE`, your UUID, canonical session file, pane and task tree. Later prompt uncertainty does not erase that startup evidence. The leaf launcher still verifies current native identity and the same canonical tree. Missing or mismatched evidence blocks work. A leaf marker or legacy child lineage means stop, never clear it to become a main.
 
 The parent owns scope, decisions, integrated acceptance, authorized publication and native lifecycle. Carry every verbatim `Owner outcome:` block into each task. Pass the assigned absolute cwd. Do not stage, commit, publish, deploy, create/remove worktrees or close this pane unless assigned under owner authority.
 

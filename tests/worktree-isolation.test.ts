@@ -44,12 +44,23 @@ function managedParent(source: string, cwd: string) {
   return parent;
 }
 
-async function deliveryOwner() {
+async function deliveryOwner(nativeError = "", failedPhase = "prompt") {
   const { source, cwd } = linked();
   const parent = managedParent(source, cwd);
+  if (nativeError) {
+    const exec = parent.pi.execImpl;
+    parent.pi.execImpl = async (cmd: string, args: string[]) => {
+      const result = await exec(cmd, args);
+      return cmd === "herdr" && args[1] === failedPhase
+        ? { code: 1, stdout: "", stderr: nativeError, killed: false } : result;
+    };
+  }
   herdrFleet(parent.pi);
-  const admitted = await launch(parent, { role: "managed-coder", cwd });
-  const owner = fleetParent(cwd, admitted.details.childSessionId);
+  const admission = launch(parent, { role: "managed-coder", cwd });
+  if (nativeError) await assert.rejects(admission, new RegExp(nativeError));
+  else await admission;
+  const record = parent.pi.state.entries.at(-1).data;
+  const owner = fleetParent(cwd, record.childSessionId);
   const nativeOwner = parent.roster.at(-1);
   assert.ok(nativeOwner);
   const nativeFile = (nativeOwner.agent_session as { value: string }).value;
@@ -60,6 +71,123 @@ async function deliveryOwner() {
   process.env.PAWPRINT_FLEET_PARENT_FILE = parent.ctx.sessionManager.getSessionFile();
   return { parent, owner, cwd };
 }
+
+test("launch acknowledges one PTY submission without requiring observed task activity", async () => {
+  const { source, cwd } = linked();
+  const parent = managedParent(source, cwd);
+  const exec = parent.pi.execImpl;
+  parent.pi.execImpl = async (cmd: string, args: string[]) => {
+    if (cmd === "herdr" && args[1] === "prompt") {
+      if (args.includes("--wait")) return { code: 1, stdout: "", stderr: "agent_prompt_stalled", killed: false };
+      // Herdr acknowledges PTY writes even when Pi has not consumed the task yet.
+      return { code: 0, stdout: JSON.stringify({ result: { agent: { ...parent.roster.at(-1) } } }), stderr: "", killed: false };
+    }
+    const result = await exec(cmd, args);
+    if (cmd === "herdr" && args[1] === "start") {
+      const child = parent.roster.at(-1);
+      assert.ok(child);
+      child.agent_status = "idle";
+    }
+    return result;
+  };
+  herdrFleet(parent.pi);
+  const result = await launch(parent, { role: "managed-coder", cwd });
+  assert.match(result.content[0].text, /PTY writes acknowledged/);
+  assert.match(result.content[0].text, /consumption and execution.*unverified/i);
+  const native = parent.pi.execCalls.filter((call: string[]) => call[0] === "herdr" && ["start", "get", "prompt"].includes(call[2]));
+  assert.deepEqual(native.map((call: string[]) => call[2]), ["start", "get", "prompt", "get"]);
+  assert.equal(native[2][4].startsWith(task), true);
+  const child = parent.roster.at(-1);
+  assert.ok(child);
+  assert.equal(existsSync((child.agent_session as { value: string }).value), false, "acknowledgement does not require a saved task");
+  assert.equal(parent.pi.state.entries.at(-1).data.phase, "prompted");
+});
+
+test("historical verified startup survives prompt uncertainty only for its original current owner", async (t) => {
+  for (const scenario of ["original", "changed-uncertain-binding", "no-start", "foreign-uuid", "copied-parent", "copied-owner", "tree", "native", "pane"]) {
+    await t.test(scenario, async () => {
+      try {
+        const error = scenario === "no-start" ? "agent_not_ready" : "agent_prompt_stalled";
+        const { parent, owner, cwd } = await deliveryOwner(error, scenario === "no-start" ? "start" : "prompt");
+        const parentFile = parent.ctx.sessionManager.getSessionFile();
+        const history = readFileSync(parentFile, "utf8").trim().split("\n").map((line: string) => JSON.parse(line));
+        const uncertain = history.at(-1);
+        assert.equal(uncertain.data.phase, "uncertain");
+        assert.match(uncertain.data.error, new RegExp(error));
+        if (scenario === "changed-uncertain-binding") {
+          Object.assign(uncertain.data, { childSessionId: "foreign", ownerSessionId: "foreign", ownerSessionFile: "/foreign",
+            cwd: "/foreign", worktreeKey: "/foreign", paneId: "foreign" });
+        }
+        if (scenario === "no-start") assert.equal(history.some((entry) => entry.data?.phase === "started"), false);
+        if (scenario === "foreign-uuid") {
+          owner.ctx.sessionManager.getSessionId = () => "foreign";
+          uncertain.data.childSessionId = "foreign";
+        }
+        writeFileSync(parentFile, history.map((entry) => JSON.stringify(entry)).join("\n") + "\n");
+        if (scenario === "copied-parent") {
+          const copy = join(cwd, "copied-parent.jsonl");
+          writeFileSync(copy, readFileSync(parentFile));
+          process.env.PAWPRINT_FLEET_PARENT_FILE = copy;
+        }
+        if (scenario === "copied-owner") {
+          const copy = join(cwd, "copied-owner.jsonl");
+          writeFileSync(copy, readFileSync(owner.ctx.sessionManager.getSessionFile()));
+          owner.ctx.sessionManager.getSessionFile = () => copy;
+        }
+        if (scenario === "native") owner.roster[0].agent_session = { kind: "id", value: "foreign" };
+        if (scenario === "pane") {
+          process.env.HERDR_PANE_ID = "wN:p9";
+          owner.roster[0].pane_id = "wN:p9";
+        }
+        const admittedCwd = scenario === "tree" ? linked().cwd : cwd;
+        if (scenario === "tree") owner.ctx.cwd = admittedCwd;
+        const before = readFileSync(parentFile, "utf8");
+        herdrFleet(owner.pi);
+        if (["original", "changed-uncertain-binding"].includes(scenario)) {
+          const worker = await launch(owner, { role: "worker", cwd });
+          assert.equal(worker.details.parent, owner.ctx.sessionManager.getSessionId());
+          assert.equal(worker.details.cwd, cwd);
+        } else {
+          await assert.rejects(() => launch(owner, { role: "worker", cwd: admittedCwd }),
+            scenario === "pane" ? /Code leaf admission does not match this native delivery owner and same task tree/ : /admission|identity|same.*tree/i);
+          assert.equal(paneMutations(owner).length, 0);
+        }
+        assert.equal(readFileSync(parentFile, "utf8"), before, "admission preserves original failure evidence");
+      } finally {
+        process.env.HERDR_PANE_ID = "wT:p1";
+        delete process.env.PAWPRINT_FLEET_PARENT_FILE;
+      }
+    });
+  }
+});
+
+test("fresh post-prompt native identity is required even when the acknowledgement returns the old snapshot", async (t) => {
+  for (const scenario of ["mismatch", "missing"]) {
+    await t.test(scenario, async () => {
+      const { source, cwd } = linked();
+      const parent = managedParent(source, cwd);
+      const exec = parent.pi.execImpl;
+      let submitted = false;
+      parent.pi.execImpl = async (cmd: string, args: string[]) => {
+        if (cmd === "herdr" && args[1] === "get" && submitted) return {
+          code: 0, stdout: JSON.stringify({ result: scenario === "missing" ? {} : { agent: { agent_session: { kind: "id", value: "foreign" } } } }),
+          stderr: "", killed: false,
+        };
+        const result = await exec(cmd, args);
+        if (cmd === "herdr" && args[1] === "prompt") {
+          submitted = true;
+          return { ...result, stdout: JSON.stringify({ result: { agent: { ...parent.roster.at(-1) } } }) };
+        }
+        return result;
+      };
+      herdrFleet(parent.pi);
+      await assert.rejects(() => launch(parent, { role: "managed-coder", cwd }), /Native child session identity.*missing or mismatched/);
+      assert.equal(paneMutations(parent).filter((call: string[]) => call[2] === "prompt").length, 1);
+      assert.deepEqual(parent.pi.state.entries.slice(-2).map((entry: { data: { phase: string } }) => entry.data.phase), ["started", "uncertain"]);
+      assert.match(parent.pi.state.entries.at(-1).data.error, /Native child session identity/);
+    });
+  }
+});
 
 test("native delivery owner launches sequential fresh code leaves in its admitted tree", async () => {
   try {

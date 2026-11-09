@@ -8,6 +8,8 @@ A project Coordinator stays responsive while multiple independent delivery-owner
 
 `launch_agent` reads qualified model, explicit effort and complete role contract from `configs/session-roles.json`. Names are labels, not profiles. Leave `defaultModel` unchanged. Every brief carries the verbatim `Owner outcome:` block and assigned absolute cwd.
 
+The launcher submits the task once without waiting for activity, then reads fresh native identity. A successful `prompted` record acknowledges ordered PTY writes, not Pi consumption or execution. Owner admission uses the original verified `started` event even after later prompt uncertainty. Current UUID/file/pane and canonical task-tree checks still apply. An uncertain start without verified startup grants no admission.
+
 ```js
 launch_agent({
   name: "implementation",
