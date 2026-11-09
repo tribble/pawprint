@@ -350,11 +350,12 @@ function verifyDeliveryOwner(ctx: ExtensionContext, tree: Worktree, agents: Flee
   for (const entry of entries) {
     if (entry.type === "custom" && entry.customType === "fleet-launch" && entry.data && typeof entry.data === "object") {
       const record = entry.data as LaunchRecord;
-      if (record.childSessionId === ctx.sessionManager.getSessionId()) launches.set(record.launchId, record);
+      // Admission comes from the original verified start, not later task-delivery state.
+      if (record.phase === "started" && !launches.has(record.launchId)) launches.set(record.launchId, record);
     }
   }
   const matches = [...launches.values()].filter((record) =>
-    record.role === "managed-coder" && ["started", "prompted"].includes(record.phase) &&
+    record.role === "managed-coder" && record.childSessionId === ctx.sessionManager.getSessionId() &&
     record.ownerSessionId === header?.id && record.ownerSessionFile === realpathSync.native(parentFile) &&
     record.worktreeKey === tree.key && realpathSync.native(record.cwd) === realpathSync.native(ctx.cwd) &&
     record.paneId === process.env.HERDR_PANE_ID);
@@ -546,8 +547,9 @@ async function launch(pi: ExtensionAPI, ctx: ExtensionContext, request: LaunchRe
     const native = await herdr(pi, ["agent", "get", paneId], signal) as { agent?: FleetAgent };
     verifySessionHeader(native.agent?.agent_session, record);
     save("started");
-    await agentOp(pi, ["agent", "prompt", paneId, `${task}\n\n${profile.contract ? `${role}: ${profile.contract}\n\n` : ""}${CONTRACT(parent, name, role)}`, "--wait", "--until", "working", "--timeout", "10000"], name, paneId, signal);
-    verifySessionHeader(native.agent?.agent_session, record);
+    await agentOp(pi, ["agent", "prompt", paneId, `${task}\n\n${profile.contract ? `${role}: ${profile.contract}\n\n` : ""}${CONTRACT(parent, name, role)}`], name, paneId, signal);
+    const afterPrompt = await herdr(pi, ["agent", "get", paneId], signal) as { agent?: FleetAgent };
+    verifySessionHeader(afterPrompt.agent?.agent_session, record);
     save("prompted");
     return { name, paneId, role, mode, cwd, sourceCwd, parent, model: profile.model, thinking: profile.thinking,
       ownerSessionId: record.ownerSessionId, ownerSessionFile: record.ownerSessionFile, childSessionId: record.childSessionId, launchId: record.launchId, branch: record.branch, base: record.base, baseCommit: record.baseCommit,
@@ -730,7 +732,7 @@ export default function herdrFleet(pi: ExtensionAPI) {
       try {
         const result = await launch(pi, ctx, parseDelegate(args), ctx.signal);
         ctx.ui.notify(
-          `🐑 ${result.name} delegated — ${result.role}/${result.mode}, ${result.model}/${result.thinking} in ${result.cwd}${result.branch ? `; branch ${result.branch}, base ${result.baseCommit}` : ""}; \`herdr agent focus ${result.name}\` to watch. Fresh Pi uses that directory's resources and project-trust checks.`,
+          `🐑 ${result.name} delegated — ${result.role}/${result.mode}, ${result.model}/${result.thinking} in ${result.cwd}${result.branch ? `; branch ${result.branch}, base ${result.baseCommit}` : ""}; \`herdr agent focus ${result.name}\` to watch. Task PTY writes acknowledged. Consumption and execution remain unverified. Fresh Pi uses that directory's resources and project-trust checks.`,
           "info"
         );
       } catch (e) {
@@ -753,6 +755,7 @@ export default function herdrFleet(pi: ExtensionAPI) {
       "launch_agent is delegated-only, retains parent provenance and requires the verbatim Owner outcome. Unresolved project trust requires human action; noProjectResources explicitly opts out.",
       "Isolate independent workstreams. Sequence work that depends on an unsettled API or migration. Coder parents need persistent native session files. Release only recorded pre-pane failures through release_worktree. Any pane/start attempt or uncertainty keeps the claim; completed Coder worktrees cannot be reassigned through this launcher yet. Post-start reconciliation/release is deferred. Release never cleans Git.",
       "Never retry launch_agent blindly after an uncertain start or delivery; inspect the returned pane first.",
+      "Task submission is sent once without waiting for activity. Success acknowledges PTY writes, not Pi consumption or execution. Original verified startup remains the admission evidence after delivery uncertainty; fresh native identity and same-tree checks still apply.",
     ],
     parameters: Type.Object({
       name: Type.String({ pattern: "^[a-z][a-z0-9_-]{0,31}$" }),
@@ -768,7 +771,7 @@ export default function herdrFleet(pi: ExtensionAPI) {
     async execute(_id, params, signal, _onUpdate, ctx) {
       const result = await launch(pi, ctx, params, signal);
       return {
-        content: [{ type: "text", text: `Launched ${result.name}: ${result.role}/${result.mode}, ${result.model}/${result.thinking}, pane ${result.paneId}, cwd ${result.cwd}, launch ${result.launchId}${result.branch ? `, branch ${result.branch}, base ${result.baseCommit}` : ""}.${result.base ? " Source edits were not transferred." : ""} Fresh Pi uses the resulting directory's resources and project-trust checks.` }],
+        content: [{ type: "text", text: `Launched ${result.name}: ${result.role}/${result.mode}, ${result.model}/${result.thinking}, pane ${result.paneId}, cwd ${result.cwd}, launch ${result.launchId}${result.branch ? `, branch ${result.branch}, base ${result.baseCommit}` : ""}.${result.base ? " Source edits were not transferred." : ""} Task PTY writes acknowledged. Consumption and execution remain unverified. Fresh Pi uses the resulting directory's resources and project-trust checks.` }],
         details: result,
       };
     },

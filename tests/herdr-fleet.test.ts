@@ -161,7 +161,7 @@ test("/delegate: tab in MY workspace → explicit profile → pane-targeted task
   assert.equal(start[start.indexOf("--thinking") + 1], "high");
   assert.match(readFileSync(start[start.indexOf("--append-system-prompt") + 1], "utf8"), /Coder/);
   const [prompt, ...rest] = calls(pi)[3].slice(4);
-  assert.deepEqual([calls(pi)[3].slice(0, 4), rest], [["herdr", "agent", "prompt", "wH:p2"], ["--wait", "--until", "working", "--timeout", "10000"]]);
+  assert.deepEqual([calls(pi)[3].slice(0, 4), rest], [["herdr", "agent", "prompt", "wH:p2"], []]);
   assert.ok(prompt.startsWith("Owner outcome: fix the flake\n\n"), prompt);
   assert.ok(!prompt.includes("Approved mock"), prompt);
   assert.ok(prompt.includes("Copy the `Owner outcome:` block unchanged into every subagent brief"), prompt);
