@@ -22,7 +22,9 @@ piece"). This file is for changing this repo.
   preflight, canonical repository/path/base checks, persistent parent identity,
   native launch/session/file/pane identities, acceptance, actor closure, claims, occupants,
   artifact preservation and authorized non-force cleanup. Pawprint's native creation is
-  `herdr worktree create --cwd /Users/pantera/work/pawprint --branch <branch> --base origin/main --path /Users/pantera/work/pawprint-<branch> --label <branch> --no-focus`.
+  `herdr worktree create --cwd /Users/pantera/work/pawprint --branch <branch> --base origin/main --path /Users/pantera/work/pawprint-worktrees/<branch> --label <branch> --no-focus`.
+  New pawprint task worktrees group under `~/work/pawprint-worktrees/<branch>`; the main checkout stays `~/work/pawprint`.
+  Existing worktrees stay where they are; cleanup follows each tree's recorded actual path.
   Delegate at the actual verified returned path. A responsive Coordinator owns a broad project and launches multiple concurrent independent
   delivery-owner mains. Each owner supervises sequential native workers and fresh reviewers.
   Neither main writes code; the owner triggers review and returns valid fixes. A Coordinator owns a broad project;
@@ -62,8 +64,9 @@ piece"). This file is for changing this repo.
   explicit native efforts and complete contracts in the actual prompt. Herdr owns lifecycle;
   standalone pi-intercom owns messaging. See `agent/configs/delegation.md`.
   Only trivial configuration or non-code work outside the code flow can use direct
-  `git -C ~/work/pawprint worktree add ~/work/pawprint-<branch> -b <branch> origin/main`.
-  Authorized direct-tree cleanup uses `git -C ~/work/pawprint worktree remove ~/work/pawprint-<branch>`
+  `git -C ~/work/pawprint worktree add ~/work/pawprint-worktrees/<branch> -b <branch> origin/main`.
+  Authorized direct-tree cleanup uses `git -C ~/work/pawprint worktree remove <recorded tree path>`
+  (`~/work/pawprint-worktrees/<branch>` for trees created under this convention)
   after the same actor/decision/claim/occupant/artifact checks in the shared recipe.
   Native cleanup also requires its fresh exact workspace identity check.
   An unexpected occupant is a reason to investigate before reporting cleanup blocked:

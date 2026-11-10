@@ -10,11 +10,11 @@ The launching parent owns scope, decisions, integrated acceptance, authorized pu
 
 Use Pi 1.5.0 or later and the immutable standalone pi-intercom pin in `settings.json`. Never load both Intercom extensions. Restart Pi to change SDK versions; `/reload` does not upgrade the host. Verify the actual leaf SDK, not merely CLI version. Use persistent native parent sessions. On launch/runtime failure preserve the exact error and native UUID/file/pane/command identities and stop. Do not implement inline or retry blindly.
 
-1. Inspect source status and the repository's authorized base/path policy. Refresh relevant Git state and resolve the immutable base immediately before creation. Confirm the branch is unused and the sibling path absent, including dangling symlinks and registered worktrees. Herdr does not fetch. Pawprint uses:
+1. Inspect source status and the repository's authorized base/path policy. Refresh relevant Git state and resolve the immutable base immediately before creation. Confirm the branch is unused and the target path absent, including dangling symlinks and registered worktrees. Herdr does not fetch. New pawprint task worktrees group under `/Users/pantera/work/pawprint-worktrees/<branch>`; the main checkout stays `/Users/pantera/work/pawprint`. Pawprint uses:
 
    ```sh
    herdr worktree create --cwd /Users/pantera/work/pawprint --branch <branch> \
-     --base origin/main --path /Users/pantera/work/pawprint-<branch> \
+     --base origin/main --path /Users/pantera/work/pawprint-worktrees/<branch> \
      --label <branch> --no-focus
    ```
 
