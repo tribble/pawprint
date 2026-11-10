@@ -17,7 +17,6 @@ delete process.env.PI_INTERCOM_ROOT_SESSION_ID;
 delete process.env.PI_INTERCOM_PARENT_SESSION_ID;
 delete process.env.PAWPRINT_FLEET_LEAF;
 delete process.env.PI_INTERCOM_SESSION_ID;
-delete process.env.PAWPRINT_FLEET_PARENT_FILE;
 const task = "Owner outcome:\nKeep source work intact.\n";
 const launch = (parent: ReturnType<typeof fleetParent>, params: Record<string, unknown> = {}) =>
   parent.pi.tools.launch_agent.execute("launch", { name: "lead", task, ...params }, undefined, undefined, parent.ctx);
@@ -32,8 +31,8 @@ function linked() {
 const paneMutations = (parent: ReturnType<typeof fleetParent>) => parent.pi.execCalls.filter((call: string[]) =>
   call[0] === "herdr" && (call[1] === "tab" || ["start", "prompt"].includes(call[2])));
 
-function managedParent(source: string, cwd: string) {
-  const parent = fleetParent(source);
+function managedParent(source: string, cwd: string, callerCwd = source) {
+  const parent = fleetParent(callerCwd);
   parent.workspaces.push({ workspace_id: "wT" }, {
     workspace_id: "wN",
     worktree: {
@@ -68,7 +67,6 @@ async function deliveryOwner(nativeError = "", failedPhase = "prompt") {
   owner.workspaces.push(...parent.workspaces);
   owner.ctx.sessionManager.getSessionFile = () => nativeFile;
   process.env.HERDR_PANE_ID = "wN:p2";
-  process.env.PAWPRINT_FLEET_PARENT_FILE = parent.ctx.sessionManager.getSessionFile();
   return { parent, owner, cwd };
 }
 
@@ -103,12 +101,12 @@ test("launch acknowledges one PTY submission without requiring observed task act
   assert.equal(parent.pi.state.entries.at(-1).data.phase, "prompted");
 });
 
-test("historical verified startup survives prompt uncertainty only for its original current owner", async (t) => {
-  for (const scenario of ["original", "changed-uncertain-binding", "no-start", "foreign-uuid", "copied-parent", "copied-owner", "tree", "native", "pane"]) {
+test("code-leaf admission follows current native identity, never the parent's launch history", async (t) => {
+  for (const scenario of ["original", "changed-uncertain-binding", "pane", "foreign-uuid", "copied-owner", "tree", "native"]) {
     await t.test(scenario, async () => {
       try {
-        const error = scenario === "no-start" ? "agent_not_ready" : "agent_prompt_stalled";
-        const { parent, owner, cwd } = await deliveryOwner(error, scenario === "no-start" ? "start" : "prompt");
+        const error = "agent_prompt_stalled";
+        const { parent, owner, cwd } = await deliveryOwner(error);
         const parentFile = parent.ctx.sessionManager.getSessionFile();
         const history = readFileSync(parentFile, "utf8").trim().split("\n").map((line: string) => JSON.parse(line));
         const uncertain = history.at(-1);
@@ -118,17 +116,11 @@ test("historical verified startup survives prompt uncertainty only for its origi
           Object.assign(uncertain.data, { childSessionId: "foreign", ownerSessionId: "foreign", ownerSessionFile: "/foreign",
             cwd: "/foreign", worktreeKey: "/foreign", paneId: "foreign" });
         }
-        if (scenario === "no-start") assert.equal(history.some((entry) => entry.data?.phase === "started"), false);
         if (scenario === "foreign-uuid") {
           owner.ctx.sessionManager.getSessionId = () => "foreign";
           uncertain.data.childSessionId = "foreign";
         }
         writeFileSync(parentFile, history.map((entry) => JSON.stringify(entry)).join("\n") + "\n");
-        if (scenario === "copied-parent") {
-          const copy = join(cwd, "copied-parent.jsonl");
-          writeFileSync(copy, readFileSync(parentFile));
-          process.env.PAWPRINT_FLEET_PARENT_FILE = copy;
-        }
         if (scenario === "copied-owner") {
           const copy = join(cwd, "copied-owner.jsonl");
           writeFileSync(copy, readFileSync(owner.ctx.sessionManager.getSessionFile()));
@@ -143,19 +135,17 @@ test("historical verified startup survives prompt uncertainty only for its origi
         if (scenario === "tree") owner.ctx.cwd = admittedCwd;
         const before = readFileSync(parentFile, "utf8");
         herdrFleet(owner.pi);
-        if (["original", "changed-uncertain-binding"].includes(scenario)) {
+        if (["original", "changed-uncertain-binding", "pane"].includes(scenario)) {
           const worker = await launch(owner, { role: "worker", cwd });
           assert.equal(worker.details.parent, owner.ctx.sessionManager.getSessionId());
           assert.equal(worker.details.cwd, cwd);
         } else {
-          await assert.rejects(() => launch(owner, { role: "worker", cwd: admittedCwd }),
-            scenario === "pane" ? /Code leaf admission does not match this native delivery owner and same task tree/ : /admission|identity|same.*tree/i);
+          await assert.rejects(() => launch(owner, { role: "worker", cwd: admittedCwd }), /identity|header|same.*tree/i);
           assert.equal(paneMutations(owner).length, 0);
         }
         assert.equal(readFileSync(parentFile, "utf8"), before, "admission preserves original failure evidence");
       } finally {
         process.env.HERDR_PANE_ID = "wT:p1";
-        delete process.env.PAWPRINT_FLEET_PARENT_FILE;
       }
     });
   }
@@ -219,7 +209,34 @@ test("native delivery owner launches sequential fresh code leaves in its admitte
     assert.equal(existsSync(join(git(cwd, "rev-parse", "--absolute-git-dir"), "pawprint-writer.json")), false);
   } finally {
     process.env.HERDR_PANE_ID = "wT:p1";
-    delete process.env.PAWPRINT_FLEET_PARENT_FILE;
+  }
+});
+
+test("a fresh replacement main continues its settled predecessor's tree without the original launch record", async () => {
+  try {
+    const { parent, owner, cwd } = await deliveryOwner();
+    herdrFleet(owner.pi);
+    await launch(owner, { role: "worker", cwd });
+    owner.roster.length = 1;
+    const parentFile = parent.ctx.sessionManager.getSessionFile();
+    const history = readFileSync(parentFile, "utf8");
+    const replacement = fleetParent(cwd, "replacement");
+    replacement.roster[0] = { ...replacement.roster[0], pane_id: "wN:p7", workspace_id: "wN" };
+    replacement.roster.push(owner.roster[0]);
+    replacement.workspaces.push(...parent.workspaces);
+    process.env.HERDR_PANE_ID = "wN:p7";
+    herdrFleet(replacement.pi);
+    await assert.rejects(() => launch(replacement, { role: "worker", cwd }), /occupied by lead/);
+    assert.equal(paneMutations(replacement).length, 0);
+    replacement.roster.length = 1;
+    const worker = await launch(replacement, { role: "worker", cwd });
+    assert.equal(worker.details.cwd, cwd);
+    assert.equal(worker.details.parent, "replacement");
+    const tab = replacement.pi.execCalls.find((call: string[]) => call[0] === "herdr" && call[1] === "tab");
+    assert.equal(tab[tab.indexOf("--workspace") + 1], "wN");
+    assert.equal(readFileSync(parentFile, "utf8"), history, "takeover leaves the predecessor's launch history untouched");
+  } finally {
+    process.env.HERDR_PANE_ID = "wT:p1";
   }
 });
 
@@ -258,7 +275,6 @@ test("review families select configured native models through both launch surfac
     }
   } finally {
     process.env.HERDR_PANE_ID = "wT:p1";
-    delete process.env.PAWPRINT_FLEET_PARENT_FILE;
   }
 });
 
@@ -303,15 +319,13 @@ test("invalid review families and missing configured choices fail before native 
   } finally {
     setAgentDir(sourceAgent);
     process.env.HERDR_PANE_ID = "wT:p1";
-    delete process.env.PAWPRINT_FLEET_PARENT_FILE;
   }
 });
 
-test("code leaves refuse unowned, mismatched, occupied or uncertain admission before a second pane", async () => {
-  for (const refusal of ["unowned", "identity", "copied-session", "cwd", "occupied", "uncertain"]) {
+test("code leaves refuse mismatched, occupied or uncertain admission before a second pane", async () => {
+  for (const refusal of ["identity", "copied-session", "cwd", "occupied", "uncertain"]) {
     try {
       const { owner, cwd } = await deliveryOwner();
-      if (refusal === "unowned") delete process.env.PAWPRINT_FLEET_PARENT_FILE;
       if (refusal === "identity") owner.roster[0].agent_session = { kind: "id", value: "somebody-else" };
       if (refusal === "copied-session") {
         const copy = join(cwd, "copied-parent.jsonl");
@@ -339,7 +353,6 @@ test("code leaves refuse unowned, mismatched, occupied or uncertain admission be
       assert.equal(paneMutations(owner).length, before);
     } finally {
       process.env.HERDR_PANE_ID = "wT:p1";
-      delete process.env.PAWPRINT_FLEET_PARENT_FILE;
     }
   }
 });
@@ -424,7 +437,7 @@ test("original isolated fixer and writer owners can request fresh review after p
       parent.roster.length = 1;
     }
     parent.pi.events.on("pi-change-working-dir:resolve-execution-cwd", (request: { result?: { cwd: string } }) => { request.result = { cwd }; });
-    await assert.rejects(() => launch(parent, { role: "worker", cwd }), /Code leaf admission requires/);
+    await assert.rejects(() => launch(parent, { role: "worker", cwd }), /same admitted task tree/);
   }
 });
 
@@ -454,7 +467,7 @@ test("isolated review refuses unrelated or copied owners, live actors, uncertain
     // must not pass merely because the caller started from another directory.
     caller.pi.events.on("pi-change-working-dir:resolve-execution-cwd", (request: { result?: { cwd: string } }) => { request.result = { cwd }; });
     const expected: Record<string, RegExp> = {
-      unrelated: /Code leaf admission requires/, copied: /Code leaf admission requires/,
+      unrelated: /same admitted task tree/, copied: /same admitted task tree/,
       "native-identity": /native session-file identity/, occupied: /predecessor is still live/,
       uncertain: /uncertain leaf launch/, leaf: /leaf/i, tree: /same admitted task tree/,
     };
@@ -530,10 +543,18 @@ test("managed Coder uses the supplied native tree without a second worktree or p
   await parent.pi.commands.fleet.handler("", parent.ctx);
   assert.match(parent.ctx.notes.at(-1).msg, /lead.*\[mine\]/);
   assert.match(parent.ctx.notes.at(-1).msg, /neighbor.*\[yours\]/);
-  parent.roster.length = 1;
+  const predecessor = parent.roster.at(-1);
+  assert.ok(predecessor);
+  predecessor.cwd = source;
   const before = paneMutations(parent).length;
-  await assert.rejects(() => launch(parent, { role: "managed-coder", cwd }), /already has a recorded managed Coder launch/);
+  const previous = `lead \\(session ${result.details.childSessionId}, pane wN:p2, last recorded prompted at \\d{4}-[^,]+, launch ${result.details.launchId}\\)`;
+  await assert.rejects(() => launch(parent, { role: "managed-coder", cwd }), new RegExp(`may still write to this task tree: ${previous} is live or uncertain`));
   assert.equal(paneMutations(parent).length, before);
+  parent.roster.length = 1;
+  const replacement = await launch(parent, { role: "managed-coder", cwd });
+  assert.notEqual(replacement.details.childSessionId, result.details.childSessionId);
+  assert.equal(replacement.details.cwd, cwd);
+  assert.match(replacement.content[0].text, new RegExp(`Previous managed Coder in this tree: ${previous}\\. Its command exits were not checked\\.`));
 });
 
 test("managed destination refuses missing, ambiguous or inconsistent native identity before pane mutation", async (t) => {
@@ -665,22 +686,33 @@ test("managed Coder readmits after a proved pre-pane occupancy or trust refusal"
   }
 });
 
-test("managed Coder retains the replay block after an uncertain tab attempt without a pane ID", async () => {
-  const { cwd, parent } = identityLinked();
-  const exec = parent.pi.execImpl;
-  parent.pi.execImpl = (cmd: string, args: string[]) => {
-    if (cmd === "herdr" && args[0] === "tab") return Promise.resolve({
-      code: 0, stdout: '{"result":{}}', stderr: "", killed: false,
+test("an uncertain same-tree launch blocks every writer role for its caller, whatever role it had", async (t) => {
+  // Non-code helpers and Coordinators record no Git-dir key; their recorded cwd still places them in the tree.
+  for (const first of ["managed-coder", "worker", "scout", "context-builder", "oracle", "debugger", "coordinator"]) {
+    await t.test(first, async () => {
+      const { source, cwd } = linked();
+      const parent = managedParent(source, cwd, cwd);
+      const exec = parent.pi.execImpl;
+      parent.pi.execImpl = (cmd: string, args: string[]) => cmd === "herdr" && args[0] === "tab"
+        ? Promise.resolve({ code: 0, stdout: '{"result":{}}', stderr: "", killed: false }) : exec(cmd, args);
+      herdrFleet(parent.pi);
+      await assert.rejects(() => launch(parent, { role: first, cwd }), /no pane_id/);
+      assert.equal(parent.pi.state.entries.at(-1).data.phase, "uncertain");
+      parent.pi.execImpl = exec;
+      const before = paneMutations(parent).length;
+      const admitted: string[] = [];
+      for (const role of ["worker", "reviewer", "fixer", "managed-coder", "coder"]) {
+        await launch(parent, { role, cwd }).then(() => { admitted.push(role); parent.roster.length = 1; }, (error: Error) => assert.match(error.message,
+          /may still write to this task tree: lead[\w-]* \(session [^,]+, pane unknown, last recorded uncertain at |An uncertain leaf launch requires inspection/));
+      }
+      assert.deepEqual(admitted, [], `admitted after uncertain ${first}`);
+      assert.equal(paneMutations(parent).length, before);
+      // After manual settlement, a fresh human-directed session is not bound by another caller's records.
+      const fresh = managedParent(source, cwd, cwd);
+      herdrFleet(fresh.pi);
+      assert.equal((await launch(fresh, { role: "worker", cwd })).details.cwd, cwd);
     });
-    return exec(cmd, args);
-  };
-  herdrFleet(parent.pi);
-  await assert.rejects(() => launch(parent, { role: "managed-coder", cwd }), /no pane_id/);
-  assert.equal(parent.pi.state.entries.at(-1).data.phase, "uncertain");
-  const before = paneMutations(parent).length;
-  parent.pi.execImpl = exec;
-  await assert.rejects(() => launch(parent, { role: "managed-coder", cwd }), /already has a recorded managed Coder launch/);
-  assert.equal(paneMutations(parent).length, before);
+  }
 });
 
 test("managed admission requires an unclaimed linked cwd and preserves legacy claims", async () => {
@@ -777,28 +809,42 @@ test("unowned alias occupancy blocks reuse, while an unclaimed direct parent can
   assert.equal((await launch(parent, { cwd })).details.cwd, cwd);
 });
 
+// Missing promisor HEAD whose lazy fetch runs a local core.sshCommand stub that only writes a marker.
+function promisorRepo() {
+  const fixture = fleetRepo();
+  const marker = join(fixture.dir, "ssh-command-ran");
+  git(fixture.source, "config", "core.repositoryformatversion", "1");
+  git(fixture.source, "config", "extensions.partialClone", "origin");
+  git(fixture.source, "config", "remote.origin.url", "ssh://example.invalid/x");
+  git(fixture.source, "config", "remote.origin.promisor", "true");
+  git(fixture.source, "config", "core.sshCommand", `touch '${marker}'; false`);
+  writeFileSync(join(fixture.source, ".git/refs/heads/main"), "0123456789abcdef0123456789abcdef01234567\n");
+  return { ...fixture, marker };
+}
+
+async function withLazyFetch(run: () => Promise<void>) {
+  const lazyFetch = process.env.GIT_NO_LAZY_FETCH;
+  delete process.env.GIT_NO_LAZY_FETCH;
+  try { await run(); } finally {
+    if (lazyFetch === undefined) delete process.env.GIT_NO_LAZY_FETCH;
+    else process.env.GIT_NO_LAZY_FETCH = lazyFetch;
+  }
+}
+
 test("admission and pre-pane release do not trigger an unchosen promisor neighbor's SSH command", async () => {
   const { source, cwd } = linked();
   mkdirSync(join(cwd, ".pi"));
   writeFileSync(join(cwd, ".pi/settings.json"), "{}");
-  const neighbor = fleetRepo();
+  const neighbor = promisorRepo();
   const repo = neighbor.source;
-  const marker = join(neighbor.dir, "ssh-command-ran");
-  git(repo, "config", "core.repositoryformatversion", "1");
-  git(repo, "config", "extensions.partialClone", "origin");
-  git(repo, "config", "remote.origin.url", "ssh://example.invalid/x");
-  git(repo, "config", "remote.origin.promisor", "true");
-  git(repo, "config", "core.sshCommand", `touch '${marker}'; false`);
-  writeFileSync(join(repo, ".git/refs/heads/main"), "0123456789abcdef0123456789abcdef01234567\n");
+  const marker = neighbor.marker;
   mkdirSync(join(repo, "nested"));
   const alias = join(neighbor.dir, "alias");
   symlinkSync(repo, alias);
   const parent = fleetParent(source);
   parent.roster.push({ name: "neighbor", pane_id: "wU:p9", workspace_id: "wU", cwd: repo, foreground_cwd: join(alias, "nested") });
   herdrFleet(parent.pi);
-  const lazyFetch = process.env.GIT_NO_LAZY_FETCH;
-  delete process.env.GIT_NO_LAZY_FETCH;
-  try {
+  await withLazyFetch(async () => {
     assert.equal(existsSync(marker), false);
     await assert.rejects(() => launch(parent, { cwd }), /Project trust decision required/);
     assert.equal(existsSync(marker), false, "admission must not execute the neighbor's SSH command");
@@ -809,10 +855,20 @@ test("admission and pre-pane release do not trigger an unchosen promisor neighbo
     await release(parent, cwd);
     assert.equal(existsSync(claim), false);
     assert.equal(existsSync(marker), false, "release must not execute the neighbor's SSH command");
-  } finally {
-    if (lazyFetch === undefined) delete process.env.GIT_NO_LAZY_FETCH;
-    else process.env.GIT_NO_LAZY_FETCH = lazyFetch;
-  }
+  });
+});
+
+test("a code leaf from another session tree is refused without lazy-fetching that repository or creating a pane", async () => {
+  const { cwd } = linked();
+  const session = promisorRepo();
+  const parent = fleetParent(session.source);
+  parent.pi.events.on("pi-change-working-dir:resolve-execution-cwd", (request: { result?: { cwd: string } }) => { request.result = { cwd }; });
+  herdrFleet(parent.pi);
+  await withLazyFetch(async () => {
+    await assert.rejects(() => launch(parent, { role: "worker", cwd }), /same admitted task tree/);
+  });
+  assert.equal(existsSync(session.marker), false, "refusal must not execute the session repository's SSH command");
+  assert.equal(paneMutations(parent).length, 0);
 });
 
 test("post-start claims remain held after child exit; copied UUID/history cannot own another session file", async () => {

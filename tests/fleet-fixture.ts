@@ -57,13 +57,15 @@ export function fleetParent(cwd: string, sessionId = "fleet-owner") {
   writeFileSync(sessionFile, JSON.stringify({ type: "session", id: sessionId, cwd }) + "\n");
   roster[0].agent_session = { kind: "path", value: sessionFile };
   const append = pi.appendEntry.bind(pi);
+  const timestamps: string[] = [];
   pi.appendEntry = (type: string, data: unknown) => {
     append(type, data);
+    timestamps.push(new Date().toISOString());
     appendFileSync(sessionFile, JSON.stringify({ type: "custom", customType: type, data }) + "\n");
   };
   const ctx = makeCtx({ cwd, sessionId, sessionFile });
-  ctx.sessionManager.getEntries = () => pi.state.entries.map((e: { type: string; data: unknown }) => ({
-    type: "custom", customType: e.type, data: e.data,
+  ctx.sessionManager.getEntries = () => pi.state.entries.map((e: { type: string; data: unknown }, i: number) => ({
+    type: "custom", customType: e.type, data: e.data, timestamp: timestamps[i],
   }));
   return { pi, ctx, roster, workspaces };
 }
