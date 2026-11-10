@@ -194,10 +194,10 @@ test("native delivery owner launches sequential fresh code leaves in its admitte
     const { owner, cwd } = await deliveryOwner();
     herdrFleet(owner.pi);
     for (const [role, model, thinking] of [
-      ["worker", "cloudflare-ai-gateway/gpt-6.1-sol", "high"],
-      ["fixer", "cloudflare-ai-gateway/gpt-6.1-sol", "low"],
-      ["reviewer", "cloudflare-ai-gateway/claude-opus-5-5", "xhigh"],
-      ["reviewer-security", "cloudflare-ai-gateway/claude-opus-5-5", "xhigh"],
+      ["worker", "cloudflare-ai-gateway/claude-opus-5-5", "high"],
+      ["fixer", "cloudflare-ai-gateway/claude-opus-5-5", "low"],
+      ["reviewer", "cloudflare-ai-gateway/gpt-6.1-sol", "xhigh"],
+      ["reviewer-security", "cloudflare-ai-gateway/gpt-6.1-sol", "xhigh"],
     ]) {
       const result = await launch(owner, { name: role, role, cwd });
       const start = owner.pi.execCalls.findLast((call: string[]) => call[0] === "herdr" && call[2] === "start");
@@ -218,6 +218,90 @@ test("native delivery owner launches sequential fresh code leaves in its admitte
     assert.equal(owner.pi.execCalls.some((call: string[]) => call.includes("add") && call.includes("worktree")), false);
     assert.equal(existsSync(join(git(cwd, "rev-parse", "--absolute-git-dir"), "pawprint-writer.json")), false);
   } finally {
+    process.env.HERDR_PANE_ID = "wT:p1";
+    delete process.env.PAWPRINT_FLEET_PARENT_FILE;
+  }
+});
+
+test("review families select configured native models through both launch surfaces", async () => {
+  try {
+    const { owner, cwd } = await deliveryOwner();
+    herdrFleet(owner.pi);
+    const profiles = JSON.parse(readFileSync(new URL("../agent/configs/session-roles.json", import.meta.url), "utf8"));
+    for (const role of ["reviewer", "reviewer-security"]) {
+      for (const shortcut of [false, true]) {
+        for (const [reviewFamily, model] of [
+          [undefined, "cloudflare-ai-gateway/gpt-6.1-sol"],
+          ["openai", "cloudflare-ai-gateway/gpt-6.1-sol"],
+          ["anthropic", "cloudflare-ai-gateway/claude-opus-5-5"],
+        ]) {
+          if (shortcut) {
+            await owner.pi.commands.delegate.handler(
+              `--role ${role} ${reviewFamily ? `--review-family ${reviewFamily} ` : ""}--cwd "${cwd}" review ${task}`, owner.ctx);
+            assert.equal(owner.ctx.notes.at(-1).level, "info");
+          } else {
+            const result = await launch(owner, { role, reviewFamily, cwd });
+            assert.equal(result.details.model, model);
+            assert.equal(result.details.thinking, "xhigh");
+          }
+          const start = owner.pi.execCalls.findLast((call: string[]) => call[0] === "herdr" && call[2] === "start");
+          assert.equal(start[start.indexOf("--model") + 1], model);
+          assert.equal(start[start.indexOf("--thinking") + 1], "xhigh");
+          assert.equal(start[start.indexOf("--append-system-prompt") + 1],
+            new URL("../agent/configs/delegation.md", import.meta.url).pathname);
+          const prompt = owner.pi.execCalls.findLast((call: string[]) => call[0] === "herdr" && call[2] === "prompt")[4];
+          assert.ok(prompt.startsWith(task));
+          assert.ok(prompt.includes(`${role}: ${profiles[role].contract}`));
+          owner.roster.length = 1;
+        }
+      }
+    }
+  } finally {
+    process.env.HERDR_PANE_ID = "wT:p1";
+    delete process.env.PAWPRINT_FLEET_PARENT_FILE;
+  }
+});
+
+test("invalid review families and missing configured choices fail before native mutation", async () => {
+  const directory = mktmp("review-config");
+  mkdirSync(join(directory, "configs"));
+  const sourceAgent = new URL("../agent", import.meta.url).pathname;
+  const profiles = JSON.parse(readFileSync(join(sourceAgent, "configs/session-roles.json"), "utf8"));
+  writeFileSync(join(directory, "configs/delegation.md"), readFileSync(join(sourceAgent, "configs/delegation.md")));
+  try {
+    const { owner, cwd } = await deliveryOwner();
+    setAgentDir(directory);
+    herdrFleet(owner.pi);
+    for (const role of ["reviewer", "reviewer-security", "worker"]) {
+      for (const [reviewFamily, choices, error] of [
+        ["arbitrary/model", { anthropic: "cloudflare-ai-gateway/claude-opus-5-5" }, /reviewFamily must be/],
+        ["anthropic", undefined, /reviewModels.*anthropic.*qualified/],
+        ["anthropic", {}, /reviewModels.*anthropic.*qualified/],
+        ["anthropic", { anthropic: "unqualified" }, /reviewModels.*anthropic.*qualified/],
+        ["anthropic", { anthropic: "provider/model\n" }, /reviewModels.*anthropic.*qualified/],
+      ] as const) {
+        writeFileSync(join(directory, "configs/session-roles.json"), JSON.stringify({
+          ...profiles, [role]: { ...profiles[role], reviewModels: choices },
+        }));
+        for (const shortcut of [false, true]) {
+          const before = paneMutations(owner).length;
+          const callsBefore = owner.pi.execCalls.length;
+          const expected = role === "worker" ? /reviewFamily is only valid for reviewer/ : error;
+          if (shortcut) {
+            await owner.pi.commands.delegate.handler(
+              `--role ${role} --review-family "${reviewFamily}" --cwd "${cwd}" review ${task}`, owner.ctx);
+            assert.equal(owner.ctx.notes.at(-1).level, "error");
+            assert.match(owner.ctx.notes.at(-1).msg, expected);
+          } else {
+            await assert.rejects(() => launch(owner, { role, reviewFamily, cwd }), expected);
+          }
+          assert.equal(paneMutations(owner).length, before);
+          assert.equal(owner.pi.execCalls.length, callsBefore);
+        }
+      }
+    }
+  } finally {
+    setAgentDir(sourceAgent);
     process.env.HERDR_PANE_ID = "wT:p1";
     delete process.env.PAWPRINT_FLEET_PARENT_FILE;
   }
@@ -244,8 +328,14 @@ test("code leaves refuse unowned, mismatched, occupied or uncertain admission be
         owner.roster.length = 1;
       }
       const before = paneMutations(owner).length;
-      await assert.rejects(() => launch(owner, { role: "worker", cwd: refusal === "cwd" ? linked().cwd : cwd }),
-        /admission|identity|same.*tree|occupied|uncertain/i);
+      for (const params of [
+        { role: "worker" },
+        { role: "reviewer", reviewFamily: "anthropic" },
+        { role: "reviewer-security", reviewFamily: "openai" },
+      ]) {
+        await assert.rejects(() => launch(owner, { ...params, cwd: refusal === "cwd" ? linked().cwd : cwd }),
+          /admission|identity|same.*tree|occupied|uncertain/i);
+      }
       assert.equal(paneMutations(owner).length, before);
     } finally {
       process.env.HERDR_PANE_ID = "wT:p1";
@@ -297,7 +387,7 @@ test("configuration and non-code leaves use native profiles and their venue with
   const owner = fleetParent(cwd);
   herdrFleet(owner.pi);
   for (const [role, model, thinking] of [
-    ["fixer", "gpt-6.1-sol", "low"],
+    ["fixer", "claude-opus-5-5", "low"],
     ["writer", "claude-fable-5-1", "medium"],
     ["scout", "claude-sonnet-5-5", "medium"],
     ["context-builder", "claude-sonnet-5-5", "medium"],
@@ -327,7 +417,7 @@ test("original isolated fixer and writer owners can request fresh review after p
     // The parent verified command exits separately; removing the roster is only native closure.
     parent.roster.length = 1;
     for (const review of ["reviewer", "reviewer-security"]) {
-      const result = await launch(parent, { role: review, cwd });
+      const result = await launch(parent, { role: review, reviewFamily: "anthropic", cwd });
       assert.equal(result.details.cwd, realpathSync.native(cwd));
       assert.equal(result.details.parent, parent.ctx.sessionManager.getSessionId());
       assert.equal(result.details.claimPath, undefined);
@@ -370,7 +460,7 @@ test("isolated review refuses unrelated or copied owners, live actors, uncertain
     };
     const before = paneMutations(caller).length;
     try {
-      await assert.rejects(() => launch(caller, { role: "reviewer", cwd: refusal === "tree" ? linked().cwd : cwd }), expected[refusal]);
+      await assert.rejects(() => launch(caller, { role: "reviewer", reviewFamily: "anthropic", cwd: refusal === "tree" ? linked().cwd : cwd }), expected[refusal]);
       assert.equal(paneMutations(caller).length, before);
     } finally { delete process.env.PAWPRINT_FLEET_LEAF; }
   }

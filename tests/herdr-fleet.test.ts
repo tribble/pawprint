@@ -240,7 +240,7 @@ test("/ws <repo-id> <slug>: explicit id + slug → no model call, de-duped label
     assert.deepEqual(start.slice(0, 13), ["herdr", "agent", "start", "fix-flaky-tests-coordinator-2", "--kind", "pi", "--pane", "p3", "--timeout", "60000", "--", "--name", "fix-flaky-tests-coordinator-2"]);
     assert.equal(calls(pi).length, 3);
     assert.equal(start[start.indexOf("--model") + 1], "cloudflare-ai-gateway/gpt-6-astra");
-    assert.equal(start[start.indexOf("--thinking") + 1], "high");
+    assert.equal(start[start.indexOf("--thinking") + 1], "medium");
     assert.match(readFileSync(start[start.indexOf("--append-system-prompt") + 1], "utf8"), /Coordinator/);
     assert.match(start.at(-1), /interactive/);
     assert.ok(!start.includes("--approve"));

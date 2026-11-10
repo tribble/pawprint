@@ -231,7 +231,8 @@ const isLeafRole = (role: Role) => (LEAF_ROLES as readonly string[]).includes(ro
 const isCodeLeaf = (role: Role) => ["worker", "reviewer", "reviewer-security"].includes(role);
 type Mode = "interactive" | "delegated";
 interface RoleProfile { model: string; thinking: string; instructionsFile: string; contract?: string }
-interface LaunchRequest { name: string; task: string; role?: Role; mode?: "delegated"; cwd?: string; base?: string; noProjectResources?: boolean }
+const REVIEW_FAMILIES = ["openai", "anthropic"] as const;
+interface LaunchRequest { name: string; task: string; role?: Role; reviewFamily?: string; mode?: "delegated"; cwd?: string; base?: string; noProjectResources?: boolean }
 
 interface LaunchRecord {
   ownerSessionId: string;
@@ -319,14 +320,23 @@ async function sameTreeOccupants(pi: ExtensionAPI, agents: FleetAgent[], worktre
 // eslint-disable-next-line no-control-regex -- Mirrors herdr's control-character rejection at the argv boundary.
 const hasControls = (value: string) => /[\u0000-\u001f\u007f-\u009f]/.test(value);
 
-function roleProfile(role: Role): RoleProfile {
+function roleProfile(role: Role, reviewFamily?: string): RoleProfile {
+  if (reviewFamily !== undefined) {
+    if (role !== "reviewer" && role !== "reviewer-security") throw new Error("reviewFamily is only valid for reviewer and reviewer-security");
+    if (!(REVIEW_FAMILIES as readonly string[]).includes(reviewFamily)) throw new Error(`reviewFamily must be ${REVIEW_FAMILIES.join(" or ")}`);
+  }
   const path = join(getAgentDir(), "configs/session-roles.json");
   const raw: unknown = JSON.parse(readFileSync(path, "utf8"));
   const profile = raw && typeof raw === "object" ? (raw as Record<string, unknown>)[role] : undefined;
   if (!profile || typeof profile !== "object") throw new Error(`missing ${role} profile in ${path}`);
-  const { model, thinking, instructionsFile, contract } = profile as Record<string, unknown>;
+  const { thinking, instructionsFile, contract, reviewModels } = profile as Record<string, unknown>;
+  let { model } = profile as Record<string, unknown>;
+  if (reviewFamily !== undefined) {
+    model = reviewModels && typeof reviewModels === "object" && Object.hasOwn(reviewModels, reviewFamily)
+      ? (reviewModels as Record<string, unknown>)[reviewFamily] : undefined;
+  }
   if (typeof model !== "string" || hasControls(model) || !/^[a-z0-9][a-z0-9._-]*\/\S+$/.test(model)) {
-    throw new Error(`${path}: ${role}.model must be a qualified provider/model ID`);
+    throw new Error(`${path}: ${role}.${reviewFamily === undefined ? "model" : `reviewModels.${reviewFamily}`} must be a qualified provider/model ID`);
   }
   if (typeof thinking !== "string" || !["off", "minimal", "low", "medium", "high", "xhigh", "max"].includes(thinking)) {
     throw new Error(`${path}: ${role}.thinking is invalid`);
@@ -498,7 +508,7 @@ async function launch(pi: ExtensionAPI, ctx: ExtensionContext, request: LaunchRe
   if (request.base !== undefined && (role !== "coder" || request.cwd !== undefined || typeof request.base !== "string" || !request.base.trim() || hasControls(request.base))) {
     throw new Error("base is only valid for a new Coder worktree, never explicit cwd reuse or a Coordinator");
   }
-  const profile = roleProfile(role);
+  const profile = roleProfile(role, request.reviewFamily);
   const sourceCwd = launchDirectory(pi, ctx, request.cwd);
   const ownerSessionFile = nativeOwnerFile(ctx);
   if (role !== "coordinator" && !ownerSessionFile) throw new Error("Coder launch needs a persistent native parent session. Start Pi without --no-session (or use a persisted SDK SessionManager), then reissue the task. No Git, pane or claim was created.");
@@ -632,7 +642,7 @@ async function launch(pi: ExtensionAPI, ctx: ExtensionContext, request: LaunchRe
 }
 
 function parseDelegate(args: string): LaunchRequest {
-  const options: { role?: Role; mode?: "delegated"; cwd?: string; base?: string; noProjectResources?: boolean } = {};
+  const options: Omit<LaunchRequest, "name" | "task"> = {};
   let rest = args.trim();
   while (rest.startsWith("--")) {
     if (/^--no-approve(?:\s+|$)/.test(rest)) {
@@ -640,10 +650,11 @@ function parseDelegate(args: string): LaunchRequest {
       rest = rest.replace(/^--no-approve(?:\s+|$)/, "");
       continue;
     }
-    const option = rest.match(/^--(role|mode|cwd|base)\s+(?:"([^"]+)"|'([^']+)'|(\S+))(?:\s+|$)/);
-    if (!option) throw new Error("Usage: /delegate [--role <main-or-leaf-role>] [--cwd <assigned-directory> | --base <ref>] [--no-approve] <name> <task>");
+    const option = rest.match(/^--(role|review-family|mode|cwd|base)\s+(?:"([^"]+)"|'([^']+)'|(\S+))(?:\s+|$)/);
+    if (!option) throw new Error("Usage: /delegate [--role <main-or-leaf-role>] [--review-family <openai|anthropic>] [--cwd <assigned-directory> | --base <ref>] [--no-approve] <name> <task>");
     const value = option[2] ?? option[3] ?? option[4];
     if (option[1] === "role") options.role = value as Role;
+    else if (option[1] === "review-family") options.reviewFamily = value;
     else if (option[1] === "mode") {
       if (value !== "delegated") throw new Error("/delegate is delegated-only; use /ws for an interactive Coordinator");
       options.mode = value;
@@ -727,7 +738,7 @@ export default function herdrFleet(pi: ExtensionAPI) {
 
   pi.registerCommand("delegate", {
     description:
-      "Launch a delegated native main or leaf: /delegate --role <role> --cwd <assigned-directory> <name> <task>. Requires Owner outcome. /ws is interactive.",
+      "Launch a delegated native main or leaf: /delegate --role <role> [--review-family <openai|anthropic>] --cwd <assigned-directory> <name> <task>. Requires Owner outcome. /ws is interactive.",
     handler: async (args, ctx) => {
       try {
         const result = await launch(pi, ctx, parseDelegate(args), ctx.signal);
@@ -749,6 +760,7 @@ export default function herdrFleet(pi: ExtensionAPI) {
     promptSnippet: "Launch an independently owned pane workstream with an explicit role profile",
     promptGuidelines: [
       "Use launch_agent for native Herdr mains and leaf roles. There is no headless delegation runner.",
+      "For cross-family review, launch_agent reviewer/reviewer-security accepts reviewFamily: anthropic for OpenAI-authored output (including Astra), openai for Anthropic-authored output. Models come from the role's reviewModels config; omission keeps its default model and effort stays unchanged.",
       "For a code delivery, first create the native herdr worktree, then use role managed-coder with its exact cwd. This delivery-owner main launches sequential native worker and fresh reviewer leaves with qualified models and role efforts. The launching parent owns final acceptance and native cleanup. No persistent writer claim is added.",
       "Code leaves require their admitted delivery owner and the same explicit task cwd. They create no worktree or persistent claim. Close settled owned leaves and commands before the next leaf. Uncertain launches block replacement. Fixer (trivial configuration only) and writer require an unclaimed linked task tree; scout/context-builder/oracle/debugger use their explicit assigned directory.",
       "Coders default to a fresh linked worktree from the effective repository and committed HEAD. Supply base for repo policy (pawprint: origin/main). Explicit cwd reuses exactly an admitted linked checkout; never combine cwd and base. Coordinators keep directory behavior and reject base.",
@@ -761,6 +773,7 @@ export default function herdrFleet(pi: ExtensionAPI) {
       name: Type.String({ pattern: "^[a-z][a-z0-9_-]{0,31}$" }),
       task: Type.String({ minLength: 1, description: "Task containing the verbatim Owner outcome: block" }),
       role: Type.Optional(StringEnum(ROLES)),
+      reviewFamily: Type.Optional(StringEnum(REVIEW_FAMILIES, { description: "Reviewer model family, only for reviewer/reviewer-security. Omit to use the role default." })),
       mode: Type.Optional(StringEnum(["delegated"] as const)),
       cwd: Type.Optional(Type.String({ minLength: 1, description: "Required for managed-coder and leaves: assigned task directory. Code leaves must stay in their admitted owner tree. Legacy Coder reuses a linked checkout; Coordinator directory is unchanged. Supports ~." })),
       base: Type.Optional(Type.String({ minLength: 1, description: "Committed base ref for a new Coder worktree; defaults HEAD. Pawprint callers supply origin/main. Invalid with cwd or Coordinator." })),

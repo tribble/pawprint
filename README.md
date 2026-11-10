@@ -163,7 +163,11 @@ The owner uses `launch_agent({name,role:"worker",cwd,task})`, then fresh
 `reviewer` and separate `reviewer-security` leaves for risky changes.
 [Profiles](agent/configs/session-roles.json) supply qualified model, native effort,
 instruction file and the complete selected contract in the actual prompt.
-Sol workers use high, trivial-configuration fixers low, Opus reviewers xhigh.
+Opus workers use high, trivial-configuration fixers low, default Sol reviewers xhigh.
+When review is needed, use `reviewFamily:"openai"` for Anthropic-authored output
+or `reviewFamily:"anthropic"` for OpenAI-authored output, including Astra.
+Both review roles select qualified models from their `reviewModels` config and keep xhigh.
+Omission keeps the configured default. The launcher does not infer authorship.
 Writer/scout/context-builder use medium and oracle/debugger high.
 No fallback model, parent-effort change or reviewer tool mask is used.
 Read-only roles are prompt contracts, not a sandbox.
@@ -211,7 +215,8 @@ Preserve ignored evidence before authorized non-force native removal.
 
 ### Main roles and legacy claims
 
-Coordinator, full-workstream Coder and managed Coder retain Astra/high.
+Default sessions and Coordinators use Astra/medium.
+Full-workstream Coder and managed Coder retain Astra/high.
 Legacy `role:"coder"` and `role:"coordinator"` APIs remain available.
 Legacy Coder creates a linked tree from committed HEAD or base, or admits explicit cwd.
 Coordinator keeps directory behavior and rejects base.
@@ -219,10 +224,14 @@ Managed Coder requires an existing native linked cwd and the unique matching wor
 It creates neither worktree nor persistent writer claim.
 A recorded earlier managed launch prevents same-parent replay into that tree.
 
+After an Opus worker, both reviews use OpenAI/Sol.
+For OpenAI-authored output, including Astra, use `--review-family anthropic` for both instead.
+
 ```text
 /delegate --role managed-coder --cwd "/native/task/tree" <name> <task>
 /delegate --role worker --cwd "/same/admitted/tree" <name> <task>
-/delegate --role reviewer --cwd "/same/admitted/tree" <name> <task>
+/delegate --role reviewer --review-family openai --cwd "/same/admitted/tree" <name> <task>
+/delegate --role reviewer-security --review-family openai --cwd "/same/admitted/tree" <name> <task>
 /delegate --role scout --cwd "/assigned/directory" <name> <task>
 /release-worktree "/path/to/legacy/pre-pane-failure"
 /ws [--no-approve] [repo|dir] <purpose>
