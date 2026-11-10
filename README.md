@@ -146,7 +146,7 @@ Read the applied `<agent-dir>/configs/managed-code-workflow.md` first.
 Pi's `getAgentDir()` resolves nonempty `PI_CODING_AGENT_DIR` with Pi's path expansion,
 otherwise `~/.pi/agent`. The [repository recipe](agent/configs/managed-code-workflow.md)
 does not replace a missing applied recipe. Pawprint uses `origin/main` and
-`/Users/pantera/work/pawprint-<branch>`. Herdr does not fetch.
+`/Users/pantera/work/pawprint-worktrees/<branch>`. Herdr does not fetch.
 
 The parent creates and verifies a fresh native task tree, then launches its owner:
 
@@ -470,13 +470,15 @@ fixture repos and mktemp targets only — never this checkout's git, never
 
 The source of truth is the repo, never the live dir. Start every change in its
 fresh task worktree. Code changes of any size follow the
-[managed code workflow](#managed-code-workflow) with the explicit sibling path
-and `origin/main` base. Only trivial configuration or non-code work outside the
+[managed code workflow](#managed-code-workflow) with the explicit grouped path
+`~/work/pawprint-worktrees/<branch>` and `origin/main` base. New task worktrees
+group there; the main checkout stays `~/work/pawprint`, and existing worktrees stay
+where they are. Only trivial configuration or non-code work outside the
 code flow can use the direct
-`git -C ~/work/pawprint worktree add ~/work/pawprint-<branch> -b <branch> origin/main` path.
+`git -C ~/work/pawprint worktree add ~/work/pawprint-worktrees/<branch> -b <branch> origin/main` path.
 Keep the base checkout on `main`; never detach it or author changes there.
 Authorized direct-tree cleanup uses
-`git -C ~/work/pawprint worktree remove ~/work/pawprint-<branch>` after the same
+`git -C ~/work/pawprint worktree remove <recorded tree path>` after the same
 actor/decision/claim/occupant/artifact checks described above. Native trees also
 require the exact workspace identity check. After verified merge and successful
 verified tree removal, delete the delivery's merged task branch locally and remotely

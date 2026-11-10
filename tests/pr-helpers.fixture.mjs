@@ -7,9 +7,10 @@ import { dirname, join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 import { setTimeout as delay } from "node:timers/promises";
 
-const dir = process.argv[2], repo = resolve(import.meta.dirname, ".."), scripts = process.argv[3] || join(repo, "scripts");
+// `alias` is the caller's short symlink to `dir`; it keeps the broker socket under the Unix socket path limit.
+const [dir, alias] = process.argv.slice(2), repo = resolve(import.meta.dirname, ".."), scripts = process.argv[4] || join(repo, "scripts");
 const pkg = join(repo, "node_modules/pi-intercom"), require = createRequire(join(pkg, "package.json"));
-const env = { PATH: join(dir, "bin") + ":" + dirname(process.execPath) + ":/usr/bin:/bin", HOME: join(dir, "home"), TMPDIR: join(dir, "tmp"), PI_CODING_AGENT_DIR: dir, PI_INTERCOM_HOME: pkg, GIT_CEILING_DIRECTORIES: repo };
+const env = { PATH: join(dir, "bin") + ":" + dirname(process.execPath) + ":/usr/bin:/bin", HOME: join(dir, "home"), TMPDIR: join(dir, "tmp"), PI_CODING_AGENT_DIR: alias, PI_INTERCOM_HOME: pkg, GIT_CEILING_DIRECTORIES: repo };
 for (const path of [env.HOME, env.TMPDIR, join(dir, "bin"), join(dir, "checkout/src"), join(env.HOME, ".local/state/pr-watch"), join(env.HOME, ".config/pr-review")]) mkdirSync(path, { recursive: true });
 for (const key of Object.keys(process.env)) delete process.env[key]; Object.assign(process.env, env);
 writeFileSync(join(dir, "bin/gh"), '#!/bin/sh\n[ "$1 $2" = "pr view" ] || exit 91\nprintf \'%s\\n\' \'{"number":42,"url":"https://github.com/example/repo/pull/42"}\'\n', { mode: 0o755 });
@@ -17,7 +18,7 @@ writeFileSync(join(dir, "checkout/src/a.ts"), "one\ntwo\nthree\n");
 const git = spawnSync("/usr/bin/git", ["init", "-q", join(dir, "checkout")], { env, encoding: "utf8" }); assert.equal(git.status, 0, git.stderr);
 const { tsImport } = await import(pathToFileURL(require.resolve("tsx/esm/api")).href);
 const { IntercomClient } = await tsImport(pathToFileURL(join(pkg, "broker/client.ts")).href, import.meta.url);
-const socket = join(dir, "intercom/broker.sock"); assert.ok(Buffer.byteLength(socket) <= 100);
+const socket = join(alias, "intercom/broker.sock"); assert.ok(Buffer.byteLength(socket) <= 100);
 const broker = spawn(process.execPath, ["--import", require.resolve("tsx/esm"), join(pkg, "broker/broker.ts")], { env, stdio: ["ignore", "pipe", "pipe"] });
 const brokerOutput = []; broker.stdout.on("data", data => brokerOutput.push(String(data))); broker.stderr.on("data", data => brokerOutput.push(String(data)));
 let brokerExit; broker.on("close", (code, signal) => { brokerExit = { code, signal }; });
@@ -79,5 +80,5 @@ if (!failure) {
   const result = await run("pr-steer", ["--to", ids[0], "--body", "broker unavailable"]); assert.equal(result.code, 1); assert.match(result.stderr, /could not connect/);
   const resolved = await run("pr-note", ["--resolve", ghost]); assert.equal(resolved.code, 0); assert.deepEqual(json(resolved), { id: ghost, name: null });
 }
-console.log(JSON.stringify({ driverPid: process.pid, brokerPid: broker.pid, brokerExit, received: received.map(messages => messages.length), commands, failure }));
+console.log(JSON.stringify({ driverPid: process.pid, brokerPid: broker.pid, brokerExit, socket, received: received.map(messages => messages.length), commands, failure }));
 if (failure) process.exitCode = 1;
