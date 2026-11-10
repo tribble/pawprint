@@ -8,6 +8,8 @@ A project Coordinator stays responsive while multiple independent delivery-owner
 
 `launch_agent` reads qualified model, explicit effort and complete role contract from `configs/session-roles.json`. Names are labels, not profiles. Leave `defaultModel` unchanged. Every brief carries the verbatim `Owner outcome:` block and assigned absolute cwd.
 
+When review is needed, choose the opposite model family explicitly: `reviewFamily:"anthropic"` for OpenAI-authored output (including Astra), `reviewFamily:"openai"` for Anthropic-authored output. Only `reviewer` and `reviewer-security` accept it. Their `reviewModels` config selects Opus or Sol respectively; both keep the role's xhigh effort, instruction file and complete contract. Omission keeps the configured default Sol. Invalid selectors or missing configured choices fail before pane creation. The launcher does not infer authorship or change who may commission review.
+
 The launcher submits the task once without waiting for activity, then reads fresh native identity. A successful `prompted` record acknowledges ordered PTY writes, not Pi consumption or execution. Owner admission uses the original verified `started` event even after later prompt uncertainty. Current UUID/file/pane and canonical task-tree checks still apply. An uncertain start without verified startup grants no admission.
 
 ```js
@@ -17,6 +19,16 @@ launch_agent({
   cwd: "/assigned/admitted/task/worktree",
   task: "Owner outcome:\n<verbatim ask>\n\n<bounded task, acceptance and authority>"
 });
+// OpenAI-authored output, including Astra; use openai for Anthropic output.
+launch_agent({name:"review", role:"reviewer", reviewFamily:"anthropic", cwd, task});
+```
+
+After an Opus worker, both shortcut reviews use OpenAI/Sol.
+For OpenAI-authored output, including Astra, use `--review-family anthropic` for both instead.
+
+```text
+/delegate --role reviewer --review-family openai --cwd "/same/admitted/tree" <name> <task>
+/delegate --role reviewer-security --review-family openai --cwd "/same/admitted/tree" <name> <task>
 ```
 
 Delivery code leaves (worker, reviewer and reviewer-security) require the caller's original admitted `managed-coder` record, current native UUID/file/pane and the same linked task tree. The launcher reuses the admission lock, refuses legacy claims and other observed occupants, and adds no worktree or persistent writer claim. Only the owner may start the next leaf after the prior leaf and its commands have verifiably closed. Reviewer/security-review leaves can also be launched by the same full main that originally launched a successful isolated fixer/writer delivery in that canonical tree. The launcher verifies original UUID/file ownership and native identity, exclusive admission and absence of live/uncertain predecessors. The parent must separately inspect completion, command results and owned subprocess exits before requesting review. Missing exits or unknown actors block handoff; pane/roster absence or a final assistant answer is not command-closure proof. Worker launches remain managed-Coder-owner-only. An uncertain leaf launch blocks the same canonical tree. Independence requires the original caller-owned record and a recorded tree key matching live Git identity. Missing, invalid or mismatched ownership/tree identity blocks across trees. Historical scout records without a tree key remain unknown.
@@ -33,10 +45,11 @@ Report changed paths, commands and exits, evidence and remaining risks. Use ordi
 
 | Role | Qualified model | Native thinking | Assignment |
 | --- | --- | --- | --- |
-| worker | cloudflare-ai-gateway/gpt-6.1-sol | high | Complete bounded implementation, focused regression coverage and required checks. |
-| fixer | cloudflare-ai-gateway/gpt-6.1-sol | low | Trivial configuration only, with required checks. |
-| reviewer | cloudflare-ai-gateway/claude-opus-5-5 | xhigh | Independent fresh-context read-only intent and complete-diff review. |
-| reviewer-security | cloudflare-ai-gateway/claude-opus-5-5 | xhigh | Separate fresh read-only trust, lineage, authority, credential and lifecycle review. |
+| worker | cloudflare-ai-gateway/claude-opus-5-5 | high | Complete bounded implementation, focused regression coverage and required checks. |
+| fixer | cloudflare-ai-gateway/claude-opus-5-5 | low | Trivial configuration only, with required checks. |
+| reviewer (default / openai) | cloudflare-ai-gateway/gpt-6.1-sol | xhigh | Independent fresh-context read-only intent and complete-diff review. |
+| reviewer-security (default / openai) | cloudflare-ai-gateway/gpt-6.1-sol | xhigh | Separate fresh read-only trust, lineage, authority, credential and lifecycle review. |
+| reviewer / reviewer-security (anthropic) | cloudflare-ai-gateway/claude-opus-5-5 | xhigh | Review OpenAI-authored output, including Astra. |
 | writer | cloudflare-ai-gateway/claude-fable-5-1 | medium | Requested prose only. Preserve facts and decisions. No code. |
 | scout / context-builder | cloudflare-ai-gateway/claude-sonnet-5-5 | medium | Read-only paths, call boundaries, evidence and gaps. No full suites. |
 | oracle | cloudflare-ai-gateway/gpt-6.1-sol | high | Concrete technical cause, evidence and smallest repair proposal. No edits. |
