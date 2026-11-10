@@ -172,10 +172,13 @@ Writer/scout/context-builder use medium and oracle/debugger high.
 No fallback model, parent-effort change or reviewer tool mask is used.
 Read-only roles are prompt contracts, not a sandbox.
 
-Code leaves require the owner's original admission record, current native UUID/file/pane
-and same linked task tree. The original full main of an isolated successful fixer/writer
+Code leaves require the owner's current native UUID/file/pane and same linked task tree.
+A replacement owner the human asked to take over may continue there. Predecessor and
+background-command settlement is a manual check: the launcher detects only live agents
+in the tree and the caller's own live or uncertain launches there, whatever their role.
+The original full main of an isolated successful fixer/writer
 delivery may also launch reviewer/security leaves there after verified actor/command closure;
-workers still require a managed owner. They create no second worktree or persistent writer claim.
+workers still require the tree's delivery owner. They create no second worktree or persistent writer claim.
 The launcher reuses the admission lock and refuses legacy claims, unknown occupants
 and uncertain replay. Only the owner starts the next leaf after prior actor/command closure.
 Leaves cannot launch actors or trigger review.
@@ -222,7 +225,10 @@ Legacy Coder creates a linked tree from committed HEAD or base, or admits explic
 Coordinator keeps directory behavior and rejects base.
 Managed Coder requires an existing native linked cwd and the unique matching workspace.
 It creates neither worktree nor persistent writer claim.
-A recorded earlier managed launch prevents same-parent replay into that tree.
+A live or uncertain earlier launch of any role blocks same-parent replay into that tree.
+After the predecessor closes, the same parent may launch a replacement there.
+First settle the predecessor and its background commands manually.
+The receipt names the previous managed Coder but does not check its command exits.
 
 After an Opus worker, both reviews use OpenAI/Sol.
 For OpenAI-authored output, including Astra, use `--review-family anthropic` for both instead.

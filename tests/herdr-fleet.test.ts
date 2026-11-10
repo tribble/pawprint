@@ -73,7 +73,6 @@ delete process.env.PI_INTERCOM_ROOT_SESSION_ID;
 delete process.env.PI_INTERCOM_PARENT_SESSION_ID;
 delete process.env.PAWPRINT_FLEET_LEAF;
 delete process.env.PI_INTERCOM_SESSION_ID;
-delete process.env.PAWPRINT_FLEET_PARENT_FILE;
 const ME = { name: "coordinator-test", agent_status: "idle", cwd: "/tmp/me", pane_id: "wH:p1", workspace_id: "wH" };
 // Standalone Intercom uses native session identity, never a renamable display label.
 const SESSION_ID = "fleet-sess";
@@ -153,7 +152,7 @@ test("/delegate: tab in MY workspace → explicit profile → pane-targeted task
     ["herdr", "agent", "list"],
     // a tab in the caller's workspace (grouped sidebar nests it under the caller), never a new workspace;
     // the spawner is identified by intercom ID, not by its (renamable) session name
-    ["herdr", "tab", "create", "--workspace", "wH", "--cwd", launchedCwd, "--label", "scout", "--no-focus", "--env", `PI_CODING_AGENT_DIR=${sourceAgentDir}`, "--env", `PI_SPAWNED_BY=${MY_ID}`, "--env", `PAWPRINT_FLEET_PARENT_FILE=${fleetCtx().sessionManager.getSessionFile()}`],
+    ["herdr", "tab", "create", "--workspace", "wH", "--cwd", launchedCwd, "--label", "scout", "--no-focus", "--env", `PI_CODING_AGENT_DIR=${sourceAgentDir}`, "--env", `PI_SPAWNED_BY=${MY_ID}`],
   ]);
   const start = calls(pi)[2];
   assert.deepEqual(start.slice(0, 13), ["herdr", "agent", "start", "scout", "--kind", "pi", "--pane", "wH:p2", "--timeout", "60000", "--", "--name", "scout"]);
