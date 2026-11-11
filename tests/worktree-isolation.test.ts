@@ -55,7 +55,7 @@ async function deliveryOwner(nativeError = "", failedPhase = "prompt") {
     };
   }
   herdrFleet(parent.pi);
-  const admission = launch(parent, { role: "managed-coder", cwd });
+  const admission = launch(parent, { role: "delivery-lead", cwd });
   if (nativeError) await assert.rejects(admission, new RegExp(nativeError));
   else await admission;
   const record = parent.pi.state.entries.at(-1).data;
@@ -89,7 +89,7 @@ test("launch acknowledges one PTY submission without requiring observed task act
     return result;
   };
   herdrFleet(parent.pi);
-  const result = await launch(parent, { role: "managed-coder", cwd });
+  const result = await launch(parent, { role: "delivery-lead", cwd });
   assert.match(result.content[0].text, /PTY writes acknowledged/);
   assert.match(result.content[0].text, /consumption and execution.*unverified/i);
   const native = parent.pi.execCalls.filter((call: string[]) => call[0] === "herdr" && ["start", "get", "prompt"].includes(call[2]));
@@ -171,7 +171,7 @@ test("fresh post-prompt native identity is required even when the acknowledgemen
         return result;
       };
       herdrFleet(parent.pi);
-      await assert.rejects(() => launch(parent, { role: "managed-coder", cwd }), /Native child session identity.*missing or mismatched/);
+      await assert.rejects(() => launch(parent, { role: "delivery-lead", cwd }), /Native child session identity.*missing or mismatched/);
       assert.equal(paneMutations(parent).filter((call: string[]) => call[2] === "prompt").length, 1);
       assert.deepEqual(parent.pi.state.entries.slice(-2).map((entry: { data: { phase: string } }) => entry.data.phase), ["started", "uncertain"]);
       assert.match(parent.pi.state.entries.at(-1).data.error, /Native child session identity/);
@@ -516,12 +516,13 @@ function identityLinked() {
   return { dir, source, cwd, key, common, parent };
 }
 
-test("managed Coder uses the supplied native tree without a second worktree or persistent claim", async () => {
+test("Delivery Lead uses the supplied native tree without a second worktree or persistent claim", async () => {
   const { source, cwd } = linked();
   const parent = managedParent(source, cwd);
   parent.roster.push({ name: "neighbor", pane_id: "wN:p9", workspace_id: "wN", cwd: source });
   herdrFleet(parent.pi);
-  const result = await launch(parent, { role: "managed-coder", cwd });
+  const result = await launch(parent, { role: "delivery-lead", cwd });
+  assert.equal(result.details.role, "delivery-lead");
   const tab = parent.pi.execCalls.find((call: string[]) => call[0] === "herdr" && call[1] === "tab");
   assert.equal(tab[tab.indexOf("--workspace") + 1], "wN");
   assert.equal(result.details.paneId, "wN:p2");
@@ -535,7 +536,12 @@ test("managed Coder uses the supplied native tree without a second worktree or p
   assert.equal(parent.pi.execCalls.some((call: string[]) => call.includes("add") && call.includes("worktree")), false);
   const start = parent.pi.execCalls.find((call: string[]) => call[0] === "herdr" && call[2] === "start");
   assert.equal(start[start.indexOf("--model") + 1], "cloudflare-ai-gateway/gpt-6-astra");
-  assert.match(readFileSync(start[start.indexOf("--append-system-prompt") + 1], "utf8"), /one bounded deliverable/);
+  const contract = start[start.indexOf("--append-system-prompt") + 1];
+  assert.equal(contract, new URL("../agent/configs/delivery-lead.md", import.meta.url).pathname);
+  assert.match(readFileSync(contract, "utf8"), /^# Delivery Lead/);
+  // Launchers loaded before the rename still read the managed-coder key until /reload.
+  const profiles = JSON.parse(readFileSync(new URL("../agent/configs/session-roles.json", import.meta.url), "utf8"));
+  assert.deepEqual(profiles["managed-coder"], profiles["delivery-lead"]);
   const prompt = parent.pi.execCalls.find((call: string[]) => call[0] === "herdr" && call[2] === "prompt")[4];
   assert.ok(prompt.startsWith(task));
   assert.match(prompt, /parent owns.*closure/i);
@@ -548,13 +554,16 @@ test("managed Coder uses the supplied native tree without a second worktree or p
   predecessor.cwd = source;
   const before = paneMutations(parent).length;
   const previous = `lead \\(session ${result.details.childSessionId}, pane wN:p2, last recorded prompted at \\d{4}-[^,]+, launch ${result.details.launchId}\\)`;
-  await assert.rejects(() => launch(parent, { role: "managed-coder", cwd }), new RegExp(`may still write to this task tree: ${previous} is live or uncertain`));
+  await assert.rejects(() => launch(parent, { role: "delivery-lead", cwd }), new RegExp(`may still write to this task tree: ${previous} is live or uncertain`));
   assert.equal(paneMutations(parent).length, before);
   parent.roster.length = 1;
+  // A record persisted before the rename and the legacy role input still identify the same delivery owner.
+  for (const entry of parent.pi.state.entries) if (entry.data?.launchId === result.details.launchId) entry.data.role = "managed-coder";
   const replacement = await launch(parent, { role: "managed-coder", cwd });
+  assert.equal(replacement.details.role, "delivery-lead");
   assert.notEqual(replacement.details.childSessionId, result.details.childSessionId);
   assert.equal(replacement.details.cwd, cwd);
-  assert.match(replacement.content[0].text, new RegExp(`Previous managed Coder in this tree: ${previous}\\. Its command exits were not checked\\.`));
+  assert.match(replacement.content[0].text, new RegExp(`Previous Delivery Lead in this tree: ${previous}\\. Its command exits were not checked\\.`));
 });
 
 test("managed destination refuses missing, ambiguous or inconsistent native identity before pane mutation", async (t) => {
@@ -592,7 +601,7 @@ test("managed destination refuses missing, ambiguous or inconsistent native iden
         case "wrong-checkout": metadata.checkout_path = source; break;
       }
       herdrFleet(parent.pi);
-      await assert.rejects(() => launch(parent, { role: "managed-coder", cwd }), (error: Error) => {
+      await assert.rejects(() => launch(parent, { role: "delivery-lead", cwd }), (error: Error) => {
         assert.match(error.message, expected);
         if (refusal.startsWith("stale-")) {
           const field = refusal === "stale-repository" ? "repo_key" : "checkout_path";
@@ -623,7 +632,7 @@ test("managed destination canonicalizes checkout and repository aliases without 
   const metadata = parent.workspaces[1].worktree as Record<string, unknown>;
   metadata.repo_key = repoAlias;
   herdrFleet(parent.pi);
-  const result = await launch(parent, { role: "managed-coder", cwd: join(alias, "nested") });
+  const result = await launch(parent, { role: "delivery-lead", cwd: join(alias, "nested") });
   assert.equal(result.details.cwd, join(cwd, "nested"));
   assert.equal(result.details.paneId, "wN:p2");
 });
@@ -642,7 +651,7 @@ test("managed destination fails closed on unreadable metadata and cancellation",
         return exec(cmd, args);
       };
       herdrFleet(parent.pi);
-      await assert.rejects(() => parent.pi.tools.launch_agent.execute("refusal", { name: "lead", task, role: "managed-coder", cwd }, controller.signal, undefined, parent.ctx),
+      await assert.rejects(() => parent.pi.tools.launch_agent.execute("refusal", { name: "lead", task, role: "delivery-lead", cwd }, controller.signal, undefined, parent.ctx),
         refusal === "cancel" ? /abort/i : /workspace/);
       assert.equal(paneMutations(parent).length, 0);
       assert.equal(parent.pi.state.entries.at(-1).data.phase, "failed-before-pane");
@@ -663,7 +672,7 @@ test("legacy Coder and Coordinator keep parent placement without native workspac
   }
 });
 
-test("managed Coder readmits after a proved pre-pane occupancy or trust refusal", async () => {
+test("Delivery Lead readmits after a proved pre-pane occupancy or trust refusal", async () => {
   for (const refusal of ["occupancy", "trust"]) {
     const { cwd, parent } = identityLinked();
     herdrFleet(parent.pi);
@@ -673,13 +682,13 @@ test("managed Coder readmits after a proved pre-pane occupancy or trust refusal"
       mkdirSync(join(cwd, ".pi"));
       writeFileSync(join(cwd, ".pi/settings.json"), "{}");
     }
-    await assert.rejects(() => launch(parent, { role: "managed-coder", cwd }),
+    await assert.rejects(() => launch(parent, { role: "delivery-lead", cwd }),
       refusal === "occupancy" ? /occupied by neighbor/ : /Project trust decision required/);
     assert.equal(parent.pi.state.entries.at(-1).data.phase, "failed-before-pane");
     assert.equal(paneMutations(parent).length, 0);
     parent.roster.length = 1;
     const result = await launch(parent, {
-      role: "managed-coder", cwd, ...(refusal === "trust" ? { noProjectResources: true } : {}),
+      role: "delivery-lead", cwd, ...(refusal === "trust" ? { noProjectResources: true } : {}),
     });
     assert.equal(result.details.cwd, cwd);
     assert.equal(parent.pi.execCalls.filter((call: string[]) => call[0] === "herdr" && call[1] === "tab").length, 1);
@@ -688,7 +697,7 @@ test("managed Coder readmits after a proved pre-pane occupancy or trust refusal"
 
 test("an uncertain same-tree launch blocks every writer role for its caller, whatever role it had", async (t) => {
   // Non-code helpers and Coordinators record no Git-dir key; their recorded cwd still places them in the tree.
-  for (const first of ["managed-coder", "worker", "scout", "context-builder", "oracle", "debugger", "coordinator"]) {
+  for (const first of ["delivery-lead", "worker", "scout", "context-builder", "oracle", "debugger", "coordinator"]) {
     await t.test(first, async () => {
       const { source, cwd } = linked();
       const parent = managedParent(source, cwd, cwd);
@@ -701,7 +710,7 @@ test("an uncertain same-tree launch blocks every writer role for its caller, wha
       parent.pi.execImpl = exec;
       const before = paneMutations(parent).length;
       const admitted: string[] = [];
-      for (const role of ["worker", "reviewer", "fixer", "managed-coder", "coder"]) {
+      for (const role of ["worker", "reviewer", "fixer", "delivery-lead", "coder"]) {
         await launch(parent, { role, cwd }).then(() => { admitted.push(role); parent.roster.length = 1; }, (error: Error) => assert.match(error.message,
           /may still write to this task tree: lead[\w-]* \(session [^,]+, pane unknown, last recorded uncertain at |An uncertain leaf launch requires inspection/));
       }
@@ -720,14 +729,14 @@ test("managed admission requires an unclaimed linked cwd and preserves legacy cl
   const parent = fleetParent(source);
   herdrFleet(parent.pi);
   for (const params of [{}, { cwd: source }, { cwd, base: "HEAD" }]) {
-    await assert.rejects(() => launch(parent, { role: "managed-coder", ...params }), /cwd|linked|base/i);
+    await assert.rejects(() => launch(parent, { role: "delivery-lead", ...params }), /cwd|linked|base/i);
   }
   assert.equal(paneMutations(parent).length, 0);
   const legacy = await launch(parent, { cwd });
   const bytes = readFileSync(legacy.details.claimPath, "utf8");
   const other = fleetParent(source, "another-owner");
   herdrFleet(other.pi);
-  await assert.rejects(() => launch(other, { role: "managed-coder", cwd }), /already claimed/i);
+  await assert.rejects(() => launch(other, { role: "delivery-lead", cwd }), /already claimed/i);
   assert.equal(readFileSync(legacy.details.claimPath, "utf8"), bytes);
   assert.equal(paneMutations(other).length, 0);
 });
