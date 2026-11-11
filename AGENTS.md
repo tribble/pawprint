@@ -14,6 +14,9 @@ piece"). This file is for changing this repo.
   An owner-authorized personal-environment rollout does not wait on upstream merge, release
   or hosted-only CI; this repo's required checks and pin verification still gate it.
   Non-code authoring and small prose edits use the existing writer outside the code flow.
+  Every worker, fixer or writer stays through PR completion, or through the whole change
+  without a PR. The owner pauses it during fresh review and returns valid findings to that
+  same session; see Author continuity in `agent/configs/delegation.md`.
   Read-only work keeps its appropriate delegation.
   The recipe source is `agent/configs/managed-code-workflow.md`. When executing the flow,
   read the applied `<agent-dir>/configs/managed-code-workflow.md`: Pi's `getAgentDir()` uses
@@ -90,6 +93,9 @@ piece"). This file is for changing this repo.
   config lands there only via `setup.sh --apply`, never by hand-editing managed files.
   Run `npm ci` in task worktrees, never in `~/work/pawprint` or `~/.pi`.
 - The gate is `npm test`: `oxlint` (type-aware via tsgolint; no `any`, no floating/misused promises; opt out per line with a reason), `tsc`, then the node tests. Red = not done.
+  A Markdown-only prose change needs no `npm ci` or full suite. It runs the checks its
+  artifact has, such as `git diff --check` and the staged gitleaks scan. The owner may check
+  routine prose itself; substantive behavior or safety instructions get fresh independent review.
   Under process limits, count the runner, test-file processes and nested helpers. Run the same pinned components
   sequentially with `--test-concurrency=1` for Node tests.
   Preserve every test file, the register import, all enabled tests, component order and fail-fast behavior.
