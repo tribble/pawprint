@@ -1,8 +1,9 @@
-import { mock, test } from "node:test";
+import { after, mock, test } from "node:test";
 import fs from "node:fs";
 import { syncBuiltinESMExports } from "node:module";
 import assert from "node:assert/strict";
-import { existsSync, mkdirSync, readFileSync, realpathSync, renameSync, symlinkSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, renameSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { join } from "node:path";
 import herdrFleet from "../extensions/herdr-fleet.ts";
 import { fleetParent, fleetRepo } from "./fleet-fixture.ts";
@@ -358,17 +359,20 @@ test("code leaves refuse mismatched, occupied or uncertain admission before a se
 });
 
 test("uncertain leaves keep unknown ownership global and scope only verified recorded trees", async (t) => {
-  for (const scenario of ["same-tree", "unrelated-tree", "missing-key", "invalid-key", "mismatched-key", "mismatched-cwd", "missing-owner", "foreign-owner", "copied-file", "scout-without-key"]) {
+  for (const scenario of ["same-tree", "unrelated-tree", "missing-key", "invalid-key", "mismatched-key", "mismatched-cwd", "missing-owner", "foreign-owner", "copied-file", "scout-without-key", "external-writer", "foreign-external-writer"]) {
     await t.test(scenario, async () => {
       const { source, cwd, dir } = linked();
       const other = join(dir, "other");
       git(source, "worktree", "add", "-q", "-b", "other", other);
+      const external = externalDirectory();
       const parent = fleetParent(source);
       herdrFleet(parent.pi);
       const exec = parent.pi.execImpl;
       parent.pi.execImpl = (cmd: string, args: string[]) => cmd === "herdr" && args[1] === "start"
         ? Promise.resolve({ code: 1, stdout: "", stderr: "agent_not_ready", killed: false }) : exec(cmd, args);
-      await assert.rejects(() => launch(parent, { role: scenario === "scout-without-key" ? "scout" : "fixer", cwd }), /agent_not_ready/);
+      const first = scenario.endsWith("external-writer") ? { role: "writer", externalOnly: true, cwd: external }
+        : { role: scenario === "scout-without-key" ? "scout" : "fixer", cwd };
+      await assert.rejects(() => launch(parent, first), /agent_not_ready/);
       parent.pi.execImpl = exec;
       for (const entry of parent.pi.state.entries as { data: Record<string, unknown> }[]) {
         if (scenario === "missing-key") delete entry.data.worktreeKey;
@@ -376,7 +380,7 @@ test("uncertain leaves keep unknown ownership global and scope only verified rec
         if (scenario === "mismatched-key") entry.data.worktreeKey = git(source, "rev-parse", "--absolute-git-dir");
         if (scenario === "mismatched-cwd") entry.data.cwd = other;
         if (scenario === "missing-owner") delete entry.data.ownerSessionFile;
-        if (scenario === "foreign-owner") entry.data.ownerSessionId = "foreign-owner";
+        if (scenario.startsWith("foreign")) entry.data.ownerSessionId = "foreign-owner";
       }
       if (scenario === "copied-file") {
         const copy = join(dir, "copied-parent.jsonl");
@@ -390,6 +394,17 @@ test("uncertain leaves keep unknown ownership global and scope only verified rec
       } else {
         await assert.rejects(() => launch(parent, { role: "fixer", cwd: scenario === "same-tree" ? cwd : other }), /uncertain leaf launch/);
         assert.equal(paneMutations(parent).length, before);
+      }
+      // An external-only launch admits only beside verified unrelated tree identity; unknown scope stays global.
+      if (["same-tree", "unrelated-tree"].includes(scenario)) {
+        const result = await launch(parent, { role: "writer", externalOnly: true, cwd: external });
+        assert.equal(result.details.cwd, external);
+      } else {
+        const mutations = paneMutations(parent).length;
+        for (const params of [{ role: "writer" }, { role: "reviewer", reviewFamily: "anthropic" }]) {
+          await assert.rejects(() => launch(parent, { ...params, externalOnly: true, cwd: external }), /uncertain leaf launch/);
+        }
+        assert.equal(paneMutations(parent).length, mutations);
       }
     });
   }
@@ -421,20 +436,29 @@ test("configuration and non-code leaves use native profiles and their venue with
   assert.equal(owner.pi.execCalls.some((call: string[]) => call.includes("add") && call.includes("worktree")), false);
 });
 
-test("original isolated fixer and writer owners can request fresh review after parent-verified closure", async () => {
-  for (const role of ["fixer", "writer"]) {
+test("original isolated fixer and writer owners request fresh review beside their settled author or after its closure", async () => {
+  for (const [role, author] of [["fixer", "retained"], ["writer", "retained"], ["fixer", "closed"], ["writer", "closed"]]) {
     const { source, cwd } = linked();
     const parent = fleetParent(source);
     herdrFleet(parent.pi);
-    await launch(parent, { role, cwd });
-    // The parent verified command exits separately; removing the roster is only native closure.
-    parent.roster.length = 1;
+    const authored = await launch(parent, { role, cwd });
+    // The parent verified command exits separately; native status and roster absence prove neither.
+    if (author === "closed") parent.roster.length = 1;
+    else parent.roster[1].agent_status = "idle";
     for (const review of ["reviewer", "reviewer-security"]) {
       const result = await launch(parent, { role: review, reviewFamily: "anthropic", cwd });
       assert.equal(result.details.cwd, realpathSync.native(cwd));
       assert.equal(result.details.parent, parent.ctx.sessionManager.getSessionId());
       assert.equal(result.details.claimPath, undefined);
-      parent.roster.length = 1;
+      assert.equal(result.details.retainedAuthor, author === "retained" ? authored.details.childSessionId : undefined);
+      parent.roster.length = author === "closed" ? 1 : 2;
+    }
+    if (author === "retained") {
+      // A pane bound to the recorded file whose saved header names another session is not the retained author.
+      writeFileSync(sessionFile(parent.roster[1]), JSON.stringify({ type: "session", id: "different-native-uuid", cwd: realpathSync.native(cwd) }) + "\n");
+      const before = paneMutations(parent).length;
+      await assert.rejects(() => launch(parent, { role: "reviewer", reviewFamily: "anthropic", cwd }), /Native child session header does not match this launch/);
+      assert.equal(paneMutations(parent).length, before);
     }
     parent.pi.events.on("pi-change-working-dir:resolve-execution-cwd", (request: { result?: { cwd: string } }) => { request.result = { cwd }; });
     await assert.rejects(() => launch(parent, { role: "worker", cwd }), /same admitted task tree/);
@@ -476,6 +500,233 @@ test("isolated review refuses unrelated or copied owners, live actors, uncertain
       await assert.rejects(() => launch(caller, { role: "reviewer", reviewFamily: "anthropic", cwd: refusal === "tree" ? linked().cwd : cwd }), expected[refusal]);
       assert.equal(paneMutations(caller).length, before);
     } finally { delete process.env.PAWPRINT_FLEET_LEAF; }
+  }
+});
+
+test("the same settled author survives each fresh review and receives corrections without a second author", async () => {
+  try {
+    const { owner, cwd } = await deliveryOwner();
+    herdrFleet(owner.pi);
+    const author = await launch(owner, { name: "author", role: "worker", cwd });
+    const native = owner.roster.at(-1);
+    assert.ok(native);
+    // A working author is editing: no review of a moving candidate.
+    await assert.rejects(() => launch(owner, { name: "review", role: "reviewer", reviewFamily: "openai", cwd }), /Task tree occupied by author;/);
+    for (const round of [1, 2]) {
+      native.agent_status = round === 1 ? "idle" : "done";
+      // A settled author admits only review: never a second author.
+      for (const role of ["worker", "writer", "fixer"]) {
+        const before = paneMutations(owner).length;
+        await assert.rejects(() => launch(owner, { name: "extra", role, cwd }), /Task tree occupied by author;/);
+        assert.equal(paneMutations(owner).length, before);
+      }
+      for (const role of ["reviewer", "reviewer-security"]) {
+        const review = await launch(owner, { name: "review", role, reviewFamily: "openai", cwd });
+        assert.equal(review.details.cwd, cwd);
+        assert.equal(review.details.retainedAuthor, author.details.childSessionId);
+        assert.match(review.content[0].text, /Retained author here: author .*command exits were not checked/);
+        const before = paneMutations(owner).length;
+        await assert.rejects(() => launch(owner, { name: "extra", role: "reviewer", reviewFamily: "openai", cwd }), /Task tree occupied by review;/);
+        assert.equal(paneMutations(owner).length, before);
+        owner.roster.splice(owner.roster.findIndex((agent) => agent.pane_id === review.details.paneId), 1);
+      }
+      // Owner returns the findings to the same native author session.
+      native.agent_status = "working";
+      await assert.rejects(() => launch(owner, { name: "review", role: "reviewer", reviewFamily: "openai", cwd }), /Task tree occupied by author;/);
+    }
+    assert.equal(owner.roster.at(-1), native);
+    const authors = owner.pi.execCalls.filter((call: string[]) => call[0] === "herdr" && call[2] === "start" && call.includes("cloudflare-ai-gateway/claude-opus-5-5") && call.includes("high"));
+    assert.equal(authors.length, 1, "corrections never launch a fresh author");
+  } finally {
+    process.env.HERDR_PANE_ID = "wT:p1";
+  }
+});
+
+test("review beside a retained author refuses busy, unknown, mismatched, unowned or uncertain actors", async (t) => {
+  for (const scenario of ["working", "blocked", "unknown", "missing-status", "session-mismatch", "moved-pane", "unowned-author", "unrelated-occupant", "uncertain-author", "two-authors", "header-uuid", "header-cwd", "header-missing"]) {
+    await t.test(scenario, async () => {
+      try {
+        const { owner, cwd } = await deliveryOwner();
+        herdrFleet(owner.pi);
+        if (scenario === "uncertain-author") {
+          const exec = owner.pi.execImpl;
+          owner.pi.execImpl = (cmd: string, args: string[]) => cmd === "herdr" && args[1] === "prompt"
+            ? Promise.resolve({ code: 1, stdout: "", stderr: "agent_prompt_stalled", killed: false }) : exec(cmd, args);
+          await assert.rejects(() => launch(owner, { name: "author", role: "worker", cwd }), /agent_prompt_stalled/);
+          owner.pi.execImpl = exec;
+        } else await launch(owner, { name: "author", role: "worker", cwd });
+        const native = owner.roster.at(-1);
+        assert.ok(native);
+        native.agent_status = "idle";
+        if (["working", "blocked", "unknown"].includes(scenario)) native.agent_status = scenario;
+        if (scenario === "missing-status") delete native.agent_status;
+        if (scenario === "session-mismatch") native.agent_session = { kind: "id", value: "somebody-else" };
+        if (scenario === "moved-pane") native.pane_id = "wN:p8";
+        if (scenario === "unowned-author") for (const entry of owner.pi.state.entries) entry.data.ownerSessionId = "foreign-owner";
+        if (scenario === "unrelated-occupant") owner.roster.push({ name: "stranger", pane_id: "wN:p9", cwd, agent_status: "idle" });
+        if (scenario === "two-authors") {
+          const record = owner.pi.state.entries.at(-1).data;
+          owner.pi.appendEntry("fleet-launch", { ...record, launchId: "second-author", childSessionId: "second", paneId: "wN:p9", role: "writer" });
+          owner.roster.push({ name: "second", pane_id: "wN:p9", cwd, agent_status: "idle", agent_session: { kind: "id", value: "second" } });
+        }
+        const { childSessionId } = owner.pi.state.entries.at(-1).data;
+        if (scenario === "header-uuid") writeFileSync(sessionFile(native), JSON.stringify({ type: "session", id: "different-native-uuid", cwd }) + "\n");
+        if (scenario === "header-cwd") writeFileSync(sessionFile(native), JSON.stringify({ type: "session", id: childSessionId, cwd: realpathSync.native(tmpdir()) }) + "\n");
+        if (scenario === "header-missing") rmSync(sessionFile(native));
+        const expected: Record<string, RegExp> = {
+          "unrelated-occupant": /Task tree occupied by stranger;/, "uncertain-author": /uncertain leaf launch/,
+          "two-authors": /predecessor is still live but not a settled retained author/,
+          "header-uuid": /Native child session header does not match this launch/,
+          "header-cwd": /Native child session header does not match this launch/,
+          "header-missing": /Retained author's native session file is missing/,
+        };
+        const before = paneMutations(owner).length;
+        for (const params of [{ role: "reviewer", reviewFamily: "anthropic" }, { role: "reviewer-security", reviewFamily: "openai" }]) {
+          await assert.rejects(() => launch(owner, { name: "review", ...params, cwd }), expected[scenario] ?? /Task tree occupied by author;/);
+        }
+        assert.equal(paneMutations(owner).length, before);
+      } finally {
+        process.env.HERDR_PANE_ID = "wT:p1";
+      }
+    });
+  }
+});
+
+const sessionFile = (agent: Record<string, unknown>) => (agent.agent_session as { value: string }).value;
+
+// Scratch under this checkout is inside a Git worktree; an external venue must not be.
+function externalDirectory() {
+  const external = realpathSync.native(mkdtempSync(join(tmpdir(), "pawprint-external-")));
+  after(() => rmSync(external, { recursive: true, force: true }));
+  assert.throws(() => git(external, "rev-parse", "--is-inside-work-tree"));
+  return external;
+}
+
+test("an explicit external-only writer uses an ordinary task directory, never a repository", async () => {
+  const { source, cwd } = linked();
+  const external = externalDirectory();
+  const broken = mktmp("broken-gitfile");
+  writeFileSync(join(broken, ".git"), `gitdir: ${join(broken, "missing")}\n`);
+  mkdirSync(join(source, "nested"));
+  const parent = fleetParent(source);
+  herdrFleet(parent.pi);
+  const result = await launch(parent, { name: "notes", role: "writer", externalOnly: true, cwd: external });
+  assert.equal(result.details.cwd, external);
+  assert.equal(result.details.externalOnly, true);
+  assert.equal(result.details.worktreeKey, undefined);
+  const tab = parent.pi.execCalls.find((call: string[]) => call[0] === "herdr" && call[1] === "tab");
+  assert.equal(tab[tab.indexOf("--workspace") + 1], "wT");
+  assert.ok(tab.includes("PAWPRINT_FLEET_LEAF=1"));
+  const prompt = parent.pi.execCalls.findLast((call: string[]) => call[0] === "herdr" && call[2] === "prompt")[4];
+  assert.match(prompt, /External-only.*never edit.*repository/i);
+  assert.equal(parent.pi.execCalls.some((call: string[]) => call.includes("worktree")), false);
+  // The same writer keeps the directory: no second author beside it.
+  await assert.rejects(() => launch(parent, { name: "notes", role: "writer", externalOnly: true, cwd: external }), /Task directory occupied by notes;/);
+  parent.roster.length = 1;
+  const before = paneMutations(parent).length;
+  for (const [params, expected] of [
+    [{ role: "writer", externalOnly: true, cwd }, /External-only writers cannot use a Git repository/],
+    [{ role: "writer", externalOnly: true, cwd: source }, /External-only writers cannot use a Git repository/],
+    [{ role: "writer", externalOnly: true, cwd: join(source, "nested") }, /External-only writers cannot use a Git repository/],
+    [{ role: "writer", externalOnly: true, cwd: broken }, /External-only writers cannot use a Git repository/],
+    [{ role: "writer", cwd: external }, /git rev-parse/],
+    [{ role: "fixer", externalOnly: true, cwd: external }, /externalOnly is only valid for writer, reviewer/],
+    [{ role: "scout", externalOnly: true, cwd: external }, /externalOnly is only valid for writer, reviewer/],
+  ] as const) {
+    await assert.rejects(() => launch(parent, { name: "notes", ...params }), expected);
+  }
+  parent.roster.push({ name: "stranger", pane_id: "wU:p9", cwd: external });
+  await assert.rejects(() => launch(parent, { name: "notes", role: "writer", externalOnly: true, cwd: external }), /Task directory occupied by stranger;/);
+  parent.roster.length = 1;
+  await parent.pi.commands.delegate.handler(`--role writer --external-only --cwd "${external}" notes ${task}`, parent.ctx);
+  assert.equal(parent.ctx.notes.at(-1).level, "info");
+  assert.equal(paneMutations(parent).length, before + 3);
+});
+
+test("fresh external review runs beside or after only the caller's own settled external-only writer", async () => {
+  const external = externalDirectory();
+  const { source } = fleetRepo();
+  const parent = fleetParent(source);
+  herdrFleet(parent.pi);
+  const writer = await launch(parent, { name: "notes", role: "writer", externalOnly: true, cwd: external });
+  const native = parent.roster.at(-1);
+  assert.ok(native);
+  const review = (params: Record<string, unknown> = {}) =>
+    launch(parent, { name: "review", role: "reviewer", reviewFamily: "anthropic", externalOnly: true, cwd: external, ...params });
+  // A working writer is still changing the candidate.
+  await assert.rejects(() => review(), /Task directory occupied by notes;/);
+  native.agent_status = "idle";
+  for (const role of ["reviewer", "reviewer-security"]) {
+    const result = await review({ role });
+    assert.equal(result.details.retainedAuthor, writer.details.childSessionId);
+    assert.match(result.content[0].text, /Retained author here: notes .*command exits were not checked/);
+    const prompt = parent.pi.execCalls.findLast((call: string[]) => call[0] === "herdr" && call[2] === "prompt")[4];
+    assert.match(prompt, /External-only review:.*Do not edit files or repositories and do not change external records/);
+    assert.doesNotMatch(prompt, /External-only: change only/);
+    const before = paneMutations(parent).length;
+    await assert.rejects(() => review({ name: "extra" }), /Task directory occupied by review;/);
+    await assert.rejects(() => launch(parent, { name: "extra", role: "writer", externalOnly: true, cwd: external }), /Task directory occupied by notes, review;/);
+    assert.equal(paneMutations(parent).length, before);
+    parent.roster.splice(parent.roster.findIndex((agent) => agent.pane_id === result.details.paneId), 1);
+  }
+  // The writer receives corrections in the same session, then settles for the next fresh review.
+  native.agent_status = "working";
+  await assert.rejects(() => review(), /Task directory occupied by notes;/);
+  native.agent_status = "done";
+  parent.roster.push({ name: "stranger", pane_id: "wU:p9", foreground_cwd: external });
+  await assert.rejects(() => review(), /Task directory occupied by stranger;/);
+  parent.roster.pop();
+  const header = readFileSync(sessionFile(native), "utf8");
+  writeFileSync(sessionFile(native), JSON.stringify({ type: "session", id: writer.details.childSessionId, cwd: realpathSync.native(tmpdir()) }) + "\n");
+  await assert.rejects(() => review(), /Native child session header does not match this launch/);
+  writeFileSync(sessionFile(native), header);
+  native.agent_session = { kind: "id", value: "somebody-else" };
+  await assert.rejects(() => review(), /Task directory occupied by notes;/);
+  parent.roster.length = 1;
+  const closed = await review();
+  assert.equal(closed.details.retainedAuthor, undefined);
+  parent.roster.length = 1;
+  const other = externalDirectory();
+  const unrelated = fleetParent(source, "unrelated-owner");
+  herdrFleet(unrelated.pi);
+  const before = paneMutations(parent).length + paneMutations(unrelated).length;
+  for (const [caller, params, expected] of [
+    [unrelated, {}, /needs this caller's own prompted external-only writer/],
+    [parent, { cwd: other }, /needs this caller's own prompted external-only writer/],
+    [parent, { cwd: source }, /cannot use a Git repository/],
+    [parent, { externalOnly: undefined }, /git rev-parse/],
+  ] as const) {
+    await assert.rejects(() => launch(caller, { name: "review", role: "reviewer", reviewFamily: "anthropic", externalOnly: true, cwd: external, ...params }), expected);
+  }
+  parent.roster[0].agent_session = { kind: "id", value: "not-the-owner" };
+  await assert.rejects(() => review(), /Native child session identity/);
+  assert.equal(paneMutations(parent).length + paneMutations(unrelated).length, before);
+});
+
+test("an external-only launch keeps a vanished tree's uncertain or live author blocking at the same path", async () => {
+  for (const scenario of ["uncertain", "live-elsewhere"]) {
+    const { source, dir } = fleetRepo(join(externalDirectory(), "repo"));
+    const cwd = join(dir, "linked");
+    git(source, "worktree", "add", "-q", "-b", "linked", cwd);
+    const parent = fleetParent(source);
+    herdrFleet(parent.pi);
+    if (scenario === "uncertain") {
+      const exec = parent.pi.execImpl;
+      parent.pi.execImpl = (cmd: string, args: string[]) => cmd === "herdr" && args[1] === "prompt"
+        ? Promise.resolve({ code: 1, stdout: "", stderr: "agent_prompt_stalled", killed: false }) : exec(cmd, args);
+      await assert.rejects(() => launch(parent, { name: "author", role: "writer", cwd }), /agent_prompt_stalled/);
+      parent.pi.execImpl = exec;
+      parent.roster.length = 1;
+    } else {
+      await launch(parent, { name: "author", role: "writer", cwd });
+      // Still bound to its recorded session, now reporting another directory.
+      parent.roster[1].cwd = realpathSync.native(tmpdir());
+    }
+    rmSync(join(cwd, ".git"));
+    const before = paneMutations(parent).length;
+    await assert.rejects(() => launch(parent, { name: "external", role: "writer", externalOnly: true, cwd }),
+      scenario === "uncertain" ? /uncertain leaf launch/ : /Another agent may still write to this task tree: author/, scenario);
+    assert.equal(paneMutations(parent).length, before);
   }
 });
 

@@ -55,7 +55,7 @@
     "model": "cloudflare-ai-gateway/claude-fable-5-1",
     "thinking": "medium",
     "instructionsFile": "delegation.md",
-    "contract": "Author only the requested prose artifact in the task worktree. Preserve supplied facts and decisions. Do not turn chat explanations into artifact text or change code."
+    "contract": "Author only the requested prose or external records in the assigned venue. Preserve supplied facts and decisions. Do not turn chat explanations into artifact text or change code."
   },
   "scout": {
     "model": "cloudflare-ai-gateway/claude-sonnet-5-5",

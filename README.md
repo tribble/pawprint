@@ -181,15 +181,27 @@ A replacement owner the human asked to take over may continue there. Predecessor
 background-command settlement is a manual check: the launcher detects only live agents
 in the tree and the caller's own live or uncertain launches there, whatever their role.
 The original full main of an isolated successful fixer/writer
-delivery may also launch reviewer/security leaves there after verified actor/command closure;
+delivery may also launch reviewer/security leaves there beside its settled retained author
+or after its closure, once the author's commands have verifiably exited;
 workers still require the tree's delivery owner. They create no second worktree or persistent writer claim.
 The launcher reuses the admission lock and refuses legacy claims, unknown occupants
-and uncertain replay. Only the owner starts the next leaf after prior actor/command closure.
+and uncertain replay. Only the owner starts the next leaf.
 Leaves cannot launch actors or trigger review.
+
+One worker, fixer or writer stays through PR completion, or through the whole change
+without a PR. Review runs beside that author only when it is the caller's own prompted
+author, bound to its recorded pane, session and saved session header, with native status idle or done.
+The owner verifies the author's command exits first; idle or done does not prove them.
+The owner does not prompt the author during review, then closes the reviewer and returns
+valid findings to the same author. Each round uses a fresh reviewer.
 
 Non-code writer/scout/context-builder/oracle/debugger roles use the native launcher
 with explicit assigned cwd. Writer and trivial-configuration fixer need an unclaimed
-linked task tree. Fixer can bypass a Delivery Lead through the same admission gate.
+linked task tree for repository edits. Fixer can bypass a Delivery Lead through the same admission gate.
+An `externalOnly` writer (`/delegate --external-only`) updates external records, such as
+Linear, from an ordinary directory that Git reports is not a repository. It needs no
+worktree, setup or cleanup and never edits a repository. `externalOnly` reviewers review
+only the caller's own external-only writer there.
 Read-only roles can use their assigned directory without a managed wrapper.
 See [delegation](agent/configs/delegation.md) for contracts and continuation commands.
 
@@ -214,8 +226,8 @@ An uncertain start or task submission may already have taken effect. Inspect bef
 The parent owns integrated acceptance, authorized publication and cleanup.
 After verified settlement and command/descendant exits, close the recorded owned pane
 with `herdr pane close <recorded-pane>` and inspect native state afterward.
-After review, close the reviewer and launch a fresh worker for fixes; the previous worker
-is already closed. Busy-stop safety is unproven.
+After review, close the reviewer and return findings to the same author.
+Busy-stop safety is unproven.
 A completed report, idle label or pane-close receipt does not prove detached descendants exited.
 Preserve original native receipts and process/command exits.
 Preserve ignored evidence before authorized non-force native removal.
