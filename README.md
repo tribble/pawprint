@@ -181,7 +181,8 @@ A replacement owner the human asked to take over may continue there. Predecessor
 background-command settlement is a manual check: the launcher detects only live agents
 in the tree and the caller's own live or uncertain launches there, whatever their role.
 The original full main of an isolated successful fixer/writer
-delivery may also launch reviewer/security leaves there after verified actor/command closure;
+delivery may also launch reviewer/security leaves there beside its settled retained author
+or after its closure, once the author's commands have verifiably exited;
 workers still require the tree's delivery owner. They create no second worktree or persistent writer claim.
 The launcher reuses the admission lock and refuses legacy claims, unknown occupants
 and uncertain replay. Only the owner starts the next leaf.
@@ -189,7 +190,7 @@ Leaves cannot launch actors or trigger review.
 
 One worker, fixer or writer stays through PR completion, or through the whole change
 without a PR. Review runs beside that author only when it is the caller's own prompted
-author, bound to its recorded pane and session, with native status idle or done.
+author, bound to its recorded pane, session and saved session header, with native status idle or done.
 The owner verifies the author's command exits first; idle or done does not prove them.
 The owner does not prompt the author during review, then closes the reviewer and returns
 valid findings to the same author. Each round uses a fresh reviewer.

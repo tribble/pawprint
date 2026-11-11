@@ -13,7 +13,8 @@ piece"). This file is for changing this repo.
   required checks still run. Unqualified dependency upgrades stay in the code flow.
   An owner-authorized personal-environment rollout does not wait on upstream merge, release
   or hosted-only CI; this repo's required checks and pin verification still gate it.
-  Non-code authoring and small prose edits use the existing writer outside the code flow.
+  Owners may make small, decided non-code reads, updates and prose edits directly.
+  Delegated non-code authoring uses the existing writer outside the code flow.
   Every worker, fixer or writer stays through PR completion, or through the whole change
   without a PR. The owner pauses it during fresh review and returns valid findings to that
   same session; see Author continuity in `agent/configs/delegation.md`.

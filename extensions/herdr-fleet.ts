@@ -305,10 +305,11 @@ const retainedAuthorNote = (author?: string) => author ? ` Retained author here:
 // Can another agent write to this tree? Besides observed occupants, any of this caller's own launches there
 // counts, whatever its role, until it was prompted and its pane and session are gone from the native roster.
 // Launches without a recorded Git-dir key (helpers, Coordinators) count when their canonical cwd is inside the tree.
+// An ordinary directory has no key: every launch counts by cwd there, so a vanished tree's author still blocks.
 // A closed predecessor's detached commands are not visible here; the operator settles them manually.
 // Only a verified retained author may stay beside a review launch.
 function assertNoOtherWriter(ctx: ExtensionContext, live: FleetAgent[], tree: { root: string; key?: string }, launchId: string, retained?: string) {
-  const inTree = (r: LaunchRecord) => r.worktreeKey !== undefined ? r.worktreeKey === tree.key
+  const inTree = (r: LaunchRecord) => r.worktreeKey !== undefined && tree.key !== undefined ? r.worktreeKey === tree.key
     : typeof r.cwd === "string" && (r.cwd === tree.root || r.cwd.startsWith(tree.root + sep));
   const blocking = ownLaunches(ctx).find((r) => inTree(r) && r.launchId !== launchId && r.launchId !== retained && !["failed-before-pane", "released"].includes(r.phase) &&
     (r.phase !== "prompted" || !r.paneId || live.some((a) => a.pane_id === r.paneId || sessionMatches(a.agent_session, r.childSessionId))));
@@ -336,15 +337,21 @@ function verifySessionHeader(ref: FleetAgent["agent_session"], record: Pick<Laun
 }
 
 // Review may run beside this caller's one live author in scope when that author was prompted, is
-// bound to its recorded pane and session, and its native turn is settled. Anything else stays an occupant.
+// bound to its recorded pane, session and saved header, and its native turn is settled. Anything else stays an occupant.
 function retainedAuthor(ctx: ExtensionContext, live: FleetAgent[], inScope: (r: LaunchRecord) => boolean): LaunchRecord | undefined {
   const bound = (r: LaunchRecord) => live.filter((a) => a.pane_id === r.paneId || sessionMatches(a.agent_session, r.childSessionId));
   const authors = ownLaunches(ctx).filter((r) => AUTHOR_ROLES.includes(r.role) && inScope(r) && bound(r).length);
   if (authors.length !== 1) return undefined;
   const [author] = authors;
   const [agent, ...extra] = bound(author);
-  return author.phase === "prompted" && !extra.length && agent.pane_id === author.paneId &&
-    sessionMatches(agent.agent_session, author.childSessionId) && SETTLED_STATUSES.includes(agent.agent_status ?? "") ? author : undefined;
+  if (author.phase !== "prompted" || extra.length || agent.pane_id !== author.paneId ||
+    !sessionMatches(agent.agent_session, author.childSessionId) || !SETTLED_STATUSES.includes(agent.agent_status ?? "")) return undefined;
+  // A prompted author has written its session header; without it the identity is unknown.
+  if (agent.agent_session?.kind !== "path" || !existsSync(agent.agent_session.value)) {
+    throw new Error(`Retained author's native session file is missing; its identity is unknown: ${describeLaunch(ctx, author)}`);
+  }
+  verifySessionHeader(agent.agent_session, author);
+  return author;
 }
 
 // Only Git's own "no repository" answer admits an external venue; anything else may be a repository.
@@ -364,6 +371,26 @@ function directoryOccupants(agents: FleetAgent[], dir: string) {
     try { path = realpathSync.native(cwd); } catch { return false; }
     return path === dir || path.startsWith(dir + sep);
   }));
+}
+
+// Any uncertain leaf launch blocks unless it is this caller's own and its recorded tree identity verifies
+// as a different Git tree than the target. Unknown ownership or scope stays globally blocking.
+async function assertNoUncertainLeaf(pi: ExtensionAPI, ctx: ExtensionContext, record: LaunchRecord, targetKey: string | undefined, signal?: AbortSignal) {
+  for (const prior of recordedLaunches(ctx)) {
+    if (!isLeafRole(prior.role) || ["prompted", "failed-before-pane"].includes(prior.phase)) continue;
+    const owned = prior.ownerSessionId === record.ownerSessionId && prior.ownerSessionFile === record.ownerSessionFile &&
+      typeof prior.launchId === "string" && !!prior.launchId;
+    if (owned && prior.launchId === record.launchId) continue;
+    let recordedTree: Worktree | undefined;
+    if (owned && typeof prior.cwd === "string" && isAbsolute(prior.cwd) && !hasControls(prior.cwd) &&
+      typeof prior.worktreeKey === "string" && isAbsolute(prior.worktreeKey) && !hasControls(prior.worktreeKey)) {
+      try { recordedTree = await worktreeIdentity(pi, prior.cwd, signal); }
+      catch { signal?.throwIfAborted(); } // Unresolved identity stays globally blocking.
+    }
+    if (!recordedTree || recordedTree.key !== prior.worktreeKey || recordedTree.key === targetKey) {
+      throw new Error("An uncertain leaf launch requires inspection; no automatic replacement without verified independent tree identity");
+    }
+  }
 }
 
 async function sameTreeOccupants(pi: ExtensionAPI, agents: FleetAgent[], worktree: Worktree, signal?: AbortSignal) {
@@ -628,6 +655,7 @@ async function launch(pi: ExtensionAPI, ctx: ExtensionContext, request: LaunchRe
     if (request.externalOnly) {
       await assertOutsideGit(pi, sourceCwd, signal);
       save("intent", { externalOnly: true });
+      await assertNoUncertainLeaf(pi, ctx, record, undefined, signal);
       const live = await agentList(pi, signal);
       if (isReviewRole(role)) {
         // Review only this caller's own external-only writer here, beside it when settled or after its closure.
@@ -675,21 +703,7 @@ async function launch(pi: ExtensionAPI, ctx: ExtensionContext, request: LaunchRe
           verifyDeliveryOwner(ctx, live);
           ws = await managedWorkspace(pi, current, signal);
         }
-        for (const prior of recordedLaunches(ctx)) {
-          if (!isLeafRole(prior.role) || ["prompted", "failed-before-pane"].includes(prior.phase)) continue;
-          const owned = prior.ownerSessionId === record.ownerSessionId && prior.ownerSessionFile === ownerSessionFile &&
-            typeof prior.launchId === "string" && !!prior.launchId;
-          if (owned && prior.launchId === record.launchId) continue;
-          let recordedTree: Worktree | undefined;
-          if (owned && typeof prior.cwd === "string" && isAbsolute(prior.cwd) && !hasControls(prior.cwd) &&
-            typeof prior.worktreeKey === "string" && isAbsolute(prior.worktreeKey) && !hasControls(prior.worktreeKey)) {
-            try { recordedTree = await worktreeIdentity(pi, prior.cwd, signal); }
-            catch { signal?.throwIfAborted(); } // Unresolved identity stays globally blocking.
-          }
-          if (!recordedTree || recordedTree.key !== prior.worktreeKey || recordedTree.key === tree.key) {
-            throw new Error("An uncertain leaf launch requires inspection; no automatic replacement without verified independent tree identity");
-          }
-        }
+        await assertNoUncertainLeaf(pi, ctx, record, tree.key, signal);
         const occupants = (await sameTreeOccupants(pi, live, tree, signal)).filter((a) => !retained || a.pane_id !== retained.paneId);
         if (occupants.length) throw new Error(`Task tree occupied by ${occupants.map((a) => a.name ?? a.pane_id ?? "unknown").join(", ")}; only review may run beside the owner's settled retained author. Settle other actors and commands first`);
         assertNoOtherWriter(ctx, live, tree, record.launchId, retained?.launchId);
@@ -848,7 +862,7 @@ export default function herdrFleet(pi: ExtensionAPI) {
       "For cross-family review, launch_agent reviewer/reviewer-security accepts reviewFamily: anthropic for OpenAI-authored output (including Astra), openai for Anthropic-authored output. Models come from the role's reviewModels config; omission keeps its default model and effort stays unchanged.",
       "For a code delivery, first create the native herdr worktree, then use role delivery-lead with its exact cwd (managed-coder is a legacy alias). The Delivery Lead owns a high-quality change: it launches sequential native worker and fresh reviewer leaves with qualified models and role efforts, unblocks and mediates them, and escalates stuck work to its parent. The launching parent owns final acceptance and native cleanup. No persistent writer claim is added.",
       "Code leaves require their delivery owner's current native identity in the same explicit task tree; launch history does not block a human-requested replacement. The launcher refuses live agents in the tree and the caller's own uncertain launches; it cannot see a closed predecessor's detached commands, so check those manually before taking over. They create no worktree or persistent claim. Uncertain launches block replacement. Fixer (trivial configuration only) and writer require an unclaimed linked task tree for repository edits; scout/context-builder/oracle/debugger use their explicit assigned directory.",
-      "Keep one worker, fixer or writer through PR completion, or through the whole change without a PR. Return review findings to that same session with herdr agent prompt; never launch a fresh author for corrections. Reviewer/reviewer-security may launch beside the caller's one own author only when its recorded pane and session match and native status is idle or done. Verify the author's command and descendant exits first; idle or done does not prove them. Do not prompt the author while review runs. Close each reviewer before returning findings and use a fresh reviewer for each round.",
+      "Keep one worker, fixer or writer through PR completion, or through the whole change without a PR. Return review findings to that same session with herdr agent prompt; never launch a fresh author for corrections. Reviewer/reviewer-security may launch beside the caller's one own author only when its recorded pane, session and saved session header match and native status is idle or done. Verify the author's command and descendant exits first; idle or done does not prove them. Do not prompt the author while review runs. Close each reviewer before returning findings and use a fresh reviewer for each round.",
       "externalOnly: true admits a writer in an ordinary assigned task directory that Git reports is not a repository, for external records such as Linear: no worktree, setup, install or cleanup, and no repository edits. Reviewer/reviewer-security with externalOnly: true review only the caller's own external-only writer's fixed candidate in that directory.",
       "Coders default to a fresh linked worktree from the effective repository and committed HEAD. Supply base for repo policy (pawprint: origin/main). Explicit cwd reuses exactly an admitted linked checkout; never combine cwd and base. Coordinators keep directory behavior and reject base.",
       "launch_agent is delegated-only, retains parent provenance and requires the verbatim Owner outcome. Unresolved project trust requires human action; noProjectResources explicitly opts out.",

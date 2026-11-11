@@ -359,17 +359,20 @@ test("code leaves refuse mismatched, occupied or uncertain admission before a se
 });
 
 test("uncertain leaves keep unknown ownership global and scope only verified recorded trees", async (t) => {
-  for (const scenario of ["same-tree", "unrelated-tree", "missing-key", "invalid-key", "mismatched-key", "mismatched-cwd", "missing-owner", "foreign-owner", "copied-file", "scout-without-key"]) {
+  for (const scenario of ["same-tree", "unrelated-tree", "missing-key", "invalid-key", "mismatched-key", "mismatched-cwd", "missing-owner", "foreign-owner", "copied-file", "scout-without-key", "external-writer", "foreign-external-writer"]) {
     await t.test(scenario, async () => {
       const { source, cwd, dir } = linked();
       const other = join(dir, "other");
       git(source, "worktree", "add", "-q", "-b", "other", other);
+      const external = externalDirectory();
       const parent = fleetParent(source);
       herdrFleet(parent.pi);
       const exec = parent.pi.execImpl;
       parent.pi.execImpl = (cmd: string, args: string[]) => cmd === "herdr" && args[1] === "start"
         ? Promise.resolve({ code: 1, stdout: "", stderr: "agent_not_ready", killed: false }) : exec(cmd, args);
-      await assert.rejects(() => launch(parent, { role: scenario === "scout-without-key" ? "scout" : "fixer", cwd }), /agent_not_ready/);
+      const first = scenario.endsWith("external-writer") ? { role: "writer", externalOnly: true, cwd: external }
+        : { role: scenario === "scout-without-key" ? "scout" : "fixer", cwd };
+      await assert.rejects(() => launch(parent, first), /agent_not_ready/);
       parent.pi.execImpl = exec;
       for (const entry of parent.pi.state.entries as { data: Record<string, unknown> }[]) {
         if (scenario === "missing-key") delete entry.data.worktreeKey;
@@ -377,7 +380,7 @@ test("uncertain leaves keep unknown ownership global and scope only verified rec
         if (scenario === "mismatched-key") entry.data.worktreeKey = git(source, "rev-parse", "--absolute-git-dir");
         if (scenario === "mismatched-cwd") entry.data.cwd = other;
         if (scenario === "missing-owner") delete entry.data.ownerSessionFile;
-        if (scenario === "foreign-owner") entry.data.ownerSessionId = "foreign-owner";
+        if (scenario.startsWith("foreign")) entry.data.ownerSessionId = "foreign-owner";
       }
       if (scenario === "copied-file") {
         const copy = join(dir, "copied-parent.jsonl");
@@ -391,6 +394,17 @@ test("uncertain leaves keep unknown ownership global and scope only verified rec
       } else {
         await assert.rejects(() => launch(parent, { role: "fixer", cwd: scenario === "same-tree" ? cwd : other }), /uncertain leaf launch/);
         assert.equal(paneMutations(parent).length, before);
+      }
+      // An external-only launch admits only beside verified unrelated tree identity; unknown scope stays global.
+      if (["same-tree", "unrelated-tree"].includes(scenario)) {
+        const result = await launch(parent, { role: "writer", externalOnly: true, cwd: external });
+        assert.equal(result.details.cwd, external);
+      } else {
+        const mutations = paneMutations(parent).length;
+        for (const params of [{ role: "writer" }, { role: "reviewer", reviewFamily: "anthropic" }]) {
+          await assert.rejects(() => launch(parent, { ...params, externalOnly: true, cwd: external }), /uncertain leaf launch/);
+        }
+        assert.equal(paneMutations(parent).length, mutations);
       }
     });
   }
@@ -438,6 +452,13 @@ test("original isolated fixer and writer owners request fresh review beside thei
       assert.equal(result.details.claimPath, undefined);
       assert.equal(result.details.retainedAuthor, author === "retained" ? authored.details.childSessionId : undefined);
       parent.roster.length = author === "closed" ? 1 : 2;
+    }
+    if (author === "retained") {
+      // A pane bound to the recorded file whose saved header names another session is not the retained author.
+      writeFileSync(sessionFile(parent.roster[1]), JSON.stringify({ type: "session", id: "different-native-uuid", cwd: realpathSync.native(cwd) }) + "\n");
+      const before = paneMutations(parent).length;
+      await assert.rejects(() => launch(parent, { role: "reviewer", reviewFamily: "anthropic", cwd }), /Native child session header does not match this launch/);
+      assert.equal(paneMutations(parent).length, before);
     }
     parent.pi.events.on("pi-change-working-dir:resolve-execution-cwd", (request: { result?: { cwd: string } }) => { request.result = { cwd }; });
     await assert.rejects(() => launch(parent, { role: "worker", cwd }), /same admitted task tree/);
@@ -522,7 +543,7 @@ test("the same settled author survives each fresh review and receives correction
 });
 
 test("review beside a retained author refuses busy, unknown, mismatched, unowned or uncertain actors", async (t) => {
-  for (const scenario of ["working", "blocked", "unknown", "missing-status", "session-mismatch", "moved-pane", "unowned-author", "unrelated-occupant", "uncertain-author", "two-authors"]) {
+  for (const scenario of ["working", "blocked", "unknown", "missing-status", "session-mismatch", "moved-pane", "unowned-author", "unrelated-occupant", "uncertain-author", "two-authors", "header-uuid", "header-cwd", "header-missing"]) {
     await t.test(scenario, async () => {
       try {
         const { owner, cwd } = await deliveryOwner();
@@ -548,9 +569,16 @@ test("review beside a retained author refuses busy, unknown, mismatched, unowned
           owner.pi.appendEntry("fleet-launch", { ...record, launchId: "second-author", childSessionId: "second", paneId: "wN:p9", role: "writer" });
           owner.roster.push({ name: "second", pane_id: "wN:p9", cwd, agent_status: "idle", agent_session: { kind: "id", value: "second" } });
         }
+        const { childSessionId } = owner.pi.state.entries.at(-1).data;
+        if (scenario === "header-uuid") writeFileSync(sessionFile(native), JSON.stringify({ type: "session", id: "different-native-uuid", cwd }) + "\n");
+        if (scenario === "header-cwd") writeFileSync(sessionFile(native), JSON.stringify({ type: "session", id: childSessionId, cwd: realpathSync.native(tmpdir()) }) + "\n");
+        if (scenario === "header-missing") rmSync(sessionFile(native));
         const expected: Record<string, RegExp> = {
           "unrelated-occupant": /Task tree occupied by stranger;/, "uncertain-author": /uncertain leaf launch/,
           "two-authors": /predecessor is still live but not a settled retained author/,
+          "header-uuid": /Native child session header does not match this launch/,
+          "header-cwd": /Native child session header does not match this launch/,
+          "header-missing": /Retained author's native session file is missing/,
         };
         const before = paneMutations(owner).length;
         for (const params of [{ role: "reviewer", reviewFamily: "anthropic" }, { role: "reviewer-security", reviewFamily: "openai" }]) {
@@ -563,6 +591,8 @@ test("review beside a retained author refuses busy, unknown, mismatched, unowned
     });
   }
 });
+
+const sessionFile = (agent: Record<string, unknown>) => (agent.agent_session as { value: string }).value;
 
 // Scratch under this checkout is inside a Git worktree; an external venue must not be.
 function externalDirectory() {
@@ -646,6 +676,10 @@ test("fresh external review runs beside or after only the caller's own settled e
   parent.roster.push({ name: "stranger", pane_id: "wU:p9", foreground_cwd: external });
   await assert.rejects(() => review(), /Task directory occupied by stranger;/);
   parent.roster.pop();
+  const header = readFileSync(sessionFile(native), "utf8");
+  writeFileSync(sessionFile(native), JSON.stringify({ type: "session", id: writer.details.childSessionId, cwd: realpathSync.native(tmpdir()) }) + "\n");
+  await assert.rejects(() => review(), /Native child session header does not match this launch/);
+  writeFileSync(sessionFile(native), header);
   native.agent_session = { kind: "id", value: "somebody-else" };
   await assert.rejects(() => review(), /Task directory occupied by notes;/);
   parent.roster.length = 1;
@@ -667,6 +701,33 @@ test("fresh external review runs beside or after only the caller's own settled e
   parent.roster[0].agent_session = { kind: "id", value: "not-the-owner" };
   await assert.rejects(() => review(), /Native child session identity/);
   assert.equal(paneMutations(parent).length + paneMutations(unrelated).length, before);
+});
+
+test("an external-only launch keeps a vanished tree's uncertain or live author blocking at the same path", async () => {
+  for (const scenario of ["uncertain", "live-elsewhere"]) {
+    const { source, dir } = fleetRepo(join(externalDirectory(), "repo"));
+    const cwd = join(dir, "linked");
+    git(source, "worktree", "add", "-q", "-b", "linked", cwd);
+    const parent = fleetParent(source);
+    herdrFleet(parent.pi);
+    if (scenario === "uncertain") {
+      const exec = parent.pi.execImpl;
+      parent.pi.execImpl = (cmd: string, args: string[]) => cmd === "herdr" && args[1] === "prompt"
+        ? Promise.resolve({ code: 1, stdout: "", stderr: "agent_prompt_stalled", killed: false }) : exec(cmd, args);
+      await assert.rejects(() => launch(parent, { name: "author", role: "writer", cwd }), /agent_prompt_stalled/);
+      parent.pi.execImpl = exec;
+      parent.roster.length = 1;
+    } else {
+      await launch(parent, { name: "author", role: "writer", cwd });
+      // Still bound to its recorded session, now reporting another directory.
+      parent.roster[1].cwd = realpathSync.native(tmpdir());
+    }
+    rmSync(join(cwd, ".git"));
+    const before = paneMutations(parent).length;
+    await assert.rejects(() => launch(parent, { name: "external", role: "writer", externalOnly: true, cwd }),
+      scenario === "uncertain" ? /uncertain leaf launch/ : /Another agent may still write to this task tree: author/, scenario);
+    assert.equal(paneMutations(parent).length, before);
+  }
 });
 
 // Decision cases supply Git identity at pi.exec; paths, sessions and admission locks stay real.
