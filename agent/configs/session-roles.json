@@ -9,10 +9,15 @@
     "thinking": "high",
     "instructionsFile": "session-role-coder.md"
   },
+  "delivery-lead": {
+    "model": "cloudflare-ai-gateway/gpt-6-astra",
+    "thinking": "high",
+    "instructionsFile": "delivery-lead.md"
+  },
   "managed-coder": {
     "model": "cloudflare-ai-gateway/gpt-6-astra",
     "thinking": "high",
-    "instructionsFile": "managed-coder.md"
+    "instructionsFile": "delivery-lead.md"
   },
   "worker": {
     "model": "cloudflare-ai-gateway/claude-opus-5-5",
@@ -44,7 +49,7 @@
     },
     "thinking": "xhigh",
     "instructionsFile": "delegation.md",
-    "contract": "Independent fresh-context, read-only security review against the verbatim Owner outcome and complete diff. Inspect trust, lineage, authority, credential exposure and lifecycle boundaries. Return evidence-backed findings with paths and severity, or No blocking findings. Missing evidence means an incomplete review, not sign-off. Do not implement fixes."
+    "contract": "Independent fresh-context, read-only security review against the verbatim Owner outcome and complete diff. Start with the specific failure and boundary named in the brief. Inspect trust, lineage, authority, credential exposure and lifecycle boundaries. Return evidence-backed findings with paths and severity, or No blocking findings. Missing evidence means an incomplete review, not sign-off. Do not implement fixes."
   },
   "writer": {
     "model": "cloudflare-ai-gateway/claude-fable-5-1",

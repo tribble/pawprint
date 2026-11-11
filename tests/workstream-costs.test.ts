@@ -63,11 +63,12 @@ async function report(f: ReturnType<typeof fixture>, full = false) {
   return { text: result.content[0].text as string, report: result.details.report, pi, ctx };
 }
 
-test("native delivery owners and current leaves count once beside saved legacy runs", async () => {
+test("native delivery owners and current leaves count once beside saved legacy runs", async (t) => {
+  for (const ownerRole of ["delivery-lead", "managed-coder"]) await t.test(ownerRole, async () => {
   const f = fixture();
   const owner = f.pane(2, []);
   const ownerRecord = f.rootEntries.at(-1) as { data: { role: string } };
-  ownerRecord.data.role = "managed-coder";
+  ownerRecord.data.role = ownerRole;
   const children: object[] = [];
   const roles = ["worker", "fixer", "reviewer", "reviewer-security", "writer", "scout", "context-builder", "oracle", "debugger"];
   for (const [index, role] of roles.entries()) {
@@ -85,6 +86,7 @@ test("native delivery owners and current leaves count once beside saved legacy r
   assert.equal(result.nodes.filter((n: { kind: string }) => n.kind === "pane").length, 10);
   assert.equal(result.nodes.find((n: { id: string }) => n.id === id(2)).subtree, 14);
   assert.equal(result.flags.includes("incomplete"), false);
+  });
 });
 
 test("workstream command and tool count root, pane and continued headless usage once; compact first, full inspectable", async () => {

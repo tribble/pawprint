@@ -132,10 +132,13 @@ These are recorded cost estimates. Spending remains uncapped.
 
 ## Native delivery workflow
 
-A responsive project Coordinator launches multiple independent delivery-owner mains
-concurrently in separate fresh native Herdr task trees. Each owner (`managed-coder`)
-launches sequential native worker and fresh reviewer leaves. The owner triggers review,
-returns valid fixes, adjudicates findings and reports decisions/results.
+A responsive project Coordinator launches multiple independent Delivery Leads
+concurrently in separate fresh native Herdr task trees. Each Delivery Lead (`delivery-lead`)
+is accountable for a high-quality change. It launches sequential native worker and fresh
+reviewer leaves, unblocks them, triggers review, mediates and adjudicates findings,
+returns valid fixes and reports decisions/results. It escalates stuck work or
+unresolved disagreement with a plain-language problem, the decision needed, known
+options and a recommendation only when it has one.
 Neither main writes code. Herdr owns all processes/panes/lifecycle.
 Standalone [pi-intercom](https://github.com/nicobailon/pi-intercom) owns messaging.
 
@@ -152,15 +155,16 @@ The parent creates and verifies a fresh native task tree, then launches its owne
 
 ```js
 launch_agent({
-  name: "delivery-owner",
-  role: "managed-coder",
+  name: "delivery-lead",
+  role: "delivery-lead",
   cwd: "/verified/native/task/tree",
   task: "Owner outcome:\n<verbatim ask>\n\n<bounded delivery and acceptance>"
 });
 ```
 
-The owner uses `launch_agent({name,role:"worker",cwd,task})`, then fresh
-`reviewer` and separate `reviewer-security` leaves for risky changes.
+The Delivery Lead uses `launch_agent({name,role:"worker",cwd,task})`, then fresh
+`reviewer` and, only for a concrete change to permissions, trust, credential handling,
+command execution or ownership/deletion safeguards, a separate `reviewer-security`.
 [Profiles](agent/configs/session-roles.json) supply qualified model, native effort,
 instruction file and the complete selected contract in the actual prompt.
 Opus workers use high, trivial-configuration fixers low, default Sol reviewers xhigh.
@@ -185,7 +189,7 @@ Leaves cannot launch actors or trigger review.
 
 Non-code writer/scout/context-builder/oracle/debugger roles use the native launcher
 with explicit assigned cwd. Writer and trivial-configuration fixer need an unclaimed
-linked task tree. Fixer can bypass a managed Coder through the same admission gate.
+linked task tree. Fixer can bypass a Delivery Lead through the same admission gate.
 Read-only roles can use their assigned directory without a managed wrapper.
 See [delegation](agent/configs/delegation.md) for contracts and continuation commands.
 
@@ -219,22 +223,23 @@ Preserve ignored evidence before authorized non-force native removal.
 ### Main roles and legacy claims
 
 Default sessions and Coordinators use Astra/medium.
-Full-workstream Coder and managed Coder retain Astra/high.
+Full-workstream Coder and Delivery Lead retain Astra/high.
 Legacy `role:"coder"` and `role:"coordinator"` APIs remain available.
 Legacy Coder creates a linked tree from committed HEAD or base, or admits explicit cwd.
 Coordinator keeps directory behavior and rejects base.
-Managed Coder requires an existing native linked cwd and the unique matching workspace.
+Delivery Lead requires an existing native linked cwd and the unique matching workspace.
+`managed-coder` remains a legacy alias of `delivery-lead`.
 It creates neither worktree nor persistent writer claim.
 A live or uncertain earlier launch of any role blocks same-parent replay into that tree.
 After the predecessor closes, the same parent may launch a replacement there.
 First settle the predecessor and its background commands manually.
-The receipt names the previous managed Coder but does not check its command exits.
+The receipt names the previous Delivery Lead but does not check its command exits.
 
 After an Opus worker, both reviews use OpenAI/Sol.
 For OpenAI-authored output, including Astra, use `--review-family anthropic` for both instead.
 
 ```text
-/delegate --role managed-coder --cwd "/native/task/tree" <name> <task>
+/delegate --role delivery-lead --cwd "/native/task/tree" <name> <task>
 /delegate --role worker --cwd "/same/admitted/tree" <name> <task>
 /delegate --role reviewer --review-family openai --cwd "/same/admitted/tree" <name> <task>
 /delegate --role reviewer-security --review-family openai --cwd "/same/admitted/tree" <name> <task>

@@ -4,8 +4,8 @@ Visiting to adopt a piece for your own pi? That's the README ("Adopt a
 piece"). This file is for changing this repo.
 
 - Every pawprint change uses a fresh task worktree. Any full Pi session routes
-  code changes of any size through fresh native herdr worktree → bounded main Coder
-  (`launch_agent` role `managed-coder`) → worker and independent fresh review. Small fixes and renames are included. Only
+  code changes of any size through fresh native herdr worktree → bounded Delivery Lead
+  (`launch_agent` role `delivery-lead`) → worker and independent fresh review. Small fixes and renames are included. Only
   trivial configuration can bypass the code flow and use fixer; if unsure, use the full flow.
   Adopting an already reviewed and tested immutable dependency revision, with its aligned
   prose, is trivial configuration when it needs no consuming-repo code change, migration or
@@ -26,8 +26,8 @@ piece"). This file is for changing this repo.
   New pawprint task worktrees group under `~/work/pawprint-worktrees/<branch>`; the main checkout stays `~/work/pawprint`.
   Existing worktrees stay where they are; cleanup follows each tree's recorded actual path.
   Delegate at the actual verified returned path. A responsive Coordinator owns a broad project and launches multiple concurrent independent
-  delivery-owner mains. Each owner supervises sequential native workers and fresh reviewers.
-  Neither main writes code; the owner triggers review and returns valid fixes. A Coordinator owns a broad project;
+  Delivery Leads. Each Delivery Lead supervises sequential native workers and fresh reviewers.
+  Neither main writes code; the Delivery Lead triggers review, mediates and returns valid fixes. A Coordinator owns a broad project;
   additional full sessions own substantial independent scope across deliveries,
   not routine per-PR wrappers. Every full session uses the same code flow.
   Before implementation, settle the short path to real acceptance: which checks run

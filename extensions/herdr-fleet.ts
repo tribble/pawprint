@@ -1,6 +1,6 @@
 // herdr-fleet.ts — herdr-native fleet UX.
 //   /fleet                  compact status surface: named agents + live state + owner [mine]/[yours] (zero-token)
-//   /delegate <name> <task> spawn a named pi in a new tab (managed Coder: native worktree workspace; otherwise THIS workspace); requires `Owner outcome:`
+//   /delegate <name> <task> spawn a named pi in a new tab (Delivery Lead: native worktree workspace; otherwise THIS workspace); requires `Owner outcome:`
 //   /ws [repo|dir] <purpose> new focused workspace: dir from identifier or the model's read of the purpose; name from purpose; repo ids from `configs/ws.json`
 // Delegated pane agents are first-class: they join intercom under their herdr name,
 // and you talk to them by focusing their pane (herdr agent focus <name>).
@@ -221,18 +221,22 @@ const OWNER_OUTCOME = /^Owner outcome:/m;
 
 // Appended to every delegated task: the child's contract with its spawner (addressed by intercom ID).
 const CONTRACT = (me: string, name: string, role: Role) =>
-  `You were spawned by intercom session \`${me}\`. The \`Owner outcome:\` block above is the user's verbatim ask and the only authority on intent; everything else in this brief is your spawner's derived design and may be wrong — if the two conflict, follow the owner outcome and tell \`${me}\`. Copy the \`Owner outcome:\` block unchanged into every subagent brief you write (reviewer included). When done, report ONCE to intercom session \`${me}\` (that is your spawner's ID; use it verbatim) as one line: ✅ ${name} — <outcome>. ${role === "managed-coder" || isLeafRole(role) ? "Return owned native session/pane/command identities, exit evidence and unresolved decisions. Remain idle; the launching parent owns native closure and cleanup. Never treat a completed result as proof that command descendants exited." : 'Then close your own tab: `herdr tab close "$HERDR_TAB_ID"`.'}`;
+  `You were spawned by intercom session \`${me}\`. The \`Owner outcome:\` block above is the user's verbatim ask and the only authority on intent; everything else in this brief is your spawner's derived design and may be wrong — if the two conflict, follow the owner outcome and tell \`${me}\`. Copy the \`Owner outcome:\` block unchanged into every subagent brief you write (reviewer included). When done, report ONCE to intercom session \`${me}\` (that is your spawner's ID; use it verbatim) as one line: ✅ ${name} — <outcome>. ${role === "delivery-lead" || isLeafRole(role) ? "Return owned native session/pane/command identities, exit evidence and unresolved decisions. Remain idle; the launching parent owns native closure and cleanup. Never treat a completed result as proof that command descendants exited." : 'Then close your own tab: `herdr tab close "$HERDR_TAB_ID"`.'}`;
 
-const MAIN_ROLES = ["coordinator", "coder", "managed-coder"] as const;
+const MAIN_ROLES = ["coordinator", "coder", "delivery-lead"] as const;
 const LEAF_ROLES = ["worker", "fixer", "reviewer", "reviewer-security", "writer", "scout", "context-builder", "oracle", "debugger"] as const;
 const ROLES = [...MAIN_ROLES, ...LEAF_ROLES] as const;
 type Role = typeof ROLES[number];
-const isLeafRole = (role: Role) => (LEAF_ROLES as readonly string[]).includes(role);
+// Briefs and launch records from before the rename say managed-coder: the same bounded Delivery Lead.
+const INPUT_ROLES = [...ROLES, "managed-coder"] as const;
+const canonicalRole = (role: string) => role === "managed-coder" ? "delivery-lead" : role;
+const isRole = (role: string): role is Role => (ROLES as readonly string[]).includes(role);
+const isLeafRole = (role: string) => (LEAF_ROLES as readonly string[]).includes(role);
 const isCodeLeaf = (role: Role) => ["worker", "reviewer", "reviewer-security"].includes(role);
 type Mode = "interactive" | "delegated";
 interface RoleProfile { model: string; thinking: string; instructionsFile: string; contract?: string }
 const REVIEW_FAMILIES = ["openai", "anthropic"] as const;
-interface LaunchRequest { name: string; task: string; role?: Role; reviewFamily?: string; mode?: "delegated"; cwd?: string; base?: string; noProjectResources?: boolean }
+interface LaunchRequest { name: string; task: string; role?: typeof INPUT_ROLES[number]; reviewFamily?: string; mode?: "delegated"; cwd?: string; base?: string; noProjectResources?: boolean }
 
 interface LaunchRecord {
   ownerSessionId: string;
@@ -240,7 +244,7 @@ interface LaunchRecord {
   childSessionId: string;
   launchId: string;
   name: string;
-  role: Role;
+  role: string;
   phase: string;
   sourceCwd: string;
   cwd: string;
@@ -288,7 +292,7 @@ function describeLaunch(ctx: ExtensionContext, launch: LaunchRecord): string {
   return `${launch.name} (session ${launch.childSessionId}, pane ${launch.paneId ?? "unknown"}, last recorded ${launch.phase} at ${at ?? "unknown time"}, launch ${launch.launchId})`;
 }
 
-const previousOwnerNote = (owner?: string) => owner ? ` Previous managed Coder in this tree: ${owner}. Its command exits were not checked.` : "";
+const previousOwnerNote = (owner?: string) => owner ? ` Previous Delivery Lead in this tree: ${owner}. Its command exits were not checked.` : "";
 
 // Can another agent write to this tree? Besides observed occupants, any of this caller's own launches there
 // counts, whatever its role, until it was prompted and its pane and session are gone from the native roster.
@@ -502,13 +506,14 @@ function profileArgs(name: string, profile: RoleProfile, mode: Mode, parent?: st
 
 async function launch(pi: ExtensionAPI, ctx: ExtensionContext, request: LaunchRequest, signal?: AbortSignal) {
   assertPaneLaunch();
-  const { name: wanted, task, role = "coder", mode = "delegated" } = request;
+  const { name: wanted, task, mode = "delegated" } = request;
+  const role = canonicalRole(request.role === undefined ? "coder" : request.role);
   if (typeof wanted !== "string" || !LEGAL_NAME.test(wanted)) throw new Error(`illegal agent name "${wanted}" — must match [a-z][a-z0-9_-]{0,31} (start with a letter, ≤32 chars)`);
   if (typeof task !== "string" || !OWNER_OUTCOME.test(task)) throw new Error("task must contain an `Owner outcome:` block quoting the user's ask verbatim (copied, not paraphrased). Re-issue it whenever the user corrects or narrows.");
-  if (!(ROLES as readonly string[]).includes(role)) throw new Error(`role must be ${ROLES.join(", ")}`);
+  if (!isRole(role)) throw new Error(`role must be ${ROLES.join(", ")}`);
   const leaf = isLeafRole(role);
   if (leaf && request.cwd === undefined) throw new Error("Leaf launch requires its assigned explicit cwd");
-  if (role === "managed-coder" && request.cwd === undefined) throw new Error("managed-coder requires the cwd returned by native herdr worktree create");
+  if (role === "delivery-lead" && request.cwd === undefined) throw new Error("delivery-lead requires the cwd returned by native herdr worktree create");
   if (mode !== "delegated") throw new Error("/delegate and launch_agent are delegated-only; use human /ws for an interactive Coordinator");
   if (request.noProjectResources !== undefined && typeof request.noProjectResources !== "boolean") throw new Error("noProjectResources must be an explicit boolean opt-out");
   if (request.base !== undefined && (role !== "coder" || request.cwd !== undefined || typeof request.base !== "string" || !request.base.trim() || hasControls(request.base))) {
@@ -631,8 +636,8 @@ async function launch(pi: ExtensionAPI, ctx: ExtensionContext, request: LaunchRe
         if (occupants.length) throw new Error(`Worktree is occupied by ${occupants.map((a) => a.name ?? a.pane_id ?? "an unowned session").join(", ")}. Refusing explicit reuse; omit cwd for fresh isolation. Occupancy does not prove writer status.`);
         assertNoOtherWriter(ctx, live, tree, record.launchId);
       }
-      if (role === "managed-coder") {
-        const prior = ownLaunches(ctx).filter((r) => r.role === role && r.worktreeKey === tree.key && r.launchId !== record.launchId && r.phase !== "failed-before-pane");
+      if (role === "delivery-lead") {
+        const prior = ownLaunches(ctx).filter((r) => canonicalRole(r.role) === role && r.worktreeKey === tree.key && r.launchId !== record.launchId && r.phase !== "failed-before-pane");
         if (prior.length) previousOwner = describeLaunch(ctx, prior[prior.length - 1]);
         // Herdr owns this tree; reuse the admission gate without adding a persistent claim.
         ws = await managedWorkspace(pi, current, signal);
@@ -663,7 +668,7 @@ function parseDelegate(args: string): LaunchRequest {
     const option = rest.match(/^--(role|review-family|mode|cwd|base)\s+(?:"([^"]+)"|'([^']+)'|(\S+))(?:\s+|$)/);
     if (!option) throw new Error("Usage: /delegate [--role <main-or-leaf-role>] [--review-family <openai|anthropic>] [--cwd <assigned-directory> | --base <ref>] [--no-approve] <name> <task>");
     const value = option[2] ?? option[3] ?? option[4];
-    if (option[1] === "role") options.role = value as Role;
+    if (option[1] === "role") options.role = value as LaunchRequest["role"];
     else if (option[1] === "review-family") options.reviewFamily = value;
     else if (option[1] === "mode") {
       if (value !== "delegated") throw new Error("/delegate is delegated-only; use /ws for an interactive Coordinator");
@@ -766,12 +771,12 @@ export default function herdrFleet(pi: ExtensionAPI) {
   if (!isHeadlessChild()) pi.registerTool({
     name: "launch_agent",
     label: "Launch Pane Agent",
-    description: "Launch a native delivery owner, Coordinator, full Coder or supervised leaf in a no-focus Herdr tab.",
+    description: "Launch a native Delivery Lead, Coordinator, full Coder or supervised leaf in a no-focus Herdr tab.",
     promptSnippet: "Launch an independently owned pane workstream with an explicit role profile",
     promptGuidelines: [
       "Use launch_agent for native Herdr mains and leaf roles. There is no headless delegation runner.",
       "For cross-family review, launch_agent reviewer/reviewer-security accepts reviewFamily: anthropic for OpenAI-authored output (including Astra), openai for Anthropic-authored output. Models come from the role's reviewModels config; omission keeps its default model and effort stays unchanged.",
-      "For a code delivery, first create the native herdr worktree, then use role managed-coder with its exact cwd. This delivery-owner main launches sequential native worker and fresh reviewer leaves with qualified models and role efforts. The launching parent owns final acceptance and native cleanup. No persistent writer claim is added.",
+      "For a code delivery, first create the native herdr worktree, then use role delivery-lead with its exact cwd (managed-coder is a legacy alias). The Delivery Lead owns a high-quality change: it launches sequential native worker and fresh reviewer leaves with qualified models and role efforts, unblocks and mediates them, and escalates stuck work to its parent. The launching parent owns final acceptance and native cleanup. No persistent writer claim is added.",
       "Code leaves require their delivery owner's current native identity in the same explicit task tree; launch history does not block a human-requested replacement. The launcher refuses live agents in the tree and the caller's own uncertain launches; it cannot see a closed predecessor's detached commands, so check those manually before taking over. They create no worktree or persistent claim. Close settled owned leaves and commands before the next leaf. Uncertain launches block replacement. Fixer (trivial configuration only) and writer require an unclaimed linked task tree; scout/context-builder/oracle/debugger use their explicit assigned directory.",
       "Coders default to a fresh linked worktree from the effective repository and committed HEAD. Supply base for repo policy (pawprint: origin/main). Explicit cwd reuses exactly an admitted linked checkout; never combine cwd and base. Coordinators keep directory behavior and reject base.",
       "launch_agent is delegated-only, retains parent provenance and requires the verbatim Owner outcome. Unresolved project trust requires human action; noProjectResources explicitly opts out.",
@@ -782,10 +787,10 @@ export default function herdrFleet(pi: ExtensionAPI) {
     parameters: Type.Object({
       name: Type.String({ pattern: "^[a-z][a-z0-9_-]{0,31}$" }),
       task: Type.String({ minLength: 1, description: "Task containing the verbatim Owner outcome: block" }),
-      role: Type.Optional(StringEnum(ROLES)),
+      role: Type.Optional(StringEnum(INPUT_ROLES, { description: "managed-coder is a legacy alias of delivery-lead." })),
       reviewFamily: Type.Optional(StringEnum(REVIEW_FAMILIES, { description: "Reviewer model family, only for reviewer/reviewer-security. Omit to use the role default." })),
       mode: Type.Optional(StringEnum(["delegated"] as const)),
-      cwd: Type.Optional(Type.String({ minLength: 1, description: "Required for managed-coder and leaves: assigned task directory. Code leaves must stay in their admitted owner tree. Legacy Coder reuses a linked checkout; Coordinator directory is unchanged. Supports ~." })),
+      cwd: Type.Optional(Type.String({ minLength: 1, description: "Required for delivery-lead and leaves: assigned task directory. Code leaves must stay in their admitted owner tree. Legacy Coder reuses a linked checkout; Coordinator directory is unchanged. Supports ~." })),
       base: Type.Optional(Type.String({ minLength: 1, description: "Committed base ref for a new Coder worktree; defaults HEAD. Pawprint callers supply origin/main. Invalid with cwd or Coordinator." })),
       noProjectResources: Type.Optional(Type.Boolean({ description: "Explicitly decline trust-gated project resources for this child (--no-approve)" })),
     }, { additionalProperties: false }),

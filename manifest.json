@@ -13,7 +13,7 @@
     "configs/managed-code-workflow.md",
     "configs/session-role-coordinator.md",
     "configs/session-role-coder.md",
-    "configs/managed-coder.md",
+    "configs/delivery-lead.md",
     "configs/delegation.md"
   ],
   "about": {
@@ -47,8 +47,8 @@
       "needs": ["pi-cloak"]
     },
     "configs/managed-code-workflow.md": {
-      "does": "Any full session's code flow: native worktree, managed Coder and safe lifecycle",
-      "needs": ["herdr", "pi-intercom", "configs/managed-coder.md"],
+      "does": "Any full session's code flow: native worktree, Delivery Lead and safe lifecycle",
+      "needs": ["herdr", "pi-intercom", "configs/delivery-lead.md"],
       "personal": true
     },
     "configs/session-role-coordinator.md": {
@@ -75,8 +75,8 @@
       "needs": ["pawprint package (extensions/herdr-fleet.ts)"],
       "personal": true
     },
-    "configs/managed-coder.md": {
-      "does": "Bounded main Coder: sequential worker, fresh review and parent closeout",
+    "configs/delivery-lead.md": {
+      "does": "Delivery Lead: worker, fresh review, mediation, escalation and closeout",
       "needs": ["herdr", "pi-intercom", "configs/delegation.md"],
       "personal": true
     },
