@@ -99,6 +99,11 @@ piece"). This file is for changing this repo.
   Independent and specialist checks keep their own actor. Integrate known relevant
   merged changes before the final review so it sees the real integration state, and do not
   restart checks or reviews for unrelated churn.
+  After a narrow fix to a fully reviewed candidate, the fresh independent
+  reviewer gets the complete delta from that recorded candidate, the relevant previous findings
+  and the source contracts the delta touches. Carry unchanged review coverage forward only when
+  the recorded baseline, inputs and relevant contracts still match; unchanged filenames or
+  status alone do not qualify. Otherwise widen the review.
   Before optimizing the gate, time the full run at normal concurrency and find its critical path:
   per-file durations do not sum to wall time. Delete needless test work before adding concurrency
   machinery. Compare before/after on one base and runtime, excluding install time, and report
@@ -132,4 +137,5 @@ piece"). This file is for changing this repo.
   A status update names the actual stage of each item — running, queued or blocked — plus the
   next action and its owner, and the blocker when there is one. Handoff and briefing time is
   not "checks"; a queued review is not running. When explaining a delay, separate execution
-  time from handoff and waiting.
+  time from handoff and waiting. An explicit owner rejection removes the proposal from open and
+  paused backlogs; record the decision where useful.
