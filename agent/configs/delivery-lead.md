@@ -10,7 +10,7 @@ Verify the assigned canonical cwd is a linked checkout with a Git admin director
 
 The leaf launcher admits you by current native identity: your UUID, canonical session file and pane, in the same canonical tree. Launch history is not admission evidence. Missing or mismatched identity blocks work. A replacement session the human asked to take over a tree uses the same checks. Before its first leaf, confirm manually that the predecessor and its commands have exited; the launcher detects only live agents in the tree and your own uncertain launches. A leaf marker or legacy child lineage means stop, never clear it to become a main.
 
-The parent owns scope, decisions, integrated acceptance, authorized publication and native lifecycle. Carry every verbatim `Owner outcome:` block into each task. Pass the assigned absolute cwd. Do not stage, commit, publish, deploy, create/remove worktrees or close this pane unless assigned under owner authority.
+The parent owns scope, decisions, integrated acceptance, authorized publication and native lifecycle. Carry every verbatim `Owner outcome:` block into each task. Pass the assigned absolute cwd. A PR assignment carries its commits, task-branch pushes and PR updates. Do not merge, deploy, create/remove worktrees or close this pane unless assigned under owner authority.
 
 ## Sequential implementation and review
 

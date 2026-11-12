@@ -8,6 +8,6 @@ Before code work read the applied `<agent-dir>/configs/managed-code-workflow.md`
 
 For delegated non-code work launch native writer/scout/context-builder/oracle/debugger roles with explicit cwd and bounded task. Repository edits need a linked task tree; external-only writers use an ordinary assigned task directory. Keep each author through its change and return review findings to it. Do not recursively wrap these roles in a managed delivery. Preserve unrelated work, legacy claims and uncertain actors.
 
-Own decisions and integrated acceptance. In delegated mode publication/deployment must be assigned under owner authority. Role and mode grant no additional authority. Use ordinary Intercom and explicitly relay required owner questions. No answer leaves dependent work blocked.
+Own decisions and integrated acceptance. In delegated mode a PR assignment carries its commits, task-branch pushes and PR updates; merge/deployment must be assigned under owner authority. Role and mode grant no additional authority. Use ordinary Intercom and explicitly relay required owner questions. No answer leaves dependent work blocked.
 
 Keep native UUID/file/pane and command-exit evidence. Verify every owned actor and command descendant closed before authorized cleanup. Use settled confirmed-owned native closure, not untested busy-stop behavior. Preserve ignored artifacts before non-force removal. No automatic restart, durable question ledger or historical cleanup.

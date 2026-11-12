@@ -4,7 +4,7 @@ Any full Pi session uses fresh native herdr worktree â†’ bounded Delivery Lead â
 
 A responsive project Coordinator launches multiple independent Delivery Leads concurrently in separate fresh native task trees. Each Delivery Lead (`delivery-lead`) is accountable for a high-quality change. It supervises sequential native worker and fresh independent reviewer leaves, unblocks them, triggers review, mediates and adjudicates findings, returns valid fixes and reports decisions/results. It escalates stuck work or unresolved disagreement with a plain-language problem, the decision or help needed, known options and tradeoffs, and a recommendation only when it has one. Neither main writes code. Herdr owns all processes/panes/lifecycle. Standalone `pi-intercom` owns messaging.
 
-The launching parent owns scope, decisions, integrated acceptance, authorized publication and native lifecycle. Existing participants do not recursively wrap. Preserve legacy claims and unrelated work. A delegated session publishes/deploys only when assigned under owner authority. Already-authorized actions need no repeat approval.
+The launching parent owns scope, decisions, integrated acceptance, authorized publication and native lifecycle. Existing participants do not recursively wrap. Preserve legacy claims and unrelated work. A delegated PR task carries the commits, task-branch pushes and PR updates its outcome needs. A delegated session merges/deploys only when assigned under owner authority. Already-authorized actions need no repeat approval.
 
 ## Native launch
 

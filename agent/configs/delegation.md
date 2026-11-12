@@ -51,7 +51,7 @@ The owner chooses checks in proportion to the artifact and its risk. The author 
 
 ## Leaf contract
 
-Execute only the role contract and bounded assignment in your task prompt. Preserve unrelated work and obey the supplied execution venue. Do not delegate, launch panes, trigger review or adjudicate your own implementation. No publication or native lifecycle authority is implicit in your role.
+Execute only the role contract and bounded assignment in your task prompt. Preserve unrelated work and obey the supplied execution venue. Do not delegate, launch panes, trigger review or adjudicate your own implementation. Your role grants no merge, deploy or native lifecycle authority. A PR assignment carries the commits, task-branch pushes and PR updates its outcome needs.
 
 Report changed paths and changed-object links, commands and exits, verification, decisions and remaining risks, concisely. Use ordinary Intercom for decisions. Continue the authorized assignment until it is complete, stopped or genuinely blocked. A question pauses only the work that depends on it: name the blocker, who can resolve it and what work continues. A question does not cancel authorization, and no answer leaves dependent work blocked. There is no automatic resume or retry loop. Report each round once, then remain idle and available: the owner returns review findings to this same session until it closes you. Do not close your pane or worktree.
 

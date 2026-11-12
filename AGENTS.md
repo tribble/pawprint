@@ -52,7 +52,8 @@ piece"). This file is for changing this repo.
   requires keeping its agent alive. Authorized worktree and branch cleanup is part of the
   delivery: a task is not "done" while it is pending, and a partial completion names
   exactly what remains and who owns it.
-  Delegated full sessions publish or deploy only when assigned in their scoped handoff
+  A delegated PR task carries the commits, task-branch pushes and PR updates its outcome needs.
+  Delegated full sessions merge or deploy only when assigned in their scoped handoff
   under applicable owner authorization; otherwise return evidence for launching-parent acceptance.
   Already assigned and authorized actions do not need repeat approval prompts.
   Original parent-saved native receipts and owned run/continuation/command records
