@@ -73,7 +73,8 @@ copies somewhere other than `~/.pi/agent`.
 Prerequisites: every mode needs bash and jq. Source-only copies (`--only`
 without `settings.json`/`mcp.json`) need nothing more. Merging
 `settings.json` or `mcp.json` also needs node and an installed pi (found via
-mise, `npm -g`, or a `pi` on PATH): settings writes go through pi's own
+the version pinned in `~/.local/share/pi-runtime/version`, mise, `npm -g`, or a
+`pi` on PATH): settings writes go through pi's own
 settings storage and the MCP merge is validated against pi's package. A
 `--only` naming either JSON file preflights pi's package before its first
 selected write and refuses when pi is missing.

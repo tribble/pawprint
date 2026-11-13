@@ -223,8 +223,8 @@ imprint_copy() {  # <rel> <backup-ts|"">
 
 # settings.json/mcp.json — the files pi writes too — merge field-aware, so
 # runtime-owned and unmanaged live values survive (scripts/apply-config.ts,
-# which also resolves pi's installed package: PAWPRINT_PI_PKG, mise, npm -g,
-# or a PATH-installed pi). A settings apply on a machine without pi fails with
+# which also resolves pi's installed package: PAWPRINT_PI_PKG, the dedicated
+# ~/.local/share/pi-runtime install, mise, npm -g, or a PATH-installed pi). A settings apply on a machine without pi fails with
 # a clear message — run --all, which bootstraps the runtime first.
 apply_json() {  # <rel> (settings.json|mcp.json)
   local rel="$1" kind="${1%%.json}"

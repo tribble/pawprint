@@ -7,9 +7,9 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { execFileSync, spawnSync } from "node:child_process";
 import {
-  existsSync, linkSync, mkdirSync, symlinkSync, writeFileSync, readFileSync, readdirSync, statSync, utimesSync,
+  chmodSync, existsSync, linkSync, mkdirSync, rmSync, symlinkSync, writeFileSync, readFileSync, readdirSync, statSync, utimesSync,
 } from "node:fs";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { pathToFileURL } from "node:url";
 import { mktmp, piPackageDir } from "./fixture.ts";
 
@@ -306,6 +306,67 @@ test("--resolve-pi prints the resolved package; missing runtime or missing requi
   });
   assert.notEqual(noExport.status, 0);
   assert.match(noExport.stderr, /FileSettingsStorage/);
+});
+
+test("--resolve-pi: the dedicated pin wins over a stale mise install; a broken pin refuses, never falls back", () => {
+  const home = mktmp("dedicated-home");
+  const runtime = join(home, ".local", "share", "pi-runtime");
+  const dedicated = join(runtime, "1.5.2", "node_modules", "@earendil-works", "pi-coding-agent");
+  mkdirSync(dirname(dedicated), { recursive: true });
+  symlinkSync(piPackageDir(), dedicated);
+  // a competing old mise install that also resolves and imports cleanly
+  const bin = mktmp("dedicated-bin");
+  const stale = join(bin, "mise-pi", "node_modules", "@earendil-works", "pi-coding-agent");
+  mkdirSync(dirname(stale), { recursive: true });
+  symlinkSync(piPackageDir(), stale);
+  writeFileSync(join(bin, "mise"), `#!/bin/sh\necho "${join(bin, "mise-pi")}"\n`);
+  writeFileSync(join(bin, "npm"), "#!/bin/sh\nexit 1\n");
+  chmodSync(join(bin, "mise"), 0o755);
+  chmodSync(join(bin, "npm"), 0o755);
+  const spawnResolve = (override?: string) => {
+    const env: NodeJS.ProcessEnv = { ...process.env, HOME: home, PATH: `${bin}:/usr/bin:/bin` };
+    delete env.PAWPRINT_PI_PKG;
+    if (override) env.PAWPRINT_PI_PKG = override;
+    return spawnSync(process.execPath, [SCRIPT, "--resolve-pi"], { encoding: "utf8", env });
+  };
+  const resolvePi = (pin: string | undefined, override?: string) => {
+    rmSync(join(runtime, "version"), { force: true });
+    if (pin !== undefined) writeFileSync(join(runtime, "version"), pin);
+    return spawnResolve(override);
+  };
+
+  for (const pin of ["1.5.2\n", "  1.5.2\t\nextra\n", "1.5.2"]) {
+    const r = resolvePi(pin);
+    assert.equal(r.status, 0, r.stderr);
+    assert.equal(r.stdout.trim(), dedicated, `pin ${JSON.stringify(pin)} selects the dedicated install`);
+  }
+  const noPin = resolvePi(undefined);
+  assert.equal(noPin.stdout.trim(), stale, "no pin: existing mise fallback unchanged");
+  const explicit = resolvePi("1.5.2\n", piPackageDir());
+  assert.equal(explicit.stdout.trim(), piPackageDir(), "PAWPRINT_PI_PKG still wins");
+
+  for (const pin of ["", "\n1.5.2\n", "../1.5.2\n", "1.5.2/../../x\n", "..\n", "v1.5.2\n", "1.5.2\r\n"]) {
+    const r = resolvePi(pin);
+    assert.equal(r.status, 1, `pin ${JSON.stringify(pin)} must refuse`);
+    assert.equal(r.stdout, "", "no stale package printed");
+    assert.match(r.stderr, /^apply-config: no valid version in the dedicated pi pin .* run: pi-update\n$/);
+  }
+  const missing = resolvePi("9.9.9\n");
+  assert.equal(missing.status, 1);
+  assert.equal(missing.stdout, "");
+  assert.match(missing.stderr, /selects Pi 9\.9\.9, which is not installed .* run: pi-update 9\.9\.9/);
+
+  // a pin that cannot be inspected (runtime dir not searchable) refuses too
+  resolvePi("1.5.2\n");
+  chmodSync(runtime, 0o600);
+  try {
+    const r = spawnResolve();
+    assert.equal(r.status, 1, r.stdout);
+    assert.equal(r.stdout, "", "no stale package printed");
+    assert.match(r.stderr, /cannot inspect the dedicated pi pin .*EACCES.* run: pi-update/);
+  } finally {
+    chmodSync(runtime, 0o755);
+  }
 });
 
 test("mcp: a merged managed server pi rejects is refused — apply and --check, bytes preserved, unmanaged fields kept", async () => {
