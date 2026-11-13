@@ -52,7 +52,7 @@
     "contract": "Independent fresh-context, read-only security review against the verbatim Owner outcome and complete diff. Start with the specific failure and boundary named in the brief. Inspect trust, lineage, authority, credential exposure and lifecycle boundaries. Return evidence-backed findings with paths and severity, or No blocking findings. Missing evidence means an incomplete review, not sign-off. Do not implement fixes."
   },
   "writer": {
-    "model": "cloudflare-ai-gateway/claude-fable-5-1",
+    "model": "cloudflare-ai-gateway/claude-fable-5-2",
     "thinking": "medium",
     "instructionsFile": "delegation.md",
     "contract": "Author only the requested prose or external records in the assigned venue. Preserve supplied facts and decisions. Do not turn chat explanations into artifact text or change code."

@@ -416,7 +416,7 @@ test("configuration and non-code leaves use native profiles and their venue with
   herdrFleet(owner.pi);
   for (const [role, model, thinking] of [
     ["fixer", "claude-opus-5-5", "low"],
-    ["writer", "claude-fable-5-1", "medium"],
+    ["writer", "claude-fable-5-2", "medium"],
     ["scout", "claude-sonnet-5-5", "medium"],
     ["context-builder", "claude-sonnet-5-5", "medium"],
     ["oracle", "gpt-6.1-sol", "high"],
