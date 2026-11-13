@@ -1,6 +1,6 @@
 # Managed code workflow
 
-Any full Pi session uses fresh native herdr worktree → bounded Delivery Lead → worker and independent fresh review for code changes of any size. Only trivial configuration may bypass this flow. Read-only work and non-code authoring use `configs/delegation.md`.
+Any full Pi session uses fresh native herdr worktree → bounded Delivery Lead → worker and independent fresh review for code changes of any size. Only trivial configuration may bypass this flow; it gets owner review of the complete diff and check evidence instead of a fresh reviewer leaf. Read-only work and non-code authoring use `configs/delegation.md`.
 
 A responsive project Coordinator launches multiple independent Delivery Leads concurrently in separate fresh native task trees. Each Delivery Lead (`delivery-lead`) is accountable for a high-quality change. It supervises sequential native worker and fresh independent reviewer leaves, unblocks them, triggers review, mediates and adjudicates findings, returns valid fixes and reports decisions/results. It escalates stuck work or unresolved disagreement with a plain-language problem, the decision or help needed, known options and tradeoffs, and a recommendation only when it has one. Neither main writes code. Herdr owns all processes/panes/lifecycle. Standalone `pi-intercom` owns messaging.
 
