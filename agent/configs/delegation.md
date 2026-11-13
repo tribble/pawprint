@@ -47,7 +47,7 @@ The launcher admits review beside the caller's one retained author only when the
 
 ## Checks and review
 
-The owner chooses checks in proportion to the artifact and its risk. The author runs them and reports evidence. Reviewers verify that evidence. Pure prose needs no dependency install or full code suite; it runs the checks its artifact has, such as manifest validation. The owner may check routine prose itself. Substantive behavior or safety instructions get fresh independent review. After a narrow fix, review the complete correction and the contracts it touches; carry forward earlier coverage only when its baseline and inputs still match. Code keeps the repository's full required checks and review. Staged secret scans and publication authority are unchanged.
+The owner chooses checks in proportion to the artifact and its risk. The author runs them and reports evidence. Reviewers verify that evidence. Pure prose needs no dependency install or full code suite; it runs the checks its artifact has, such as manifest validation. The owner may check routine prose and trivial configuration itself by reading the complete diff and check evidence; that is owner review, not independent review. Substantive behavior or safety instructions get fresh independent review. After a narrow fix, review the complete correction and the contracts it touches; carry forward earlier coverage only when its baseline and inputs still match. Code keeps the repository's full required checks and review. Staged secret scans and publication authority are unchanged.
 
 ## Leaf contract
 

@@ -7,9 +7,12 @@ piece"). This file is for changing this repo.
   code changes of any size through fresh native herdr worktree → bounded Delivery Lead
   (`launch_agent` role `delivery-lead`) → worker and independent fresh review. Small fixes and renames are included. Only
   trivial configuration can bypass the code flow and use fixer; if unsure, use the full flow.
-  Adopting an already reviewed and tested immutable dependency revision, with its aligned
-  prose, is trivial configuration when it needs no consuming-repo code change, migration or
-  unresolved compatibility work: fixer/writer plus independent review, and this repo's
+  Trivial configuration gets owner review: the owning full session reads the complete diff
+  and check evidence itself and verifies the real outcome, with no fresh reviewer leaf.
+  Owner review is not independent review. A model-ID selection update or an already
+  reviewed and tested immutable dependency revision, each with its aligned prose and literal
+  test expectations, is trivial configuration when it needs no consuming-repo code change,
+  migration or unresolved compatibility work: fixer/writer plus owner review, and this repo's
   required checks still run. Unqualified dependency upgrades stay in the code flow.
   An owner-authorized personal-environment rollout does not wait on upstream merge, release
   or hosted-only CI; this repo's required checks and pin verification still gate it.
@@ -97,7 +100,8 @@ piece"). This file is for changing this repo.
 - The gate is `npm test`: `oxlint` (type-aware via tsgolint; no `any`, no floating/misused promises; opt out per line with a reason), `tsc`, then the node tests. Red = not done.
   A Markdown-only prose change needs no `npm ci` or full suite. It runs the checks its
   artifact has, such as `git diff --check` and the staged gitleaks scan. The owner may check
-  routine prose itself; substantive behavior or safety instructions get fresh independent review.
+  routine prose and trivial configuration itself; substantive behavior or safety instructions
+  get fresh independent review.
   Under process limits, count the runner, test-file processes and nested helpers. Run the same pinned components
   sequentially with `--test-concurrency=1` for Node tests.
   Preserve every test file, the register import, all enabled tests, component order and fail-fast behavior.
@@ -140,7 +144,7 @@ piece"). This file is for changing this repo.
   plain files for file/config cases, controlled inputs at an existing boundary for pure decisions,
   real Git or processes only for integration contracts. Refusal tests stay isolated from the real
   checkout even when the guard under test fails. Red first.
-- Deploy is the owner's agent's, not yours: PR, `reviewer` clean, report.
+- Deploy is the owner's agent's, not yours: PR, `reviewer` clean (owner review for trivial configuration), report.
   For read-only reviews, consume saved run results instead of asking reviewers to write report files.
   A status update names the actual stage of each item — running, queued or blocked — plus the
   next action and its owner, and the blocker when there is one. Handoff and briefing time is
