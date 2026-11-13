@@ -470,6 +470,15 @@ test("6g. missing pi runtime: --apply and managed --only refuse before ANY write
   assert.match(r.stderr, /pi's installed package not found|PAWPRINT_PI_PKG/);
   assert.deepEqual(manifestDiff(before, manifest(live)), [], "zero manifest writes, earlier source-only files included");
 
+  // a dedicated pin naming an uninstalled Pi refuses the same way, before any write
+  mkdirSync(join(home, ".local", "share", "pi-runtime"), { recursive: true });
+  writeFileSync(join(home, ".local", "share", "pi-runtime", "version"), "9.9.9\n");
+  const pinned = setup(["--apply", "--target", live]);
+  assert.notEqual(pinned.status, 0, "must refuse a broken dedicated pin");
+  assert.match(pinned.stderr, /run: pi-update 9\.9\.9/);
+  assert.deepEqual(manifestDiff(before, manifest(live)), [], "zero manifest writes with a broken pin");
+  rmSync(join(home, ".local"), { recursive: true });
+
   // --dry-run never resolves the runtime
   const dry = setup(["--apply", "--dry-run", "--target", live]);
   assert.equal(dry.status, 0, dry.stderr);

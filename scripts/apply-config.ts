@@ -27,15 +27,17 @@
 //   bytes unchanged, exit 1 ("drift:") otherwise. Never creates or locks a file.
 //   settings.json writes go through pi's own FileSettingsStorage (lock +
 //   read-modify-write + skip-when-unchanged); the package resolves via
-//   PAWPRINT_PI_PKG, else mise, else npm -g, else a PATH-installed pi — and
-//   only when a write is actually needed. mcp.json writes take no lock (pi's
-//   own mcp writer takes none), but every merged source-managed server entry
-//   is validated with pi's native validateMcpServerConfig first: a merge pi
-//   itself would reject (e.g. a source oauth.callbackUrl meeting a live
+//   PAWPRINT_PI_PKG, else the dedicated install ~/.local/bin/pi runs (pinned
+//   by ~/.local/share/pi-runtime/version), else mise, else npm -g, else a
+//   PATH-installed pi — and only when a write is actually needed. mcp.json
+//   writes take no lock (pi's own mcp writer takes none), but every merged
+//   source-managed server entry is validated with pi's native
+//   validateMcpServerConfig first: a merge pi itself would reject (e.g. a source oauth.callbackUrl meeting a live
 //   oauth.callbackPort on another port) is refused with the conflict named
 //   and the live bytes kept — in apply and --check alike.
 import { execFileSync } from "node:child_process";
 import { existsSync, lstatSync, mkdirSync, readFileSync, realpathSync, writeFileSync } from "node:fs";
+import { homedir } from "node:os";
 import { basename, dirname, join, resolve, sep } from "node:path";
 import { pathToFileURL } from "node:url";
 
@@ -178,9 +180,44 @@ function checkMcpShapes(source: Json, liveText: string | undefined, srcPath: str
   }
 }
 
-/** pi's installed package dir: env override (trusted, probed at use), then mise, npm -g, or a PATH-installed pi. */
+/**
+ * The package the dedicated launcher (~/.local/bin/pi) runs: the pin in
+ * ~/.local/share/pi-runtime/version names ~/.local/share/pi-runtime/<version>.
+ * No pin file (ENOENT): undefined, so older installs keep resolving. A pin
+ * that cannot be inspected, read or used throws rather than falling back to a
+ * stale Pi. The token check matches the launcher's (first line, one path
+ * component starting with a digit), so it cannot name a directory outside the
+ * runtime root.
+ */
+function dedicatedPiPackageDir(): string | undefined {
+  const root = join(homedir(), ".local", "share", "pi-runtime");
+  const pin = join(root, "version");
+  try {
+    lstatSync(pin);
+  } catch (e) {
+    const code = (e as NodeJS.ErrnoException).code;
+    if (code === "ENOENT") return undefined;
+    throw new Error(`cannot inspect the dedicated pi pin ${pin} (${code}) — fix its permissions or run: pi-update`);
+  }
+  let text: string;
+  try {
+    text = readFileSync(pin, "utf8");
+  } catch {
+    throw new Error(`cannot read the dedicated pi pin ${pin} — run: pi-update`);
+  }
+  const v = text.split("\n", 1)[0].replace(/^[ \t]+|[ \t]+$/g, "");
+  if (!/^[0-9][0-9A-Za-z.+-]*$/.test(v)) throw new Error(`no valid version in the dedicated pi pin ${pin} — run: pi-update`);
+  const dir = join(root, v, "node_modules", "@earendil-works", "pi-coding-agent");
+  if (!existsSync(join(dir, "dist", "core")))
+    throw new Error(`the dedicated pi pin ${pin} selects Pi ${v}, which is not installed at ${dir} — run: pi-update ${v}`);
+  return dir;
+}
+
+/** pi's installed package dir: env override (trusted, probed at use), then the dedicated install, mise, npm -g, or a PATH-installed pi. */
 function piPackageDir(): string {
   if (process.env.PAWPRINT_PI_PKG) return process.env.PAWPRINT_PI_PKG;
+  const dedicated = dedicatedPiPackageDir();
+  if (dedicated) return dedicated;
   const candidates: string[] = [];
   try {
     const root = execFileSync("mise", ["where", "npm:@earendil-works/pi-coding-agent"], {
@@ -202,7 +239,7 @@ function piPackageDir(): string {
     if (real && basename(real) === "cli.js" && basename(dirname(real)) === "dist") candidates.push(dirname(dirname(real)));
   }
   for (const dir of candidates) if (existsSync(join(dir, "dist", "core"))) return dir;
-  throw new Error("pi's installed package not found (tried PAWPRINT_PI_PKG, mise, npm -g, PATH) — install pi first; setup.sh --all bootstraps it");
+  throw new Error("pi's installed package not found (tried PAWPRINT_PI_PKG, ~/.local/share/pi-runtime/version, mise, npm -g, PATH) — install pi first; setup.sh --all bootstraps it");
 }
 
 /** A dist/core module of pi's installed package; the module file must exist. */
