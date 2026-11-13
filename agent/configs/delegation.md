@@ -64,7 +64,7 @@ Report changed paths and changed-object links, commands and exits, verification,
 | reviewer (default / openai) | cloudflare-ai-gateway/gpt-6.1-sol | xhigh | Independent fresh-context read-only intent and complete-diff review. |
 | reviewer-security (default / openai) | cloudflare-ai-gateway/gpt-6.1-sol | xhigh | Separate fresh read-only trust, lineage, authority, credential and lifecycle review. |
 | reviewer / reviewer-security (anthropic) | cloudflare-ai-gateway/claude-opus-5-5 | xhigh | Review OpenAI-authored output, including Astra. |
-| writer | cloudflare-ai-gateway/claude-fable-5-1 | medium | Requested prose or external records only. Preserve facts and decisions. No code. |
+| writer | cloudflare-ai-gateway/claude-fable-5-2 | medium | Requested prose or external records only. Preserve facts and decisions. No code. |
 | scout / context-builder | cloudflare-ai-gateway/claude-sonnet-5-5 | medium | Read-only paths, call boundaries, evidence and gaps. No full suites. |
 | oracle | cloudflare-ai-gateway/gpt-6.1-sol | high | Concrete technical cause, evidence and smallest repair proposal. No edits. |
 | debugger | cloudflare-ai-gateway/gpt-6-astra | high | Bounded reproduction and diagnosis. Route code to the owner's worker. |
